@@ -21,7 +21,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 struct SimpleVertex2D { 
 	float x, y;
-	float r, g, b; };
+	float r, g, b; 
+};
 
 const char* kShaderSrc = R"(
 struct VSOut { float4 pos : SV_POSITION; float3 col : COLOR; };
@@ -40,7 +41,7 @@ float4 PSMain(VSOut i) : SV_TARGET
 }
 )";
 
-int main()
+int Launch()
 {
 	std::cout << "Hello Main." << std::endl;
 
@@ -172,5 +173,11 @@ int main()
 	}
 
 
+
 	return 0;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+{
+	return Launch();
 }
