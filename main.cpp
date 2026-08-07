@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -43,6 +44,16 @@ static std::vector<char> LoadFile(const std::filesystem::path& path)
 	std::vector<char> data(static_cast<size_t>(size));
 	file.read(data.data(), size);
 	return data;
+}
+
+static bool Failed(HRESULT hr, const wchar_t* what)
+{
+	if (SUCCEEDED(hr)) return false;
+
+	wchar_t msg[512];
+	swprintf_s(msg, L"%s failed (0x%08X)", what, static_cast<unsigned>(hr));
+	MessageBox(nullptr, msg, L"Gilgamesh", MB_ICONERROR);
+	return true;
 }
 
 int Launch()
@@ -96,13 +107,14 @@ int Launch()
 		nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
 		nullptr, 0, D3D11_SDK_VERSION,
 		&scd, &swapChain, &device, nullptr, &context);
-	if (FAILED(hr)) return 1;
+	if (Failed(hr, L"D3D11CreateDeviceAndSwapChain")) return 1;
 
 	ComPtr<ID3D11Texture2D> backBuffer;
-	swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
-	if (backBuffer == nullptr) return 1;
-	device->CreateRenderTargetView(backBuffer.Get(), nullptr, &rtv);
-	if (rtv == nullptr) return 1;
+	hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+	if (Failed(hr, L"GetBuffer")) return 1;
+
+	hr = device->CreateRenderTargetView(backBuffer.Get(), nullptr, &rtv);
+	if (Failed(hr, L"CreateRenderTargetView")) return 1;
 
 	D3D11_VIEWPORT vp = {};
 	vp.Width	= 1280.f;
@@ -123,10 +135,11 @@ int Launch()
 
 	ComPtr<ID3D11VertexShader> vs;
 	ComPtr<ID3D11PixelShader>  ps;
-	device->CreateVertexShader(vsBytes.data(), vsBytes.size(), nullptr, &vs);
-	if (vs == nullptr) return 1;
-	device->CreatePixelShader(psBytes.data(), psBytes.size(), nullptr, &ps);
-	if (ps == nullptr) return 1;
+	hr = device->CreateVertexShader(vsBytes.data(), vsBytes.size(), nullptr, &vs);
+	if (Failed(hr, L"CreateVertexShader")) return 1;
+
+	hr = device->CreatePixelShader(psBytes.data(), psBytes.size(), nullptr, &ps);
+	if (Failed(hr, L"CreatePixelShader")) return 1;
 
 	SimpleVertex2D verts[] = {
 	{  0.0f,  0.5f,  1, 0, 0 },
@@ -141,8 +154,8 @@ int Launch()
 	D3D11_SUBRESOURCE_DATA initData = { verts };
 
 	ComPtr<ID3D11Buffer> vertexBuffer;
-	device->CreateBuffer(&bd, &initData, &vertexBuffer);
-	if (vertexBuffer == nullptr) return 1;
+	hr = device->CreateBuffer(&bd, &initData, &vertexBuffer);
+	if (Failed(hr, L"CreateBuffer")) return 1;
 
 	D3D11_INPUT_ELEMENT_DESC layout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -150,8 +163,8 @@ int Launch()
 	};
 
 	ComPtr<ID3D11InputLayout> inputLayout;
-	device->CreateInputLayout(layout, 2, vsBytes.data(), vsBytes.size(), &inputLayout);
-	if (inputLayout == nullptr) return 1;
+	hr = device->CreateInputLayout(layout, 2, vsBytes.data(), vsBytes.size(), &inputLayout);
+	if (Failed(hr, L"CreateInputLayout")) return 1;
 
 	// Render Loop
 	while (running)
