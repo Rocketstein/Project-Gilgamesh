@@ -1,7 +1,10 @@
 #include <iostream>
 
+#include <filesystem>
+#include <fstream>
+#include <vector>
+
 #include <d3d11.h>
-#include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <windows.h>
 
@@ -24,22 +27,25 @@ struct SimpleVertex2D {
 	float r, g, b; 
 };
 
-const char* kShaderSrc = R"(
-struct VSOut { float4 pos : SV_POSITION; float3 col : COLOR; };
-
-VSOut VSMain(float2 pos : POSITION, float3 col : COLOR)
+static std::filesystem::path ExecutableDir()
 {
-    VSOut o;
-    o.pos = float4(pos, 0.0f, 1.0f);
-    o.col = col;
-    return o;
+	wchar_t buf[MAX_PATH];
+	GetModuleFileNameW(nullptr, buf, MAX_PATH);
+	return std::filesystem::path(buf).parent_path();
 }
 
-float4 PSMain(VSOut i) : SV_TARGET
+static std::vector<char> LoadFile(const std::filesystem::path& path)
 {
-    return float4(i.col, 1.0f);
+	std::ifstream file(path, std::ios::binary | std::ios::ate);
+	if (!file) return {};
+
+	const std::streamsize size = file.tellg();
+	file.seekg(0, std::ios::beg);
+
+	std::vector<char> data(static_cast<size_t>(size));
+	file.read(data.data(), size);
+	return data;
 }
-)";
 
 int Launch()
 {
@@ -107,21 +113,20 @@ int Launch()
 	context->RSSetViewports(1, &vp);
 	bool running = true;
 
-	ComPtr<ID3DBlob> vsBlob, psBlob, errBlob;
+	const std::filesystem::path shaderDir = ExecutableDir() / L"Shaders";
+	const std::vector<char> vsBytes = LoadFile(shaderDir / L"Primitive.vs.cso");
+	const std::vector<char> psBytes = LoadFile(shaderDir / L"Primitive.ps.cso");
 
-	if (FAILED(D3DCompile(kShaderSrc, strlen(kShaderSrc), nullptr, nullptr, nullptr,
-		"VSMain", "vs_5_0", 0, 0, &vsBlob, &errBlob)))
+	if (vsBytes.empty() || psBytes.empty())
 	{
-		if (errBlob) OutputDebugStringA((const char*)errBlob->GetBufferPointer());
+		MessageBox(nullptr, L"Failed to load compiled shaders.", L"Gilgamesh", MB_ICONERROR);
 		return 1;
 	}
-	D3DCompile(kShaderSrc, strlen(kShaderSrc), nullptr, nullptr, nullptr,
-		"PSMain", "ps_5_0", 0, 0, &psBlob, nullptr);
 
 	ComPtr<ID3D11VertexShader> vs;
 	ComPtr<ID3D11PixelShader>  ps;
-	device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &vs);
-	device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &ps);
+	device->CreateVertexShader(vsBytes.data(), vsBytes.size(), nullptr, &vs);
+	device->CreatePixelShader(psBytes.data(), psBytes.size(), nullptr, &ps);
 
 	SimpleVertex2D verts[] = {
 	{  0.0f,  0.5f,  1, 0, 0 },
@@ -144,7 +149,7 @@ int Launch()
 	};
 
 	ComPtr<ID3D11InputLayout> inputLayout;
-	device->CreateInputLayout(layout, 2, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &inputLayout);
+	device->CreateInputLayout(layout, 2, vsBytes.data(), vsBytes.size(), &inputLayout);
 
 	// Render Loop
 	while (running)

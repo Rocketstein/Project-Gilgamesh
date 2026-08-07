@@ -14,6 +14,7 @@ project ("Project Gilgamesh")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# CMake 모듈 경로를 추가하고 HLSL 컴파일러를 포함합니다.
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include (CompileHLSL)
 
@@ -22,7 +23,7 @@ add_executable (Gilgamesh WIN32 "main.cpp")
 
 target_compile_definitions (Gilgamesh PRIVATE UNICODE _UNICODE NOMINMAX
 WIN32_LEAN_AND_MEAN)
-target_link_libraries (Gilgamesh PRIVATE d3d11 dxgi d3dcompiler)
+target_link_libraries (Gilgamesh PRIVATE d3d11 dxgi) # remove d3dcompiler after wiring the offline shader compiler
 
 add_hlsl_shader (Gilgamesh "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Primitive.hlsl" VSMain vs_5_0 Primitive.vs.cso)
 add_hlsl_shader (Gilgamesh "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Primitive.hlsl" PSMain ps_5_0 Primitive.ps.cso)
