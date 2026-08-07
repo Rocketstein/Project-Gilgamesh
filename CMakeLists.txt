@@ -1,7 +1,7 @@
 ﻿# CMakeList.txt : 최상위 CMake 프로젝트 파일, 전역 구성을 수행하고
 # 여기에 하위 프로젝트를 포함합니다.
 #
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.12)
 
 # 지원되는 경우 MSVC 컴파일러에 대해 핫 다시 로드 사용하도록 설정합니다.
 if (POLICY CMP0141)
@@ -23,7 +23,6 @@ add_executable (Gilgamesh WIN32 "main.cpp")
 
 target_compile_definitions (Gilgamesh PRIVATE UNICODE _UNICODE NOMINMAX
 WIN32_LEAN_AND_MEAN)
-target_link_libraries (Gilgamesh PRIVATE d3d11 dxgi)
 
 # 셰이더를 등록합니다. Shaders/<이름>.hlsl 에서 엔트리 포인트를 찾아
 # <이름>.vs.cso / <이름>.ps.cso 등을 생성합니다.
@@ -31,8 +30,13 @@ set (HLSL_SHADER_TARGET Gilgamesh)
 
 register_shader (Primitive)
 
-# 하위 프로젝트를 포함합니다.
-# add_subdirectory ("Engine")
+# Engine Library
+add_subdirectory ("Engine")
 
-# target_link_libraries (Gilgamesh PRIVATE Engine)
+target_link_libraries (Gilgamesh
+	PRIVATE
+		GilgameshEngine
+		d3d11
+		dxgi
+)
 
