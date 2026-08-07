@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <d3d11.h>
+#include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <windows.h>
 
@@ -17,6 +18,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
 }
+
+struct SimpleVertex2D { 
+	float x, y;
+	float r, g, b; };
+
+const char* kShaderSrc = R"(
+struct VSOut { float4 pos : SV_POSITION; float3 col : COLOR; };
+
+VSOut VSMain(float2 pos : POSITION, float3 col : COLOR)
+{
+    VSOut o;
+    o.pos = float4(pos, 0.0f, 1.0f);
+    o.col = col;
+    return o;
+}
+
+float4 PSMain(VSOut i) : SV_TARGET
+{
+    return float4(i.col, 1.0f);
+}
+)";
 
 int main()
 {
@@ -84,6 +106,45 @@ int main()
 	context->RSSetViewports(1, &vp);
 	bool running = true;
 
+	ComPtr<ID3DBlob> vsBlob, psBlob, errBlob;
+
+	if (FAILED(D3DCompile(kShaderSrc, strlen(kShaderSrc), nullptr, nullptr, nullptr,
+		"VSMain", "vs_5_0", 0, 0, &vsBlob, &errBlob)))
+	{
+		if (errBlob) OutputDebugStringA((const char*)errBlob->GetBufferPointer());
+		return 1;
+	}
+	D3DCompile(kShaderSrc, strlen(kShaderSrc), nullptr, nullptr, nullptr,
+		"PSMain", "ps_5_0", 0, 0, &psBlob, nullptr);
+
+	ComPtr<ID3D11VertexShader> vs;
+	ComPtr<ID3D11PixelShader>  ps;
+	device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &vs);
+	device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &ps);
+
+	SimpleVertex2D verts[] = {
+	{  0.0f,  0.5f,  1, 0, 0 },
+	{  0.5f, -0.5f,  0, 1, 0 },
+	{ -0.5f, -0.5f,  0, 0, 1 },
+	};
+
+	D3D11_BUFFER_DESC bd = {};
+	bd.ByteWidth = sizeof(verts);
+	bd.Usage = D3D11_USAGE_IMMUTABLE;
+	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	D3D11_SUBRESOURCE_DATA initData = { verts };
+
+	ComPtr<ID3D11Buffer> vertexBuffer;
+	device->CreateBuffer(&bd, &initData, &vertexBuffer);
+
+	D3D11_INPUT_ELEMENT_DESC layout[] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+	};
+
+	ComPtr<ID3D11InputLayout> inputLayout;
+	device->CreateInputLayout(layout, 2, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &inputLayout);
+
 	// Render Loop
 	while (running)
 	{
@@ -98,6 +159,15 @@ int main()
 		const float clearColor[4] = { 0.1f, 0.12f, 0.16f, 1.0f };
 		context->OMSetRenderTargets(1, rtv.GetAddressOf(), nullptr);
 		context->ClearRenderTargetView(rtv.Get(), clearColor);
+
+		UINT stride = sizeof(SimpleVertex2D), offset = 0;
+		context->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &stride, &offset);
+		context->IASetInputLayout(inputLayout.Get());
+		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		context->VSSetShader(vs.Get(), nullptr, 0);
+		context->PSSetShader(ps.Get(), nullptr, 0);
+		context->Draw(3, 0);
+
 		swapChain->Present(1, 0);
 	}
 
