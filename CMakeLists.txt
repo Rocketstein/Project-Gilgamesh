@@ -20,4 +20,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 진입점 실행 파일을 정의합니다.
 add_executable (Gilgamesh "main.cpp")
 
+target_compile_definitions (Gilgamesh PRIVATE UNICODE _UNICODE NOMINMAX
+WIN32_LEAN_AND_MEAN)
+target_link_libraries (Gilgamesh PRIVATE d3d11 dxgi d3dcompiler)
+
 # target_link_libraries (Gilgamesh PRIVATE Engine)
