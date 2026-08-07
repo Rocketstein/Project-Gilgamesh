@@ -21,8 +21,8 @@ include (CompileHLSL)
 # 진입점 실행 파일을 정의합니다.
 add_executable (Gilgamesh WIN32 "main.cpp")
 
-target_compile_definitions (Gilgamesh PRIVATE UNICODE _UNICODE NOMINMAX
-WIN32_LEAN_AND_MEAN)
+# UNICODE / NOMINMAX / WIN32_LEAN_AND_MEAN 는 GilgameshEngine 이 PUBLIC 으로
+# 전파합니다. Windows.h 를 공개 헤더에서 포함하므로 한 곳에서만 정의합니다.
 
 # 셰이더를 등록합니다. Shaders/<이름>.hlsl 에서 엔트리 포인트를 찾아
 # <이름>.vs.cso / <이름>.ps.cso 등을 생성합니다.
