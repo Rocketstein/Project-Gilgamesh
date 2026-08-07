@@ -18,4 +18,7 @@ public:
 	HWND NativeHandle() const;
 	Extent2D ClientExtent() const;
 
+private:
+	bool quitRequested_ = false;
+	bool IsMinimized_   = false;
 };

@@ -41,3 +41,57 @@ bool Window::Create()
 
 	return true;
 }
+
+bool Window::PumpMessages()
+{
+	// Game Loop Usage
+	// while (window.PumpMessages())
+	// {
+	//	 // Update simulation.
+	//	 // Build render data.
+	//	 // Render and present.
+	// }
+
+	if (quitRequested_) return false;
+
+	MSG message{};
+
+	while (PeekMessageW(
+		&message,
+		nullptr,
+		0,
+		0,
+		PM_REMOVE))
+	{
+		if (message.message == WM_QUIT)
+		{
+			quitRequested_ = true;
+			return false;
+		}
+
+		TranslateMessage(&message);
+		DispatchMessageW(&message);
+	}
+
+	return true;
+}
+
+bool Window::IsMinimized() const
+{
+	return false;
+}
+
+bool Window::ConsumePendingResize()
+{
+	return false;
+}
+
+HWND Window::NativeHandle() const
+{
+
+}
+
+Extent2D Window::ClientExtent() const
+{
+	
+}
