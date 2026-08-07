@@ -5,21 +5,10 @@
 
 #include <d3d11.h>
 #include <wrl/client.h>
-#include <windows.h>
+
+#include "Engine/Platform/Windows/Window.h"
 
 using Microsoft::WRL::ComPtr;
-
-LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	switch (uMsg)
-	{
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0;
-	default:
-		return DefWindowProc(hwnd, uMsg, wParam, lParam);
-	}
-}
 
 struct SimpleVertex2D { 
 	float x, y;
@@ -58,28 +47,12 @@ static bool Failed(HRESULT hr, const wchar_t* what)
 
 int Launch()
 {
-	// Window Creation
-	const wchar_t* kClassName = L"GilgameshWindowClass";
-	HINSTANCE hInstance = GetModuleHandle(nullptr);
+	Window window;
 
-	WNDCLASSEX wc = {};
-	wc.cbSize		 = sizeof(WNDCLASSEX);
-	wc.style		 = CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc	 = WndProc;
-	wc.hInstance	 = hInstance;
-	wc.hCursor		 = LoadCursor(nullptr, IDC_ARROW);
-	wc.lpszClassName = kClassName;
-	RegisterClassEx(&wc);
+	if (!window.Create()) return 1;
 
-	RECT rc = { 0, 0, 1280 ,720 };
-	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
-
-	HWND hwnd = CreateWindowEx(0, kClassName, L"Project Gilgamesh", WS_OVERLAPPEDWINDOW,
-							   CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
-							   nullptr, nullptr, hInstance, nullptr);
-	if (hwnd == nullptr) return 1;
-
-	ShowWindow(hwnd, SW_SHOW);
+	const Extent2D extent = window.ClientExtent();
+	HWND hwnd = window.NativeHandle();
 
 	// Device and Swap Chain
 	ComPtr<ID3D11Device>		   device;
@@ -121,7 +94,6 @@ int Launch()
 	vp.Height	= 720.f;
 	vp.MaxDepth = 1.f;
 	context->RSSetViewports(1, &vp);
-	bool running = true;
 
 	const std::filesystem::path shaderDir = ExecutableDir() / L"Shaders";
 	const std::vector<char> vsBytes = LoadFile(shaderDir / L"Primitive.vs.cso");
@@ -167,16 +139,8 @@ int Launch()
 	if (Failed(hr, L"CreateInputLayout")) return 1;
 
 	// Render Loop
-	while (running)
+	while (window.PumpMessages())
 	{
-		MSG msg;
-		while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
-		{
-			if (msg.message == WM_QUIT) running = false;
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-
 		const float clearColor[4] = { 0.1f, 0.12f, 0.16f, 1.0f };
 		context->OMSetRenderTargets(1, rtv.GetAddressOf(), nullptr);
 		context->ClearRenderTargetView(rtv.Get(), clearColor);

@@ -32,5 +32,5 @@ private:
 	HWND hwnd_          = nullptr;
 	bool quitRequested_ = false;
 	bool isMinimized_   = false;
-	bool pendingResize_		= false;
+	bool pendingResize_	= false;
 };
