@@ -1,4 +1,4 @@
-add_library (GilgameshEngine
+add_library (GilgameshEngine STATIC
 	Platform/Windows/Window.cpp
 	Platform/Windows/Window.h
 )
@@ -22,6 +22,6 @@ target_compile_features(GilgameshEngine
 )
 
 target_link_libraries(GilgameshEngine
-	PUBLIC
+	PRIVATE
 		user32
 )

@@ -1,22 +1,82 @@
 #include "Window.h"
 
-namespace
+Window::~Window()
 {
-	LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+	if (hwnd_ != nullptr)
+		DestroyWindow(hwnd_);
+}
+
+LRESULT CALLBACK Window::WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	// Recover the instance handed to CreateWindowEx as its last argument.
+	if (uMsg == WM_NCCREATE)
 	{
-		switch (uMsg)
+		auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+		auto* self   = static_cast<Window*>(create->lpCreateParams);
+		self->hwnd_  = hwnd;
+		SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+	}
+
+	// Messages before WM_NCCREATE arrive with no instance attached yet.
+	//if (auto* self = reinterpret_cast<Window*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)))
+	//{
+	//	return self->HandleMessage(hwnd, uMsg, wParam, lParam);
+	//}
+
+	if (auto* self =
+		reinterpret_cast<Window*>(
+			GetWindowLongPtrW(hwnd, GWLP_USERDATA)))
+	{
+		const LRESULT result =
+			self->HandleMessage(hwnd, uMsg, wParam, lParam);
+
+		if (uMsg == WM_NCDESTROY)
 		{
-		case WM_DESTROY:
-			PostQuitMessage(0);
-			return 0;
-		default:
-			return DefWindowProc(hwnd, uMsg, wParam, lParam);
+			SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+			self->hwnd_ = nullptr;
 		}
+
+		return result;
+	}
+
+	return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (uMsg)
+	{
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return 0;
+	case WM_SIZE:
+		if (wParam == SIZE_MINIMIZED)
+		{
+			// Window is minimized.
+			isMinimized_ = true;
+		}
+		else if (wParam == SIZE_MAXIMIZED)
+		{
+			// Window is maximized.
+			isMinimized_ = false;
+			pendingResize_   = true;
+		}
+		else if (wParam == SIZE_RESTORED)
+		{
+			// Window is restored to normal size.
+			isMinimized_ = false;
+			pendingResize_   = true;
+		}
+		return 0;
+	default:
+		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
 }
 
 bool Window::Create()
 {
+	if (hwnd_ != nullptr) return false;
+
 	const wchar_t* kClassName = L"GilgameshWindowClass";
 	HINSTANCE hInstance = GetModuleHandle(nullptr);
 
@@ -27,14 +87,27 @@ bool Window::Create()
 	wc.hInstance = hInstance;
 	wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
 	wc.lpszClassName = kClassName;
-	RegisterClassEx(&wc);
+
+	const ATOM windowClass = RegisterClassExW(&wc);
+	if (windowClass == 0 &&
+		GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+	{
+		return false;
+	}
 
 	RECT rc = { 0, 0, 1280 ,720 };
-	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+	if (!AdjustWindowRect(
+		&rc,
+		WS_OVERLAPPEDWINDOW,
+		FALSE))
+	{
+		return false;
+	}
 
+	// WndProc picks up the trailing this on WM_NCCREATE.
 	HWND hwnd = CreateWindowEx(0, kClassName, L"Project Gilgamesh", WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
-		nullptr, nullptr, hInstance, nullptr);
+		nullptr, nullptr, hInstance, this);
 	if (hwnd == nullptr) return false;
 
 	ShowWindow(hwnd, SW_SHOW);
@@ -78,20 +151,29 @@ bool Window::PumpMessages()
 
 bool Window::IsMinimized() const
 {
-	return false;
+	return isMinimized_;
 }
 
 bool Window::ConsumePendingResize()
 {
-	return false;
+	// Consume the flag so a resize is reported to the caller exactly once.
+	const bool resized = pendingResize_;
+	pendingResize_ = false;
+	return resized;
 }
 
 HWND Window::NativeHandle() const
 {
-
+	return hwnd_;
 }
 
 Extent2D Window::ClientExtent() const
 {
-	
+	RECT rc{};
+	if (hwnd_ == nullptr || !GetClientRect(hwnd_, &rc)) return {};
+
+	return Extent2D{
+		static_cast<std::uint32_t>(rc.right - rc.left),
+		static_cast<std::uint32_t>(rc.bottom - rc.top)
+	};
 }
