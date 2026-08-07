@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -49,8 +47,6 @@ static std::vector<char> LoadFile(const std::filesystem::path& path)
 
 int Launch()
 {
-	std::cout << "Hello Main." << std::endl;
-
 	// Window Creation
 	const wchar_t* kClassName = L"GilgameshWindowClass";
 	HINSTANCE hInstance = GetModuleHandle(nullptr);
@@ -70,6 +66,7 @@ int Launch()
 	HWND hwnd = CreateWindowEx(0, kClassName, L"Project Gilgamesh", WS_OVERLAPPEDWINDOW,
 							   CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
 							   nullptr, nullptr, hInstance, nullptr);
+	if (hwnd == nullptr) return 1;
 
 	ShowWindow(hwnd, SW_SHOW);
 
@@ -99,12 +96,13 @@ int Launch()
 		nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
 		nullptr, 0, D3D11_SDK_VERSION,
 		&scd, &swapChain, &device, nullptr, &context);
-
 	if (FAILED(hr)) return 1;
 
 	ComPtr<ID3D11Texture2D> backBuffer;
 	swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+	if (backBuffer == nullptr) return 1;
 	device->CreateRenderTargetView(backBuffer.Get(), nullptr, &rtv);
+	if (rtv == nullptr) return 1;
 
 	D3D11_VIEWPORT vp = {};
 	vp.Width	= 1280.f;
@@ -126,7 +124,9 @@ int Launch()
 	ComPtr<ID3D11VertexShader> vs;
 	ComPtr<ID3D11PixelShader>  ps;
 	device->CreateVertexShader(vsBytes.data(), vsBytes.size(), nullptr, &vs);
+	if (vs == nullptr) return 1;
 	device->CreatePixelShader(psBytes.data(), psBytes.size(), nullptr, &ps);
+	if (ps == nullptr) return 1;
 
 	SimpleVertex2D verts[] = {
 	{  0.0f,  0.5f,  1, 0, 0 },
@@ -142,6 +142,7 @@ int Launch()
 
 	ComPtr<ID3D11Buffer> vertexBuffer;
 	device->CreateBuffer(&bd, &initData, &vertexBuffer);
+	if (vertexBuffer == nullptr) return 1;
 
 	D3D11_INPUT_ELEMENT_DESC layout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -150,6 +151,7 @@ int Launch()
 
 	ComPtr<ID3D11InputLayout> inputLayout;
 	device->CreateInputLayout(layout, 2, vsBytes.data(), vsBytes.size(), &inputLayout);
+	if (inputLayout == nullptr) return 1;
 
 	// Render Loop
 	while (running)
