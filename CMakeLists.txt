@@ -25,9 +25,11 @@ target_compile_definitions (Gilgamesh PRIVATE UNICODE _UNICODE NOMINMAX
 WIN32_LEAN_AND_MEAN)
 target_link_libraries (Gilgamesh PRIVATE d3d11 dxgi)
 
-# hlsli will require an extension
-add_hlsl_shader (Gilgamesh "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Primitive.hlsl" VSMain vs_5_0 Primitive.vs.cso)
-add_hlsl_shader (Gilgamesh "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Primitive.hlsl" PSMain ps_5_0 Primitive.ps.cso)
+# 셰이더를 등록합니다. Shaders/<이름>.hlsl 에서 엔트리 포인트를 찾아
+# <이름>.vs.cso / <이름>.ps.cso 등을 생성합니다.
+set (HLSL_SHADER_TARGET Gilgamesh)
+
+register_shader (Primitive)
 
 # 하위 프로젝트를 포함합니다.
 # add_subdirectory ("Engine")
