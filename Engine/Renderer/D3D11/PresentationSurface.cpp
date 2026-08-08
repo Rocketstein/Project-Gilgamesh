@@ -151,7 +151,7 @@ HRESULT D3D11PresentationSurface::Resize(
 
 void D3D11PresentationSurface::BeginFrame(
 	ID3D11DeviceContext* context,
-	const float clearColor[4]) const
+	const Color4& clearColor) const
 {
 	ID3D11RenderTargetView* renderTargets[] = {
 		backBufferView_.Get()
@@ -166,7 +166,7 @@ void D3D11PresentationSurface::BeginFrame(
 
 	context->ClearRenderTargetView(
 		backBufferView_.Get(),
-		clearColor);
+		clearColor.Data());
 }
 
 HRESULT D3D11PresentationSurface::Present()

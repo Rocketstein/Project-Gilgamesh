@@ -3,6 +3,7 @@
 #include <dxgi1_2.h>
 #include <wrl/client.h>
 
+#include "Engine/Core/Color.h"
 #include "Engine/Core/Extent2D.h"
 
 class D3D11PresentationSurface
@@ -32,7 +33,7 @@ public:
 	// Update clearColor to dedicated color struct
 	void BeginFrame(
 		ID3D11DeviceContext* context,
-		const float clearColor[4]) const;
+		const Color4& clearColor) const;
 
 	[[nodiscard]]
 	HRESULT Present();
