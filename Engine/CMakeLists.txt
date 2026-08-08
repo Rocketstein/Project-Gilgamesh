@@ -1,7 +1,31 @@
-add_library (GilgameshEngine STATIC
-	Platform/Windows/Window.cpp
-	Platform/Windows/Window.h
- "Render/D3D11/D3D11Device.h" "Render/D3D11/D3D11Device.cpp" "Render/Renderer/Renderer.h" "Render/Renderer/Renderer.cpp" "Render/D3D11/PresentationSurface.h" "Render/D3D11/PresentationSurface.cpp" "Core/Extent2D.h" "Core/Color.h" "Render/VertexTypes/VertexTypes.h")
+add_library (GilgameshEngine STATIC)
+
+target_sources (GilgameshEngine
+	PRIVATE
+		Core/Color.h
+		Core/Extent2D.h
+
+		Platform/Windows/Window.cpp
+		Platform/Windows/Window.h
+
+		Render/D3D11/D3D11Device.cpp
+		Render/D3D11/D3D11Device.h
+		Render/D3D11/PresentationSurface.cpp
+		Render/D3D11/PresentationSurface.h
+
+		Render/Renderer/Renderer.cpp
+		Render/Renderer/Renderer.h
+
+		Render/Shader/ShaderManager.cpp
+		Render/Shader/ShaderManager.h
+
+		Render/VertexTypes/VertexTypes.h
+
+		Runtime/Application.h
+)
+
+get_target_property (GILGAMESH_ENGINE_SOURCES GilgameshEngine SOURCES)
+source_group (TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${GILGAMESH_ENGINE_SOURCES})
 
 target_include_directories(GilgameshEngine
 	PUBLIC
