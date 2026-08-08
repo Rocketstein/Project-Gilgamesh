@@ -17,12 +17,6 @@ LRESULT CALLBACK Window::WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 		SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
 	}
 
-	// Messages before WM_NCCREATE arrive with no instance attached yet.
-	//if (auto* self = reinterpret_cast<Window*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)))
-	//{
-	//	return self->HandleMessage(hwnd, uMsg, wParam, lParam);
-	//}
-
 	if (auto* self =
 		reinterpret_cast<Window*>(
 			GetWindowLongPtrW(hwnd, GWLP_USERDATA)))
@@ -58,14 +52,14 @@ LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		else if (wParam == SIZE_MAXIMIZED)
 		{
 			// Window is maximized.
-			isMinimized_ = false;
-			pendingResize_   = true;
+			isMinimized_   = false;
+			pendingResize_ = true;
 		}
 		else if (wParam == SIZE_RESTORED)
 		{
 			// Window is restored to normal size.
-			isMinimized_ = false;
-			pendingResize_   = true;
+			isMinimized_   = false;
+			pendingResize_ = true;
 		}
 		return 0;
 	default:
