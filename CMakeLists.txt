@@ -1,7 +1,7 @@
 ﻿# CMakeList.txt : 최상위 CMake 프로젝트 파일, 전역 구성을 수행하고
 # 여기에 하위 프로젝트를 포함합니다.
 #
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.12)
 
 # 지원되는 경우 MSVC 컴파일러에 대해 핫 다시 로드 사용하도록 설정합니다.
 if (POLICY CMP0141)
@@ -21,16 +21,20 @@ include (CompileHLSL)
 # 진입점 실행 파일을 정의합니다.
 add_executable (Gilgamesh WIN32 "main.cpp")
 
-target_compile_definitions (Gilgamesh PRIVATE UNICODE _UNICODE NOMINMAX
-WIN32_LEAN_AND_MEAN)
-target_link_libraries (Gilgamesh PRIVATE d3d11 dxgi)
+# UNICODE / NOMINMAX / WIN32_LEAN_AND_MEAN 는 GilgameshEngine 이 PUBLIC 으로
+# 전파합니다. Windows.h 를 공개 헤더에서 포함하므로 한 곳에서만 정의합니다.
 
-# hlsli will require an extension
-add_hlsl_shader (Gilgamesh "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Primitive.hlsl" VSMain vs_5_0 Primitive.vs.cso)
-add_hlsl_shader (Gilgamesh "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Primitive.hlsl" PSMain ps_5_0 Primitive.ps.cso)
+# 셰이더를 등록합니다. Shaders/<이름>.hlsl 에서 엔트리 포인트를 찾아
+# <이름>.vs.cso / <이름>.ps.cso 등을 생성합니다.
+set (HLSL_SHADER_TARGET Gilgamesh)
 
-# 하위 프로젝트를 포함합니다.
-# add_subdirectory ("Engine")
+register_shader (Primitive)
 
-# target_link_libraries (Gilgamesh PRIVATE Engine)
+# Engine Library
+add_subdirectory ("Engine")
+
+target_link_libraries (Gilgamesh
+	PRIVATE
+		GilgameshEngine
+)
 
