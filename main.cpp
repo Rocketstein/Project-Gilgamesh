@@ -49,7 +49,7 @@ static bool Failed(HRESULT hr, const wchar_t* what)
 // Incremental Refactor TODO: Move this to Application class
 int Launch()
 {
-	// Must create a window before initializing the renderer because of the stack teardown order of global objects.
+	// Must create a window before initializing the renderer because of the stack teardown order of objects.
 	Window window;
 	if (!window.Create()) return 1;
 
@@ -134,8 +134,20 @@ int Launch()
 		const RenderResult result =
 			renderer.Render(Color4{ 0.1f, 0.12f, 0.16f });
 
-		if (result != RenderResult::Ok)
+		switch (result)
+		{
+		case (RenderResult::Ok): {
+			break;
+		}
+		case (RenderResult::Occluded): {
+			while (window.PumpMessages() && renderer.IsOccluded())
+				Sleep(16);
+			break;
+		}
+		case (RenderResult::DeviceLost):
+		case (RenderResult::Failed):
 			return 1;
+		}
 	}
 
 	return 0;

@@ -181,6 +181,13 @@ HRESULT D3D11PresentationSurface::Present()
 		0);
 }
 
+HRESULT D3D11PresentationSurface::PresentTest() const
+{
+	if (!IsInitialized()) return DXGI_ERROR_INVALID_CALL;
+
+	return swapChain_->Present(0, DXGI_PRESENT_TEST);
+}
+
 bool D3D11PresentationSurface::IsInitialized() const noexcept
 {
 	return swapChain_ != nullptr && backBufferView_ != nullptr;

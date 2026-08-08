@@ -25,6 +25,8 @@ bool Renderer::Initialize(RendererDesc desc)
 
 	if (FAILED(result)) return false;
 
+    rendererDesc_ = desc;
+
 	return true;
 }
 
@@ -52,6 +54,9 @@ RenderResult Renderer::Render(const Color4& clearColor)
     // Graphics pipeline draw calls will eventually go here.
 
     const HRESULT result = surface_.Present();
+
+	if (result == DXGI_STATUS_OCCLUDED)
+		return RenderResult::Occluded;
 
     if (SUCCEEDED(result))
         return RenderResult::Ok;

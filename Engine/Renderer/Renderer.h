@@ -13,6 +13,7 @@ struct RendererDesc
 enum class RenderResult
 {
 	Ok,
+	Occluded,
 	DeviceLost,
 	Failed
 };
@@ -23,6 +24,9 @@ public:
 	bool Initialize(RendererDesc desc);
 	bool Resize(Extent2D extent);
 	RenderResult Render(const Color4& clearColor);
+
+	[[nodiscard]]
+	bool IsOccluded() const { return surface_.PresentTest() == DXGI_STATUS_OCCLUDED; }
 
 	[[nodiscard]]
 	ID3D11Device* GetDevice() const { return device_.GetDevice(); }

@@ -39,6 +39,9 @@ public:
 	HRESULT Present();
 
 	[[nodiscard]]
+	HRESULT PresentTest() const;
+
+	[[nodiscard]]
 	bool IsInitialized() const noexcept;
 
 	[[nodiscard]]
