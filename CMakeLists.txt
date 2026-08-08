@@ -36,7 +36,5 @@ add_subdirectory ("Engine")
 target_link_libraries (Gilgamesh
 	PRIVATE
 		GilgameshEngine
-		d3d11
-		dxgi
 )
 

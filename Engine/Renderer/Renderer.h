@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Engine/Core/Extent2D.h"
 #include "D3D11/D3D11Device.h"
 #include "D3D11/PresentationSurface.h"
 
@@ -24,6 +23,12 @@ public:
 	bool Initialize(RendererDesc desc);
 	bool Resize(Extent2D extent);
 	RenderResult Render(const Color4& clearColor);
+
+	[[nodiscard]]
+	ID3D11Device* GetDevice() const { return device_.GetDevice(); }
+
+	[[nodiscard]]
+	ID3D11DeviceContext* GetDeviceContext() const { return device_.GetDeviceContext(); }
 
 private:
 	RendererDesc rendererDesc_;

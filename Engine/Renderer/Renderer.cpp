@@ -1,5 +1,4 @@
 #include "Renderer.h"
-#include "D3D11/D3D11Device.h"
 
 bool Renderer::Initialize(RendererDesc desc)
 {
