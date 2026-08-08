@@ -1,7 +1,7 @@
 add_library (GilgameshEngine STATIC
 	Platform/Windows/Window.cpp
 	Platform/Windows/Window.h
- "Renderer/D3D11/D3D11Device.h" "Renderer/D3D11/D3D11Device.cpp" "Renderer/Renderer.h" "Renderer/Renderer.cpp" "Renderer/D3D11/PresentationSurface.h" "Renderer/D3D11/PresentationSurface.cpp")
+ "Renderer/D3D11/D3D11Device.h" "Renderer/D3D11/D3D11Device.cpp" "Renderer/Renderer.h" "Renderer/Renderer.cpp" "Renderer/D3D11/PresentationSurface.h" "Renderer/D3D11/PresentationSurface.cpp" "Core/Extent2D.h" "Core/Color.h")
 
 target_include_directories(GilgameshEngine
 	PUBLIC
