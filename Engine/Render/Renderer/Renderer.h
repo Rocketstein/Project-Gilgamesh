@@ -1,7 +1,7 @@
 #pragma once
 
-#include "D3D11/D3D11Device.h"
-#include "D3D11/PresentationSurface.h"
+#include "Engine/Render/D3D11/D3D11Device.h"
+#include "Engine/Render/D3D11/PresentationSurface.h"
 
 struct RendererDesc
 {

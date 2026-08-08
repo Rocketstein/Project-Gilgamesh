@@ -7,14 +7,10 @@
 #include <wrl/client.h>
 
 #include "Engine/Platform/Windows/Window.h"
-#include "Engine/Renderer/Renderer.h"
+#include "Engine/Render/Renderer/Renderer.h"
+#include "Engine/Render/VertexTypes/VertexTypes.h"
 
 using Microsoft::WRL::ComPtr;
-
-struct SimpleVertex2D { 
-	float x, y;
-	float r, g, b; 
-};
 
 static std::filesystem::path ExecutableDir()
 {
