@@ -54,6 +54,7 @@ int Launch()
 	rendererDesc.outputWindow = window.GetNativeHandle();
 	rendererDesc.extent = window.GetClientExtent();
 	rendererDesc.vsync = true;
+	rendererDesc.shaderDirectory = ExecutableDir() / L"Shaders";
 
 	if (!renderer.Initialize(rendererDesc))
 	{

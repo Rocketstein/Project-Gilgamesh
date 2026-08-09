@@ -30,7 +30,6 @@ public:
 		ID3D11DeviceContext* context,
 		Extent2D extent);
 
-	// Update clearColor to dedicated color struct
 	void BeginFrame(
 		ID3D11DeviceContext* context,
 		const Color4& clearColor) const;

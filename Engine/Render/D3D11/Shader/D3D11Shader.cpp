@@ -35,7 +35,6 @@ HRESULT PixelShader::Initialize(ID3D11Device* device, std::vector<std::byte> byt
 	if (FAILED(result)) return result;
 
 	shader_ = std::move(shader);
-	bytecode_ = std::move(bytecode);
 
 	return S_OK;
 }

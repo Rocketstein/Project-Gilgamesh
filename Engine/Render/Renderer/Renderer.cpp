@@ -14,16 +14,21 @@ bool Renderer::Initialize(RendererDesc desc)
 #else
 	constexpr bool requestDebugLayer = false;
 #endif
+
+    // Initialize Device
 	HRESULT result = device_.Initialize(requestDebugLayer);
 	if (FAILED(result)) return false;
 
+    // Initialize Swap Chain
 	result = surface_.Initialize(
 		device_.GetDevice(),
 		desc.outputWindow,
 		desc.extent,
 		desc.vsync);
-
 	if (FAILED(result)) return false;
+
+    // Initialize Shaders
+    if (!shaderManager_.Initialize(device_.GetDevice(), desc.shaderDirectory)) return false;
 
     rendererDesc_ = desc;
 
