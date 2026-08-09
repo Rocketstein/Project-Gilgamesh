@@ -10,17 +10,16 @@ target_sources (GilgameshEngine
 
 		Render/D3D11/D3D11Device.cpp
 		Render/D3D11/D3D11Device.h
-		Render/D3D11/D3D11Shader.cpp
-		Render/D3D11/D3D11Shader.h
 		Render/D3D11/PresentationSurface.cpp
 		Render/D3D11/PresentationSurface.h
-		Render/D3D11/ShaderManager.cpp
-		Render/D3D11/ShaderManager.h
+		"Render/D3D11/Shader/D3D11Shader.cpp"
+		"Render/D3D11/Shader/D3D11Shader.h"
+		"Render/D3D11/Shader/D3D11ShaderManager.cpp"
+		"Render/D3D11/Shader/D3D11ShaderManager.h"
+		"Render/D3D11/Shader/ShaderTypes.h"
 
 		Render/Renderer/Renderer.cpp
 		Render/Renderer/Renderer.h
-
-		Render/Shader/ShaderTypes.h
 
 		Render/VertexTypes/VertexTypes.h
 
