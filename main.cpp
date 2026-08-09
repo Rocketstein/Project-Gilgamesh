@@ -19,19 +19,6 @@ static std::filesystem::path ExecutableDir()
 	return std::filesystem::path(buf).parent_path();
 }
 
-static std::vector<char> LoadFile(const std::filesystem::path& path)
-{
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file) return {};
-
-	const std::streamsize size = file.tellg();
-	file.seekg(0, std::ios::beg);
-
-	std::vector<char> data(static_cast<size_t>(size));
-	file.read(data.data(), size);
-	return data;
-}
-
 static bool Failed(HRESULT hr, const wchar_t* what)
 {
 	if (SUCCEEDED(hr)) return false;
@@ -67,26 +54,21 @@ int Launch()
 		return 1;
 	}
 
+	// Shader Manager test. Move this to graphics pipeline later on.
+	ShaderManager& shaders = renderer.GetShaderManager();
 
-	// Incremental Refactor TODO: Move this to a Shader Manager class
-	const std::filesystem::path shaderDir = ExecutableDir() / L"Shaders";
-	const std::vector<char> vsBytes = LoadFile(shaderDir / L"Primitive.vs.cso");
-	const std::vector<char> psBytes = LoadFile(shaderDir / L"Primitive.ps.cso");
+	const auto vsLoad = shaders.LoadVertex(L"Primitive");
+	if (!vsLoad) return 1;
 
-	if (vsBytes.empty() || psBytes.empty())
-	{
-		MessageBox(nullptr, L"Failed to load compiled shaders.", L"Gilgamesh", MB_ICONERROR);
-		return 1;
-	}
+	const auto psLoad = shaders.LoadPixel(L"Primitive");
+	if (!psLoad) return 1;
 
-	ID3D11Device* device = renderer.GetDevice();
-	ComPtr<ID3D11VertexShader> vs;
-	ComPtr<ID3D11PixelShader>  ps;
-	HRESULT hr = device->CreateVertexShader(vsBytes.data(), vsBytes.size(), nullptr, &vs);
-	if (Failed(hr, L"CreateVertexShader")) return 1;
+	const VertexShaderHandle vsHandle = vsLoad.resource;
+	const PixelShaderHandle  psHandle = psLoad.resource;
 
-	hr = device->CreatePixelShader(psBytes.data(), psBytes.size(), nullptr, &ps);
-	if (Failed(hr, L"CreatePixelShader")) return 1;
+	ID3D11VertexShader* vs = shaders.Get(vsHandle);
+	ID3D11PixelShader*  ps = shaders.Get(psHandle);
+	const std::span<const std::byte> vsBytecode = shaders.GetBytecode(vsHandle);
 
 	SimpleVertex2D verts[] = {
 	{  0.0f,  0.5f,  1, 0, 0 },
@@ -101,7 +83,7 @@ int Launch()
 	D3D11_SUBRESOURCE_DATA initData = { verts };
 
 	ComPtr<ID3D11Buffer> vertexBuffer;
-	hr = device->CreateBuffer(&bd, &initData, &vertexBuffer);
+	HRESULT hr = renderer.GetDevice()->CreateBuffer(&bd, &initData, &vertexBuffer);
 	if (Failed(hr, L"CreateBuffer")) return 1;
 
 	D3D11_INPUT_ELEMENT_DESC layout[] = {
@@ -110,7 +92,7 @@ int Launch()
 	};
 
 	ComPtr<ID3D11InputLayout> inputLayout;
-	hr = device->CreateInputLayout(layout, 2, vsBytes.data(), vsBytes.size(), &inputLayout);
+	hr = renderer.GetDevice()->CreateInputLayout(layout, 2, vsBytecode.data(), vsBytecode.size(), &inputLayout);
 	if (Failed(hr, L"CreateInputLayout")) return 1;
 
 	// Render Loop
