@@ -65,10 +65,6 @@ public:
     std::span<const std::byte> GetBytecode(
         VertexShaderHandle handle) const noexcept;
 
-    [[nodiscard]]
-    std::span<const std::byte> GetBytecode(
-        PixelShaderHandle handle) const noexcept;
-
 private:
     template<typename Resource, ShaderStage Stage>
     struct ShaderStore

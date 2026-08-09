@@ -47,13 +47,6 @@ public:
 	[[nodiscard]]
 	ID3D11PixelShader* GetNativeHandle() const { return shader_.Get(); }
 
-	[[nodiscard]]
-	std::span<const std::byte> GetBytecode() const noexcept
-	{
-		return bytecode_;
-	}
-
 private:
 	Microsoft::WRL::ComPtr<ID3D11PixelShader> shader_;
-	std::vector<std::byte> bytecode_;
 };

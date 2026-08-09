@@ -326,18 +326,3 @@ ShaderManager::GetBytecode(
         .resources[handle.index_]
         .GetBytecode();
 }
-
-std::span<const std::byte>
-ShaderManager::GetBytecode(
-    PixelShaderHandle handle) const noexcept
-{
-    if (!handle.IsValid() ||
-        handle.index_ >= pixelShaders_.resources.size())
-    {
-        return {};
-    }
-
-    return pixelShaders_
-        .resources[handle.index_]
-        .GetBytecode();
-}
