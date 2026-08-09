@@ -60,7 +60,8 @@ std::filesystem::path ShaderManager::NormalizeLogicalName(
     const std::filesystem::path& logicalName)
 {
     if (logicalName.empty() ||
-        logicalName.is_absolute())
+        logicalName.is_absolute() ||
+        logicalName.has_root_name())
     {
         return {};
     }
@@ -193,7 +194,7 @@ ShaderManager::LoadInternal(
 
     const auto normalized = NormalizeLogicalName(logicalName);
 
-    if (!normalized.empty())
+    if (normalized.empty())
     {
         return { .error = ShaderLoadError::InvalidName };
     }
