@@ -97,7 +97,7 @@ public:
 	HRESULT Initialize(ID3D11Device* device, std::vector<std::byte> bytecode);
 
 	[[nodiscard]]
-	ID3D11PixelShader* GetNativeHandle() { return shader_.Get(); }
+	ID3D11PixelShader* GetNativeHandle() const { return shader_.Get(); }
 
 	[[nodiscard]]
 	std::span<const std::byte> GetBytecode() const noexcept
