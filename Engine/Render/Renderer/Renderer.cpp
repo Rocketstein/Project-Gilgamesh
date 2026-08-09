@@ -44,24 +44,30 @@ bool Renderer::Resize(Extent2D extent)
 	return true;
 }
 
-RenderResult Renderer::Render(const Color4& clearColor)
+bool Renderer::BeginFrame(const Color4& clearColor)
 {
     if (!device_.IsInitialized() ||
         !surface_.IsInitialized())
     {
-        return RenderResult::Failed;
+        return false;
     }
 
     surface_.BeginFrame(
         device_.GetDeviceContext(),
-        clearColor);
+        clearColor
+    );
+
+    return true;
+}
+
+RenderResult Renderer::EndFrame()
+{
+    const HRESULT result = surface_.Present();
 
     // Graphics pipeline draw calls will eventually go here.
 
-    const HRESULT result = surface_.Present();
-
-	if (result == DXGI_STATUS_OCCLUDED)
-		return RenderResult::Occluded;
+    if (result == DXGI_STATUS_OCCLUDED)
+        return RenderResult::Occluded;
 
     if (SUCCEEDED(result))
         return RenderResult::Ok;

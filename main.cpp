@@ -110,8 +110,31 @@ int Launch()
 				return 1;
 		}
 
-		const RenderResult result =
-			renderer.Render(Color4{ 0.1f, 0.12f, 0.16f });
+		renderer.BeginFrame(Color4{ 0.1f, 0.12f, 0.16f });
+
+		ID3D11DeviceContext* context =
+			renderer.GetDeviceContext();
+
+		const UINT stride = sizeof(SimpleVertex2D);
+		const UINT offset = 0;
+
+		context->IASetInputLayout(inputLayout.Get());
+		context->IASetPrimitiveTopology(
+			D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		context->IASetVertexBuffers(
+			0,
+			1,
+			vertexBuffer.GetAddressOf(),
+			&stride,
+			&offset);
+
+		context->VSSetShader(vs, nullptr, 0);
+		context->PSSetShader(ps, nullptr, 0);
+
+		context->Draw(3, 0);
+
+		const RenderResult result = renderer.EndFrame();
 
 		switch (result)
 		{

@@ -12,6 +12,9 @@ target_sources (GilgameshEngine
 		Render/D3D11/D3D11Device.h
 		Render/D3D11/PresentationSurface.cpp
 		Render/D3D11/PresentationSurface.h
+
+		"Render/Pipeline/GraphicsPipeline.h" 
+		"Render/Pipeline/GraphicsPipeline.cpp"
 		"Render/D3D11/Shader/D3D11Shader.cpp"
 		"Render/D3D11/Shader/D3D11Shader.h"
 		"Render/D3D11/Shader/D3D11ShaderManager.cpp"
@@ -23,8 +26,7 @@ target_sources (GilgameshEngine
 
 		Render/VertexTypes/VertexTypes.h
 
-		Runtime/Application.h
-)
+		Runtime/Application.h "Render/Pipeline/PipelineDesc.h")
 
 get_target_property (GILGAMESH_ENGINE_SOURCES GilgameshEngine SOURCES)
 source_group (TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${GILGAMESH_ENGINE_SOURCES})

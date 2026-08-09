@@ -26,7 +26,10 @@ class Renderer
 public:
 	bool Initialize(RendererDesc desc);
 	bool Resize(Extent2D extent);
-	RenderResult Render(const Color4& clearColor);
+
+	bool BeginFrame(const Color4& clearColor);
+	// Render();
+	RenderResult EndFrame();
 
 	[[nodiscard]]
 	bool IsOccluded() const { return surface_.PresentTest() == DXGI_STATUS_OCCLUDED; }
