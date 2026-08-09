@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <limits>
 
 enum class ShaderStage : std::uint8_t
 {
