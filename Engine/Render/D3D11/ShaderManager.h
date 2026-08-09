@@ -7,6 +7,16 @@
 #include "Engine/Render/D3D11/D3D11Shader.h"
 #include "Engine/Render/Shader/ShaderTypes.h"
 
+// Responsibility Example
+// resolves "Primitive"
+// reads Primitive.vs.cso
+// caches by logical name
+
+// Shader classes
+// consumes bytecode
+// creates ID3D11VertexShader
+// owns the resulting resource
+
 enum class ShaderLoadError
 {
     None,

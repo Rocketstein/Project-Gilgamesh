@@ -10,19 +10,22 @@ target_sources (GilgameshEngine
 
 		Render/D3D11/D3D11Device.cpp
 		Render/D3D11/D3D11Device.h
+		Render/D3D11/D3D11Shader.cpp
+		Render/D3D11/D3D11Shader.h
 		Render/D3D11/PresentationSurface.cpp
 		Render/D3D11/PresentationSurface.h
+		Render/D3D11/ShaderManager.cpp
+		Render/D3D11/ShaderManager.h
 
 		Render/Renderer/Renderer.cpp
 		Render/Renderer/Renderer.h
 
-		Render/Shader/ShaderManager.cpp
-		Render/Shader/ShaderManager.h
+		Render/Shader/ShaderTypes.h
 
 		Render/VertexTypes/VertexTypes.h
 
 		Runtime/Application.h
- "Render/D3D11/D3D11Shader.h" "Render/D3D11/D3D11Shader.cpp"  "Render/Shader/ShaderTypes.h")
+)
 
 get_target_property (GILGAMESH_ENGINE_SOURCES GilgameshEngine SOURCES)
 source_group (TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${GILGAMESH_ENGINE_SOURCES})
