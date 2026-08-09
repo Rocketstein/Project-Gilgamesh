@@ -324,7 +324,7 @@ ShaderManager::GetBytecode(
 
     return vertexShaders_
         .resources[handle.index_]
-        .GetByteCode();
+        .GetBytecode();
 }
 
 std::span<const std::byte>

@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "Engine/Render/D3D11/D3D11Shader.h"
+#include "Engine/Render/Shader/ShaderTypes.h"
 
 // Responsibility Example
 // resolves "Primitive"
