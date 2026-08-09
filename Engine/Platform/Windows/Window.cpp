@@ -156,12 +156,12 @@ bool Window::ConsumePendingResize()
 	return resized;
 }
 
-HWND Window::NativeHandle() const
+HWND Window::GetNativeHandle() const
 {
 	return hwnd_;
 }
 
-Extent2D Window::ClientExtent() const
+Extent2D Window::GetClientExtent() const
 {
 	RECT rc{};
 	if (hwnd_ == nullptr || !GetClientRect(hwnd_, &rc)) return {};

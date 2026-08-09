@@ -51,8 +51,8 @@ int Launch()
 
 	Renderer renderer;
 	RendererDesc rendererDesc{};
-	rendererDesc.outputWindow = window.NativeHandle();
-	rendererDesc.extent = window.ClientExtent();
+	rendererDesc.outputWindow = window.GetNativeHandle();
+	rendererDesc.extent = window.GetClientExtent();
 	rendererDesc.vsync = true;
 
 	if (!renderer.Initialize(rendererDesc))
@@ -123,7 +123,7 @@ int Launch()
 		}
 		if (window.ConsumePendingResize())
 		{
-			if (!renderer.Resize(window.ClientExtent()))
+			if (!renderer.Resize(window.GetClientExtent()))
 				return 1;
 		}
 

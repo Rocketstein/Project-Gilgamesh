@@ -17,8 +17,8 @@ public:
 	bool PumpMessages();
 	bool IsMinimized() const;
 	bool ConsumePendingResize();
-	HWND NativeHandle() const;
-	Extent2D ClientExtent() const;
+	HWND GetNativeHandle() const;
+	Extent2D GetClientExtent() const;
 
 private:
 	static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
