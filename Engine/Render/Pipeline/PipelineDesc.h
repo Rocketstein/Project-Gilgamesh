@@ -1,5 +1,6 @@
 #pragma once
 #include <d3d11.h>
+#include <optional>
 #include <span>
 
 #include "Engine/Render/D3D11/Shader/ShaderTypes.h"
@@ -7,7 +8,7 @@
 struct GraphicsPipelineDesc
 {
     VertexShaderHandle vertexShader;
-    PixelShaderHandle pixelShader;
+    std::optional<PixelShaderHandle> pixelShader;
 
     std::span<const D3D11_INPUT_ELEMENT_DESC>
         inputElements;

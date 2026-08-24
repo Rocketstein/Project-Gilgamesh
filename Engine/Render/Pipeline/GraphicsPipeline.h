@@ -8,20 +8,30 @@
 class GraphicsPipeline final
 {
 public:
-	HRESULT Initialize(
-		ID3D11Device* device,
-		const ShaderManager& shaders,
-		const GraphicsPipelineDesc& desc);
+    GraphicsPipeline() = default;
+    ~GraphicsPipeline() = default;
 
-	void Bind(
-		ID3D11DeviceContext* context,
-		const ShaderManager& shaders) const;
+    GraphicsPipeline(const GraphicsPipeline&) = delete;
+    GraphicsPipeline& operator=(const GraphicsPipeline&) = delete;
+
+    GraphicsPipeline(GraphicsPipeline&&) noexcept = default;
+    GraphicsPipeline& operator=(GraphicsPipeline&&) noexcept = default;
+
+    HRESULT Initialize(
+        ID3D11Device* device,
+        const ShaderManager& shaders,
+        const GraphicsPipelineDesc& desc);
+
+    void Bind(ID3D11DeviceContext* context) const noexcept;
+
+    [[nodiscard]]
+    bool IsInitialized() const noexcept;
 
 private:
-	VertexShaderHandle vertexShader_;
-	PixelShaderHandle pixelShader_;
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
+    Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout_;
 
-	Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout_;
-
-	D3D11_PRIMITIVE_TOPOLOGY topology_ = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    D3D11_PRIMITIVE_TOPOLOGY topology_ =
+        D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 };
