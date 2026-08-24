@@ -41,6 +41,8 @@ bool Renderer::Resize(Extent2D extent)
 	if (extent.width == 0 || extent.height == 0) return true;
 	HRESULT result = surface_.Resize(device_.GetDevice(), device_.GetDeviceContext(), extent);
 	if (FAILED(result)) return false;
+
+    rendererDesc_.extent = extent;
 	return true;
 }
 
