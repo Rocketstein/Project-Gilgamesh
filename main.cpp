@@ -7,6 +7,7 @@
 #include <wrl/client.h>
 
 #include "Engine/Platform/Windows/Window.h"
+#include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/VertexTypes/VertexTypes.h"
 
@@ -66,9 +67,47 @@ int Launch()
 	const VertexShaderHandle vsHandle = vsLoad.resource;
 	const PixelShaderHandle  psHandle = psLoad.resource;
 
-	ID3D11VertexShader* vs = shaders.Get(vsHandle);
-	ID3D11PixelShader*  ps = shaders.Get(psHandle);
-	const std::span<const std::byte> vsBytecode = shaders.GetBytecode(vsHandle);
+	const D3D11_INPUT_ELEMENT_DESC inputElements[] =
+	{
+		{
+			"POSITION",
+			0,
+			DXGI_FORMAT_R32G32_FLOAT,
+			0,
+			0,
+			D3D11_INPUT_PER_VERTEX_DATA,
+			0
+		},
+		{
+			"COLOR",
+			0,
+			DXGI_FORMAT_R32G32B32_FLOAT,
+			0,
+			D3D11_APPEND_ALIGNED_ELEMENT,
+			D3D11_INPUT_PER_VERTEX_DATA,
+			0
+		}
+	};
+
+	GraphicsPipelineDesc pipelineDesc{
+		.vertexShader = vsLoad.resource,
+		.pixelShader = psLoad.resource,
+		.inputElements = inputElements,
+		.topology =
+			D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+	};
+
+	GraphicsPipeline primitivePipeline;
+
+	HRESULT hr = primitivePipeline.Initialize(
+		renderer.GetDevice(),
+		shaders,
+		pipelineDesc);
+
+	if (Failed(hr, L"GraphicsPipeline::Initialize"))
+	{
+		return 1;
+	}
 
 	SimpleVertex2D verts[] = {
 	{  0.0f,  0.5f,  1, 0, 0 },
@@ -83,17 +122,8 @@ int Launch()
 	D3D11_SUBRESOURCE_DATA initData = { verts };
 
 	ComPtr<ID3D11Buffer> vertexBuffer;
-	HRESULT hr = renderer.GetDevice()->CreateBuffer(&bd, &initData, &vertexBuffer);
+	hr = renderer.GetDevice()->CreateBuffer(&bd, &initData, &vertexBuffer);
 	if (Failed(hr, L"CreateBuffer")) return 1;
-
-	D3D11_INPUT_ELEMENT_DESC layout[] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0 },
-		{ "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-	};
-
-	ComPtr<ID3D11InputLayout> inputLayout;
-	hr = renderer.GetDevice()->CreateInputLayout(layout, 2, vsBytecode.data(), vsBytecode.size(), &inputLayout);
-	if (Failed(hr, L"CreateInputLayout")) return 1;
 
 	// Render Loop
 	while (window.PumpMessages())
@@ -118,9 +148,7 @@ int Launch()
 		const UINT stride = sizeof(SimpleVertex2D);
 		const UINT offset = 0;
 
-		context->IASetInputLayout(inputLayout.Get());
-		context->IASetPrimitiveTopology(
-			D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		primitivePipeline.Bind(context);
 
 		context->IASetVertexBuffers(
 			0,
@@ -128,9 +156,6 @@ int Launch()
 			vertexBuffer.GetAddressOf(),
 			&stride,
 			&offset);
-
-		context->VSSetShader(vs, nullptr, 0);
-		context->PSSetShader(ps, nullptr, 0);
 
 		context->Draw(3, 0);
 

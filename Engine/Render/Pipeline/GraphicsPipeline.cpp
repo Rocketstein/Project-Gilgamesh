@@ -77,7 +77,7 @@ HRESULT GraphicsPipeline::Initialize(
 	return S_OK;
 }
 
-void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const
+void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const noexcept
 {
 	assert(context != nullptr);
 	assert(IsInitialized());
@@ -101,7 +101,7 @@ void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const
 		0);
 }
 
-bool GraphicsPipeline::IsInitialized() const
+bool GraphicsPipeline::IsInitialized() const noexcept
 {
 	return isInitialized;
 }
