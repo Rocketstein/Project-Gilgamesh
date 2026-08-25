@@ -41,11 +41,12 @@ function (add_hlsl_shader TARGET SOURCE ENTRY PROFILE OUTPUT_NAME)
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${out_dir}"
     COMMAND "${FXC_EXECUTABLE}" /nologo /T ${PROFILE} /E ${ENTRY} /WX
             /I "${HLSL_SHADER_DIR}"
-            $<IF:$<CONFIG:Debug>,/Zi,/O3> $<$<CONFIG:Debug>:/Od>
+            "$<$<CONFIG:Debug>:/Zi;/Od>" "$<$<NOT:$<CONFIG:Debug>>:/O3>"
             /Fo "${out_file}" "${SOURCE}"
     MAIN_DEPENDENCY "${SOURCE}"
     DEPENDS ${HLSL_INCLUDE_FILES}
     COMMENT "fxc ${PROFILE}  ${ENTRY} -> ${OUTPUT_NAME}"
+    COMMAND_EXPAND_LISTS
     VERBATIM)
 
   target_sources (${TARGET} PRIVATE "${out_file}")
