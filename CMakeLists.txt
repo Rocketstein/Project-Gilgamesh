@@ -59,8 +59,13 @@ register_shader (Primitive)
 # Engine Library
 add_subdirectory ("Engine")
 
+# In-process diagnostic UI and tools. This target depends on the engine, while
+# the engine remains independent from Dear ImGui and developer-facing panels.
+add_subdirectory ("DeveloperTools")
+
 target_link_libraries (Gilgamesh
 	PRIVATE
 		GilgameshEngine
+		GilgameshDeveloperTools
 )
 

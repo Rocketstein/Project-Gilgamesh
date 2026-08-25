@@ -4,10 +4,6 @@ target_sources (GilgameshEngine
 	PRIVATE
 		Core/Color.h
 		Core/Extent2D.h
-		Core/Logging/BufferedLogSink.cpp
-		Core/Logging/BufferedLogSink.h
-		Core/Logging/DebugOutputSink.cpp
-		Core/Logging/DebugOutputSink.h
 		Core/Logging/ILogSink.h
 		Core/Logging/Logger.cpp
 		Core/Logging/Logger.h
@@ -15,6 +11,8 @@ target_sources (GilgameshEngine
 
 		Platform/Windows/Window.cpp
 		Platform/Windows/Window.h
+		Platform/Windows/Logging/DebugOutputSink.cpp
+		Platform/Windows/Logging/DebugOutputSink.h
 
 		Render/D3D11/D3D11Device.cpp
 		Render/D3D11/D3D11Device.h
@@ -35,8 +33,6 @@ target_sources (GilgameshEngine
 		Render/VertexTypes/VertexTypes.h
 
 		Runtime/Application.h
-		Runtime/ImGuiIntegration.cpp
-		Runtime/ImGuiIntegration.h
 
 		Render/Pipeline/PipelineDesc.h)
 
@@ -63,7 +59,6 @@ target_compile_features(GilgameshEngine
 
 target_link_libraries(GilgameshEngine
 	PRIVATE
-		DearImGui
 		user32
         d3d11
         dxgi

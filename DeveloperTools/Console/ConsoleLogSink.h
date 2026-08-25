@@ -5,14 +5,14 @@
 #include <mutex>
 #include <vector>
 
-#include "ILogSink.h"
+#include "Engine/Core/Logging/ILogSink.h"
 
-// Retains a bounded, in-memory history for consumers such as an ImGui log
-// panel. This sink produces no output by itself.
-class BufferedLogSink final : public ILogSink
+// Stores the bounded history consumed by the in-process developer console.
+// It deliberately has no dependency on Dear ImGui or any other presentation.
+class ConsoleLogSink final : public ILogSink
 {
 public:
-    explicit BufferedLogSink(std::size_t capacity = 5000);
+    explicit ConsoleLogSink(std::size_t capacity = 5000);
 
     void Write(const LogEntry& entry) override;
 

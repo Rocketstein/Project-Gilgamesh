@@ -10,7 +10,7 @@
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/VertexTypes/VertexTypes.h"
-#include "Engine/Runtime/ImGuiIntegration.h"
+#include "DeveloperTools/Runtime/ImGuiIntegration.h"
 
 using Microsoft::WRL::ComPtr;
 

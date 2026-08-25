@@ -20,9 +20,9 @@ bool ImGuiIntegration::Initialize(
 {
     const HWND hwnd = window.GetNativeHandle();
 
-    if (hwnd == nullptr 
-        || device == nullptr 
-        || context == nullptr 
+    if (hwnd == nullptr
+        || device == nullptr
+        || context == nullptr
         || initialized_)
     {
         return false;

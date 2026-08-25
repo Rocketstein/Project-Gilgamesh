@@ -24,7 +24,7 @@ enum class LogCategory : uint8_t
 	Platform,
 	Runtime,
 	Renderer,
-	Editor,
+	Tools,
 	Misc,
 	Count,
 };
@@ -61,7 +61,7 @@ constexpr std::string_view ToString(LogCategory category)
 	case LogCategory::Platform: return "Platform";
 	case LogCategory::Runtime:  return "Runtime";
 	case LogCategory::Renderer: return "Renderer";
-	case LogCategory::Editor:	return "Editor";
+	case LogCategory::Tools:	return "Tools";
 	case LogCategory::Misc:		return "Misc";
 	default:                    return "Unknown";
 	}
