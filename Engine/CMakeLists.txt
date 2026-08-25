@@ -51,6 +51,7 @@ target_compile_features(GilgameshEngine
 
 target_link_libraries(GilgameshEngine
 	PRIVATE
+		DearImGui
 		user32
         d3d11
         dxgi
