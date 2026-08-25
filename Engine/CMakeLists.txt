@@ -4,6 +4,14 @@ target_sources (GilgameshEngine
 	PRIVATE
 		Core/Color.h
 		Core/Extent2D.h
+		Core/Logging/BufferedLogSink.cpp
+		Core/Logging/BufferedLogSink.h
+		Core/Logging/DebugOutputSink.cpp
+		Core/Logging/DebugOutputSink.h
+		Core/Logging/ILogSink.h
+		Core/Logging/Logger.cpp
+		Core/Logging/Logger.h
+		Core/Logging/LogTypes.h
 
 		Platform/Windows/Window.cpp
 		Platform/Windows/Window.h
