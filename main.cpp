@@ -10,6 +10,7 @@
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/VertexTypes/VertexTypes.h"
+#include "Engine/Runtime/ImGuiIntegration.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -49,6 +50,23 @@ int Launch()
 		MessageBoxW(
 			nullptr,
 			L"Failed to initialize the renderer.",
+			L"Gilgamesh",
+			MB_ICONERROR);
+
+		return 1;
+	}
+
+	// Locals are destroyed in reverse order: ImGui disconnects from Window and
+	// releases its D3D11 resources before Renderer and Window are destroyed.
+	ImGuiIntegration imgui;
+	if (!imgui.Initialize(
+		window,
+		renderer.GetDevice(),
+		renderer.GetDeviceContext()))
+	{
+		MessageBoxW(
+			nullptr,
+			L"Failed to initialize ImGui.",
 			L"Gilgamesh",
 			MB_ICONERROR);
 
@@ -140,6 +158,10 @@ int Launch()
 				return 1;
 		}
 
+		// PumpMessages filled ImGui's Win32 event queue; turn those events into
+		// the input state used while UI code builds this frame.
+		imgui.BeginFrame();
+
 		renderer.BeginFrame(Color4{ 0.1f, 0.12f, 0.16f });
 
 		ID3D11DeviceContext* context =
@@ -158,6 +180,9 @@ int Launch()
 			&offset);
 
 		context->Draw(3, 0);
+
+		// Draw ImGui as the final overlay before the swap chain is presented.
+		imgui.Render();
 
 		const RenderResult result = renderer.EndFrame();
 

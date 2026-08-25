@@ -38,6 +38,19 @@ LRESULT CALLBACK Window::WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 
 LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	// Let the registered integration observe every message first, but defer its
+	// return value until Window has handled the lifecycle messages it owns.
+	WindowMessageResult externalResult{};
+	if (messageHandler_ != nullptr)
+	{
+		externalResult = messageHandler_(
+			messageHandlerUserData_,
+			hwnd,
+			uMsg,
+			wParam,
+			lParam);
+	}
+
 	switch (uMsg)
 	{
 	case WM_DESTROY:
@@ -62,9 +75,16 @@ LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			pendingResize_ = true;
 		}
 		return 0;
-	default:
-		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
+
+	if (externalResult.handled)
+	{
+		// The external consumer handled a message that Window did not own.
+		return externalResult.result;
+	}
+
+	// Neither Window nor the external consumer handled this message.
+	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
 bool Window::Create()
@@ -170,4 +190,21 @@ Extent2D Window::GetClientExtent() const
 		static_cast<std::uint32_t>(rc.right - rc.left),
 		static_cast<std::uint32_t>(rc.bottom - rc.top)
 	};
+}
+
+void Window::SetMessageHandler(
+	WindowMessageHandler handler,
+	void* userData) noexcept
+{
+	// Store the function and its opaque owner as a pair. Window never needs to
+	// know that the current owner is ImGuiIntegration.
+	messageHandler_ = handler;
+	messageHandlerUserData_ = userData;
+}
+
+void Window::ClearMessageHandler() noexcept
+{
+	// Clear both values together so no stale owner can be called later.
+	messageHandler_ = nullptr;
+	messageHandlerUserData_ = nullptr;
 }

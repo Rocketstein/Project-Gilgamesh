@@ -26,7 +26,11 @@ target_sources (GilgameshEngine
 
 		Render/VertexTypes/VertexTypes.h
 
-		Runtime/Application.h "Render/Pipeline/PipelineDesc.h")
+		Runtime/Application.h
+		Runtime/ImGuiIntegration.cpp
+		Runtime/ImGuiIntegration.h
+
+		Render/Pipeline/PipelineDesc.h)
 
 get_target_property (GILGAMESH_ENGINE_SOURCES GilgameshEngine SOURCES)
 source_group (TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${GILGAMESH_ENGINE_SOURCES})
