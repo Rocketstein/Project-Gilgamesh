@@ -2,6 +2,17 @@ add_library (GilgameshDeveloperTools STATIC)
 
 target_sources (GilgameshDeveloperTools
 	PRIVATE
+		Console/Commands/BuiltInCommands.cpp
+		Console/Commands/BuiltInCommands.h
+		Console/Commands/CommandContext.h
+		Console/Commands/CommandLineTokenizer.cpp
+		Console/Commands/CommandLineTokenizer.h
+		Console/Commands/CommandRegistry.cpp
+		Console/Commands/CommandRegistry.h
+		Console/Commands/CommandTypes.cpp
+		Console/Commands/CommandTypes.h
+		Console/ConsoleCommandOutput.cpp
+		Console/ConsoleCommandOutput.h
 		Console/ConsoleLogSink.cpp
 		Console/ConsoleLogSink.h
 		Console/OutputLogPanel.cpp

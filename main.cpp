@@ -2,6 +2,9 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <d3d11.h>
@@ -18,6 +21,9 @@
 #endif
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+#include "DeveloperTools/Console/Commands/BuiltInCommands.h"
+#include "DeveloperTools/Console/Commands/CommandContext.h"
+#include "DeveloperTools/Console/ConsoleCommandOutput.h"
 #include "DeveloperTools/Console/ConsoleLogSink.h"
 #include "DeveloperTools/Console/OutputLogPanel.h"
 #include "DeveloperTools/Runtime/ImGuiIntegration.h"
@@ -103,6 +109,17 @@ int Launch()
 	}
 
 	OutputLogPanel outputLogPanel(consoleSink);
+	ConsoleCommandOutput commandOutput(consoleSink);
+	CommandRegistry commandRegistry =
+		CreateBuiltInCommandRegistry();
+
+	CommandContext commandContext{
+		.renderer = renderer,
+		.registry = commandRegistry,
+		.output = commandOutput
+	};
+
+	std::optional<std::string> pendingCommand;
 #endif
 
 	// Shader Manager test. Move this to graphics pipeline later on.
@@ -178,6 +195,23 @@ int Launch()
 	// Render Loop
 	while (window.PumpMessages())
 	{
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+		// Execute at the start of the next frame rather than while ImGui is
+		// building the previous frame's console UI.
+		if (pendingCommand)
+		{
+			commandOutput.WriteCommand(*pendingCommand);
+
+			const CommandResult commandResult =
+				commandRegistry.Execute(
+					commandContext,
+					*pendingCommand);
+
+			commandOutput.WriteResult(commandResult);
+			pendingCommand.reset();
+		}
+#endif
+
 		// Handle resizing events
 		if (window.IsMinimized())
 		{
@@ -214,7 +248,9 @@ int Launch()
 		context->Draw(3, 0);
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
-		outputLogPanel.Draw();
+		if (auto command = outputLogPanel.Draw())
+			pendingCommand = std::move(*command);
+
 		imgui.Render();
 #endif
 
