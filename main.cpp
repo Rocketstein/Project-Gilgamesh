@@ -61,10 +61,7 @@ int Launch()
 		Logger::AddSink(consoleSink);
 #endif
 
-	GILGAMESH_LOG(
-		Core,
-		Info,
-		"Starting Project Gilgamesh");
+	GILGAMESH_LOG(Core, Info, "Starting Project Gilgamesh");
 
 	// Must create a window before initializing the renderer because of the stack teardown order of objects.
 	Window window;
@@ -79,14 +76,9 @@ int Launch()
 
 	if (!renderer.Initialize(rendererDesc))
 	{
-		MessageBoxW(
-			nullptr,
-			L"Failed to initialize the renderer.",
-			L"Gilgamesh",
-			MB_ICONERROR);
-
 		return 1;
 	}
+	GILGAMESH_LOG(Renderer, Info, "Renderer initialized successfully");
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 	ImGuiIntegration imgui;
