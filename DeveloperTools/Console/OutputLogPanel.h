@@ -17,7 +17,6 @@ public:
         std::shared_ptr<ConsoleBuffer> buffer);
 
     // Draws the console and returns a command when the user presses Enter.
-    // Command parsing and execution belong to the future command system.
     std::optional<std::string> Draw(bool* open = nullptr);
 
 private:
