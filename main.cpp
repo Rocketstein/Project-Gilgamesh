@@ -1,16 +1,27 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <vector>
 
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include "Engine/Core/Logging/Logger.h"
 #include "Engine/Platform/Windows/Window.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/VertexTypes/VertexTypes.h"
+
+#ifdef _DEBUG
+#include "Engine/Platform/Windows/Logging/DebugOutputSink.h"
+#endif
+
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+#include "DeveloperTools/Console/ConsoleLogSink.h"
+#include "DeveloperTools/Console/OutputLogPanel.h"
 #include "DeveloperTools/Runtime/ImGuiIntegration.h"
+#endif
 
 using Microsoft::WRL::ComPtr;
 
@@ -34,6 +45,27 @@ static bool Failed(HRESULT hr, const wchar_t* what)
 // Incremental Refactor TODO: Move this to Application class
 int Launch()
 {
+#ifdef _DEBUG
+	auto debuggerSink =
+		std::make_shared<DebugOutputSink>();
+
+	auto debuggerRegistration =
+		Logger::AddSink(debuggerSink);
+#endif
+
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+	auto consoleSink =
+		std::make_shared<ConsoleLogSink>(5000);
+
+	auto consoleRegistration =
+		Logger::AddSink(consoleSink);
+#endif
+
+	GILGAMESH_LOG(
+		Core,
+		Info,
+		"Starting Project Gilgamesh");
+
 	// Must create a window before initializing the renderer because of the stack teardown order of objects.
 	Window window;
 	if (!window.Create()) return 1;
@@ -56,14 +88,19 @@ int Launch()
 		return 1;
 	}
 
-	// Locals are destroyed in reverse order: ImGui disconnects from Window and
-	// releases its D3D11 resources before Renderer and Window are destroyed.
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 	ImGuiIntegration imgui;
+
 	if (!imgui.Initialize(
 		window,
 		renderer.GetDevice(),
 		renderer.GetDeviceContext()))
 	{
+		GILGAMESH_LOG(
+			Tools,
+			Critical,
+			"Failed to initialize ImGui developer tools");
+
 		MessageBoxW(
 			nullptr,
 			L"Failed to initialize ImGui.",
@@ -72,6 +109,9 @@ int Launch()
 
 		return 1;
 	}
+
+	OutputLogPanel outputLogPanel(consoleSink);
+#endif
 
 	// Shader Manager test. Move this to graphics pipeline later on.
 	ShaderManager& shaders = renderer.GetShaderManager();
@@ -158,9 +198,9 @@ int Launch()
 				return 1;
 		}
 
-		// PumpMessages filled ImGui's Win32 event queue; turn those events into
-		// the input state used while UI code builds this frame.
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 		imgui.BeginFrame();
+#endif
 
 		renderer.BeginFrame(Color4{ 0.1f, 0.12f, 0.16f });
 
@@ -181,8 +221,10 @@ int Launch()
 
 		context->Draw(3, 0);
 
-		// Draw ImGui as the final overlay before the swap chain is presented.
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+		outputLogPanel.Draw();
 		imgui.Render();
+#endif
 
 		const RenderResult result = renderer.EndFrame();
 

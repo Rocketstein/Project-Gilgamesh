@@ -8,12 +8,12 @@
 
 #include "ILogSink.h"
 
-#define GILGAMESH_LOG(Category, Level, Format, ...)             \
-    ::Logger::Write(                                            \
-        ::LogCategory::Category,                                \
-        ::LogLevel::Level,                                      \
-        std::source_location::current(),                        \
-        Format __VA_OPT__(,) __VA_ARGS__)
+#define GILGAMESH_LOG(Category, Level, ...)          \
+    ::Logger::Write(                                 \
+        ::LogCategory::Category,                     \
+        ::LogLevel::Level,                           \
+        std::source_location::current(),             \
+        __VA_ARGS__)
 
 class Logger;
 

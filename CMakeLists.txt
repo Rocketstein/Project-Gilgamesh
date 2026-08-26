@@ -14,31 +14,39 @@ project ("Project Gilgamesh")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Dear ImGui is vendored from the docking branch. Build only the core sources
-# and the platform/renderer backends used by Gilgamesh.
-set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/imgui")
-
-add_library(DearImGui STATIC
-  "${IMGUI_DIR}/imgui.cpp"
-  "${IMGUI_DIR}/imgui_draw.cpp"
-  "${IMGUI_DIR}/imgui_tables.cpp"
-  "${IMGUI_DIR}/imgui_widgets.cpp"
-  "${IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
-  "${IMGUI_DIR}/backends/imgui_impl_win32.cpp"
+option(
+  GILGAMESH_ENABLE_DEVELOPER_TOOLS
+  "Build ImGui-based in-process developer tools"
+  ON
 )
 
-target_include_directories(DearImGui
-  PUBLIC
-    "${IMGUI_DIR}"
-    "${IMGUI_DIR}/backends"
-)
+if (GILGAMESH_ENABLE_DEVELOPER_TOOLS)
+  # Dear ImGui is vendored from the docking branch. Build only the core
+  # sources and the platform/renderer backends used by Gilgamesh tools.
+  set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/imgui")
 
-target_link_libraries(DearImGui
-  PRIVATE
-    d3d11
-)
+  add_library(DearImGui STATIC
+    "${IMGUI_DIR}/imgui.cpp"
+    "${IMGUI_DIR}/imgui_draw.cpp"
+    "${IMGUI_DIR}/imgui_tables.cpp"
+    "${IMGUI_DIR}/imgui_widgets.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_win32.cpp"
+  )
 
-set_target_properties(DearImGui PROPERTIES FOLDER "ThirdParty")
+  target_include_directories(DearImGui
+    PUBLIC
+      "${IMGUI_DIR}"
+      "${IMGUI_DIR}/backends"
+  )
+
+  target_link_libraries(DearImGui
+    PRIVATE
+      d3d11
+  )
+
+  set_target_properties(DearImGui PROPERTIES FOLDER "ThirdParty")
+endif()
 
 # CMake 모듈 경로를 추가하고 HLSL 컴파일러를 포함합니다.
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -59,13 +67,24 @@ register_shader (Primitive)
 # Engine Library
 add_subdirectory ("Engine")
 
-# In-process diagnostic UI and tools. This target depends on the engine, while
-# the engine remains independent from Dear ImGui and developer-facing panels.
-add_subdirectory ("DeveloperTools")
-
 target_link_libraries (Gilgamesh
 	PRIVATE
 		GilgameshEngine
-		GilgameshDeveloperTools
+)
+
+if (GILGAMESH_ENABLE_DEVELOPER_TOOLS)
+  # In-process diagnostics depend on the engine, while the engine remains
+  # independent from Dear ImGui and developer-facing panels.
+  add_subdirectory ("DeveloperTools")
+
+  target_link_libraries (Gilgamesh
+    PRIVATE
+      GilgameshDeveloperTools
+  )
+endif()
+
+target_compile_definitions (Gilgamesh
+  PRIVATE
+    GILGAMESH_ENABLE_DEVELOPER_TOOLS=$<BOOL:${GILGAMESH_ENABLE_DEVELOPER_TOOLS}>
 )
 

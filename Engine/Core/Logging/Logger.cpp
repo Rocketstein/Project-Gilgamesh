@@ -80,8 +80,10 @@ bool Logger::ShouldLog(LogLevel level)
 	auto& state = GetLoggerState();
 	std::scoped_lock lock(state.mutex);
 
-	return static_cast<std::uint8_t>(level) >=
-		static_cast<std::uint8_t>(state.minimumLevel);
+	return !state.sinks.empty()
+		&& static_cast<std::uint8_t>(level)
+		>= static_cast<std::uint8_t>(
+			state.minimumLevel);
 }
 
 void Logger::Dispatch(const LogEntry& entry)
