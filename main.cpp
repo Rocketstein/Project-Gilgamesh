@@ -24,6 +24,7 @@
 #include "DeveloperTools/Console/Commands/BuiltInCommands.h"
 #include "DeveloperTools/Console/ConsoleBuffer.h"
 #include "DeveloperTools/Console/ConsoleCommandOutput.h"
+#include "DeveloperTools/Console/ConsoleConfiguration.h"
 #include "DeveloperTools/Console/ConsoleLogSink.h"
 #include "DeveloperTools/Console/OutputLogPanel.h"
 #include "DeveloperTools/Runtime/ImGuiIntegration.h"
@@ -111,10 +112,13 @@ int Launch()
 		return 1;
 	}
 
-	OutputLogPanel outputLogPanel(consoleBuffer);
+	ConsoleConfiguration consoleConfiguration;
+	OutputLogPanel outputLogPanel(
+		consoleBuffer,
+		consoleConfiguration);
 	ConsoleCommandOutput commandOutput(consoleBuffer);
 	CommandRegistry commandRegistry =
-		CreateBuiltInCommandRegistry();
+		CreateBuiltInCommandRegistry(consoleConfiguration);
 
 	std::optional<std::string> pendingCommand;
 #endif

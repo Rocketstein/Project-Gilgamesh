@@ -13,6 +13,8 @@ target_sources (GilgameshDeveloperTools
 		Console/Commands/CommandTypes.h
 		Console/ConsoleBuffer.cpp
 		Console/ConsoleBuffer.h
+		Console/ConsoleConfiguration.cpp
+		Console/ConsoleConfiguration.h
 		Console/ConsoleCommandOutput.cpp
 		Console/ConsoleCommandOutput.h
 		Console/ConsoleLogSink.cpp

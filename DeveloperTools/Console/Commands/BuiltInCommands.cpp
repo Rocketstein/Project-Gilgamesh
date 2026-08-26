@@ -1,11 +1,58 @@
 #include "BuiltInCommands.h"
 
+#include <cstddef>
 #include <format>
+#include <optional>
+#include <string_view>
 
 #include "CommandInvocation.h"
+#include "DeveloperTools/Console/ConsoleConfiguration.h"
 
 namespace
 {
+    bool EqualsIgnoreCase(
+        std::string_view left,
+        std::string_view right)
+    {
+        if (left.size() != right.size())
+            return false;
+
+        for (std::size_t index = 0;
+            index < left.size();
+            ++index)
+        {
+            char lhs = left[index];
+            char rhs = right[index];
+
+            if (lhs >= 'A' && lhs <= 'Z')
+                lhs = static_cast<char>(lhs - 'A' + 'a');
+
+            if (rhs >= 'A' && rhs <= 'Z')
+                rhs = static_cast<char>(rhs - 'A' + 'a');
+
+            if (lhs != rhs)
+                return false;
+        }
+
+        return true;
+    }
+
+    std::optional<LogLevel> ParseLogLevel(
+        std::string_view value)
+    {
+        for (std::size_t index = 0;
+            index < static_cast<std::size_t>(LogLevel::Count);
+            ++index)
+        {
+            const auto level = static_cast<LogLevel>(index);
+
+            if (EqualsIgnoreCase(value, ToString(level)))
+                return level;
+        }
+
+        return std::nullopt;
+    }
+
     CommandResult ClearCommand(
         const CommandInvocation& invocation)
     {
@@ -89,9 +136,40 @@ namespace
         return CommandResult::Success(
             std::move(message));
     }
+
+    CommandHandler MakeLogLevelVisibilityCommand(
+        ConsoleConfiguration& configuration,
+        bool visible)
+    {
+        return [&configuration, visible](
+            const CommandInvocation& invocation)
+        {
+            if (invocation.arguments.size() != 1)
+                return CommandResult::Usage();
+
+            const std::optional<LogLevel> level =
+                ParseLogLevel(invocation.arguments.front());
+
+            if (!level)
+            {
+                return CommandResult::Error(
+                    "Unknown log level. Expected: trace, debug, "
+                    "info, warning, error, or critical.");
+            }
+
+            configuration.SetLogLevelVisible(*level, visible);
+
+            return CommandResult::Success(
+                std::format(
+                    "{} log level {}.",
+                    ToString(*level),
+                    visible ? "shown" : "hidden"));
+        };
+    }
 }
 
-CommandRegistry CreateBuiltInCommandRegistry()
+CommandRegistry CreateBuiltInCommandRegistry(
+    ConsoleConfiguration& configuration)
 {
     return CommandRegistry{
         {
@@ -111,6 +189,22 @@ CommandRegistry CreateBuiltInCommandRegistry()
             .description = "Mirrors the command line.",
             .usage = "echo <message>",
             .handler = &EchoCommand
+        },
+        {
+            .name = "log.showlevel",
+            .description = "Shows messages at a log level.",
+            .usage = "log.showlevel <level>",
+            .handler = MakeLogLevelVisibilityCommand(
+                configuration,
+                true)
+        },
+        {
+            .name = "log.hidelevel",
+            .description = "Hides messages at a log level.",
+            .usage = "log.hidelevel <level>",
+            .handler = MakeLogLevelVisibilityCommand(
+                configuration,
+                false)
         },
     };
 }

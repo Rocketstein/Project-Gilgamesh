@@ -4,15 +4,11 @@
 #include <string_view>
 #include <utility>
 
+#include "DeveloperTools/Console/ConsoleConfiguration.h"
 #include "imgui.h"
 
 namespace
 {
-    constexpr std::size_t ToIndex(LogLevel level)
-    {
-        return static_cast<std::size_t>(level);
-    }
-
     ImVec4 ColorFor(LogLevel level)
     {
         switch (level)
@@ -109,11 +105,12 @@ namespace
 } // Anonymous Namespace
 
 OutputLogPanel::OutputLogPanel(
-    std::shared_ptr<ConsoleBuffer> buffer)
-    : buffer_(std::move(buffer))
+    std::shared_ptr<ConsoleBuffer> buffer,
+    ConsoleConfiguration& configuration)
+    : buffer_(std::move(buffer)),
+      configuration_(configuration)
 {
     assert(buffer_ != nullptr);
-    visibleLevels_.fill(true);
 }
 
 void OutputLogPanel::RebuildFilteredIndices()
@@ -133,7 +130,7 @@ void OutputLogPanel::RebuildFilteredIndices()
             std::get_if<ConsoleLogMetadata>(&entry.metadata);
 
         if (log
-            && !visibleLevels_[ToIndex(log->level)])
+            && !configuration_.IsLogLevelVisible(log->level))
         {
             continue;
         }
@@ -156,33 +153,12 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
         return {};
     }
 
-    if (ImGui::Button("Clear"))
-        buffer_->Clear();
-
-    ImGui::SameLine();
-    ImGui::Checkbox("Auto-scroll", &autoScroll_);
-
     ImGui::SameLine();
     ImGui::SetNextItemWidth(240.0f);
     bool filterChanged = ImGui::InputText(
         "Search",
         search_.data(),
         search_.size());
-
-    for (std::size_t index = 0;
-        index < LevelCount;
-        ++index)
-    {
-        if (index != 0)
-            ImGui::SameLine();
-
-        const auto level =
-            static_cast<LogLevel>(index);
-
-        filterChanged |= ImGui::Checkbox(
-            ToString(level),
-            &visibleLevels_[index]);
-    }
 
     ImGui::Separator();
 
@@ -208,8 +184,17 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
         pendingEntries_.clear();
     }
 
-    if (entriesChanged || filterChanged)
+    const std::uint64_t configurationRevision =
+        configuration_.LogLevelVisibilityRevision();
+
+    if (entriesChanged
+        || filterChanged
+        || configurationRevision != lastConfigurationRevision_)
+    {
         RebuildFilteredIndices();
+
+        lastConfigurationRevision_ = configurationRevision;
+    }
 
     constexpr ImGuiTableFlags tableFlags =
         ImGuiTableFlags_RowBg
@@ -230,7 +215,6 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
 
         const bool shouldScroll =
             entriesChanged
-            && autoScroll_
             && ImGui::GetScrollY()
             >= ImGui::GetScrollMaxY();
 
