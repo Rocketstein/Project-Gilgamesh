@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <mutex>
 #include <vector>
@@ -16,14 +17,21 @@ public:
 
     void Write(const LogEntry& entry) override;
 
-    [[nodiscard]] std::vector<LogEntry> Snapshot() const;
+    [[nodiscard]] bool Snapshot(
+        std::uint64_t& lastSeenRevision,
+        std::vector<LogEntry>& output) const;
+
     [[nodiscard]] std::size_t Size() const;
     [[nodiscard]] std::size_t Capacity() const noexcept;
 
     void Clear();
 
 private:
+    void UpdateRevision();
+
+private:
     mutable std::mutex mutex_;
     std::deque<LogEntry> entries_;
     std::size_t capacity_;
+    std::size_t revision_ = 0;
 };

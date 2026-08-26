@@ -3,7 +3,6 @@
 #include <cassert>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include "imgui.h"
 
@@ -61,6 +60,29 @@ OutputLogPanel::OutputLogPanel(
     visibleLevels_.fill(true);
 }
 
+void OutputLogPanel::RebuildFilteredIndices()
+{
+    filteredIndices_.clear();
+    filteredIndices_.reserve(entries_.size());
+
+    const std::string_view search(search_.data());
+
+    for (std::size_t index = 0;
+        index < entries_.size();
+        ++index)
+    {
+        const LogEntry& entry = entries_[index];
+
+        if (!visibleLevels_[ToIndex(entry.level)])
+            continue;
+
+        if (!MatchesSearch(entry, search))
+            continue;
+
+        filteredIndices_.push_back(index);
+    }
+}
+
 void OutputLogPanel::Draw(bool* open)
 {
     if (sink_ == nullptr)
@@ -80,7 +102,7 @@ void OutputLogPanel::Draw(bool* open)
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(240.0f);
-    ImGui::InputText(
+    bool filterChanged = ImGui::InputText(
         "Search",
         search_.data(),
         search_.size());
@@ -95,31 +117,20 @@ void OutputLogPanel::Draw(bool* open)
         const auto level =
             static_cast<LogLevel>(index);
 
-        ImGui::Checkbox(
+        filterChanged |= ImGui::Checkbox(
             ToString(level).data(),
             &visibleLevels_[index]);
     }
 
     ImGui::Separator();
 
-    const std::vector<LogEntry> entries =
-        sink_->Snapshot();
+    const bool entriesChanged =
+        sink_->Snapshot(
+            snapshotRevision_,
+            entries_);
 
-    const std::string_view search(search_.data());
-
-    std::vector<const LogEntry*> filteredEntries;
-    filteredEntries.reserve(entries.size());
-
-    for (const LogEntry& entry : entries)
-    {
-        if (!visibleLevels_[ToIndex(entry.level)])
-            continue;
-
-        if (!MatchesSearch(entry, search))
-            continue;
-
-        filteredEntries.push_back(&entry);
-    }
+    if (entriesChanged || filterChanged)
+        RebuildFilteredIndices();
 
     constexpr ImGuiTableFlags tableFlags =
         ImGuiTableFlags_BordersInnerV
@@ -151,13 +162,14 @@ void OutputLogPanel::Draw(bool* open)
         ImGui::TableHeadersRow();
 
         const bool shouldScroll =
-            autoScroll_
+            entriesChanged
+            && autoScroll_
             && ImGui::GetScrollY()
             >= ImGui::GetScrollMaxY();
 
         ImGuiListClipper clipper;
         clipper.Begin(
-            static_cast<int>(filteredEntries.size()));
+            static_cast<int>(filteredIndices_.size()));
 
         while (clipper.Step())
         {
@@ -166,8 +178,8 @@ void OutputLogPanel::Draw(bool* open)
                 ++index)
             {
                 const LogEntry& entry =
-                    *filteredEntries[
-                        static_cast<std::size_t>(index)];
+                    entries_[filteredIndices_[
+                        static_cast<std::size_t>(index)]];
 
                 ImGui::TableNextRow();
 

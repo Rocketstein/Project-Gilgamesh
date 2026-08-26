@@ -2,7 +2,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "DeveloperTools/Console/ConsoleLogSink.h"
 
@@ -16,6 +18,8 @@ public:
     void Draw(bool* open = nullptr);
 
 private:
+    void RebuildFilteredIndices();
+
     static constexpr std::size_t LevelCount =
         static_cast<std::size_t>(LogLevel::Count);
 
@@ -23,6 +27,10 @@ private:
 
     std::array<bool, LevelCount> visibleLevels_{};
     std::array<char, 128> search_{};
+
+    std::size_t snapshotRevision_ = 0;
+    std::vector<LogEntry> entries_;
+    std::vector<std::size_t> filteredIndices_;
 
     bool autoScroll_ = true;
 };
