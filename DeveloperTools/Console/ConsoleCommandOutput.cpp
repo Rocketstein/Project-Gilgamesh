@@ -4,8 +4,6 @@
 #include <chrono>
 #include <utility>
 
-#include "DeveloperTools/Console/ConsoleBuffer.h"
-
 ConsoleCommandOutput::ConsoleCommandOutput(
     std::shared_ptr<ConsoleBuffer> buffer)
     : buffer_(std::move(buffer))
@@ -16,24 +14,28 @@ ConsoleCommandOutput::ConsoleCommandOutput(
 void ConsoleCommandOutput::WriteInfo(std::string_view message)
 {
     Push(
-        ConsoleEntryKind::CommandOutput,
-        ConsoleEntryTone::Normal,
+        ConsoleCommandOutputMetadata{
+            .tone = ConsoleEntryTone::Normal
+        },
         message);
 }
 
-void ConsoleCommandOutput::WriteWarning(std::string_view message)
+void ConsoleCommandOutput::WriteWarning(
+    std::string_view message)
 {
     Push(
-        ConsoleEntryKind::CommandOutput,
-        ConsoleEntryTone::Warning,
+        ConsoleCommandOutputMetadata{
+            .tone = ConsoleEntryTone::Warning
+        },
         message);
 }
 
 void ConsoleCommandOutput::WriteError(std::string_view message)
 {
     Push(
-        ConsoleEntryKind::CommandOutput,
-        ConsoleEntryTone::Error,
+        ConsoleCommandOutputMetadata{
+            .tone = ConsoleEntryTone::Error
+        },
         message);
 }
 
@@ -47,8 +49,7 @@ void ConsoleCommandOutput::WriteCommand(
     std::string_view commandLine)
 {
     Push(
-        ConsoleEntryKind::CommandInput,
-        ConsoleEntryTone::Normal,
+        ConsoleCommandInputMetadata{},
         commandLine);
 }
 
@@ -75,16 +76,14 @@ void ConsoleCommandOutput::WriteResult(
 }
 
 void ConsoleCommandOutput::Push(
-    ConsoleEntryKind kind,
-    ConsoleEntryTone tone,
+    ConsoleEntryMetadata metadata,
     std::string_view message)
 {
     if (buffer_ == nullptr)
         return;
 
     buffer_->Push({
-        .kind = kind,
-        .tone = tone,
+        .metadata = std::move(metadata),
         .message = std::string(message),
         .timestamp = std::chrono::system_clock::now()
     });

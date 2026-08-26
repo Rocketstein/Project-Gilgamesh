@@ -5,10 +5,7 @@
 
 #include "DeveloperTools/Console/Commands/CommandInvocation.h"
 #include "DeveloperTools/Console/Commands/CommandTypes.h"
-
-class ConsoleBuffer;
-enum class ConsoleEntryKind;
-enum class ConsoleEntryTone;
+#include "DeveloperTools/Console/ConsoleBuffer.h"
 
 // Writes command traffic directly to the console without routing through the
 // engine logger or its other sinks.
@@ -28,8 +25,7 @@ public:
 
 private:
     void Push(
-        ConsoleEntryKind kind,
-        ConsoleEntryTone tone,
+        ConsoleEntryMetadata metadata,
         std::string_view message);
 
     std::shared_ptr<ConsoleBuffer> buffer_;

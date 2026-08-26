@@ -5,19 +5,12 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
-#include <optional>
 #include <source_location>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "Engine/Core/Logging/LogTypes.h"
-
-enum class ConsoleEntryKind
-{
-    Log,
-    CommandInput,
-    CommandOutput
-};
 
 enum class ConsoleEntryTone
 {
@@ -26,19 +19,32 @@ enum class ConsoleEntryTone
     Error
 };
 
+struct ConsoleLogMetadata
+{
+    LogCategory category;
+    LogLevel level;
+    std::source_location source;
+};
+
+struct ConsoleCommandInputMetadata
+{
+};
+
+struct ConsoleCommandOutputMetadata
+{
+    ConsoleEntryTone tone;
+};
+
+using ConsoleEntryMetadata = std::variant<
+    ConsoleLogMetadata,
+    ConsoleCommandInputMetadata,
+    ConsoleCommandOutputMetadata>;
+
 struct ConsoleEntry
 {
-    ConsoleEntryKind kind = ConsoleEntryKind::Log;
-    ConsoleEntryTone tone = ConsoleEntryTone::Normal;
-
+    ConsoleEntryMetadata metadata;
     std::string message;
     std::chrono::system_clock::time_point timestamp;
-
-    // Present only for entries originating from Logger.
-    std::optional<LogCategory> logCategory;
-    std::optional<LogLevel> logLevel;
-    std::source_location source;
-    bool hasSource = false;
 };
 
 // Thread-safe bounded history shared by log and command producers and consumed

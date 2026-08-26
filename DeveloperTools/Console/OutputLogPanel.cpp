@@ -91,15 +91,19 @@ namespace
         if (entry.message.find(search) != std::string::npos)
             return true;
 
-        if (entry.logCategory
-            && std::string_view(ToString(*entry.logCategory)).find(search)
-                != std::string_view::npos)
+        const auto* log =
+            std::get_if<ConsoleLogMetadata>(&entry.metadata);
+
+        if (log == nullptr)
+            return false;
+
+        if (std::string_view(ToString(log->category)).find(search)
+            != std::string_view::npos)
         {
             return true;
         }
 
-        return entry.logLevel
-            && std::string_view(ToString(*entry.logLevel)).find(search)
+        return std::string_view(ToString(log->level)).find(search)
                 != std::string_view::npos;
     }
 } // Anonymous Namespace
@@ -125,9 +129,11 @@ void OutputLogPanel::RebuildFilteredIndices()
     {
         const ConsoleEntry& entry = entries_[index];
 
-        if (entry.kind == ConsoleEntryKind::Log
-            && entry.logLevel
-            && !visibleLevels_[ToIndex(*entry.logLevel)])
+        const auto* log =
+            std::get_if<ConsoleLogMetadata>(&entry.metadata);
+
+        if (log
+            && !visibleLevels_[ToIndex(log->level)])
         {
             continue;
         }
@@ -230,25 +236,28 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
 
                 ImGui::BeginGroup();
 
-                if (entry.kind == ConsoleEntryKind::Log
-                    && entry.logCategory
-                    && entry.logLevel)
+                const auto* log =
+                    std::get_if<ConsoleLogMetadata>(
+                        &entry.metadata);
+
+                if (log != nullptr)
                 {
                     ImGui::TextColored(
-                        ColorFor(*entry.logCategory),
+                        ColorFor(log->category),
                         "[%s]",
-                        ToString(*entry.logCategory));
+                        ToString(log->category));
 
                     ImGui::SameLine(0.0f, 0.0f);
                     ImGui::TextColored(
-                        ColorFor(*entry.logLevel),
+                        ColorFor(log->level),
                         "[%s] ",
-                        ToString(*entry.logLevel));
+                        ToString(log->level));
 
                     ImGui::SameLine(0.0f, 0.0f);
                     ImGui::TextUnformatted(entry.message.c_str());
                 }
-                else if (entry.kind == ConsoleEntryKind::CommandInput)
+                else if (std::holds_alternative<
+                    ConsoleCommandInputMetadata>(entry.metadata))
                 {
                     ImGui::TextColored(
                         { 0.55f, 0.75f, 1.0f, 1.0f },
@@ -257,9 +266,13 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
                 }
                 else
                 {
+                    const auto& commandOutput =
+                        std::get<ConsoleCommandOutputMetadata>(
+                            entry.metadata);
+
                     ImGui::PushStyleColor(
                         ImGuiCol_Text,
-                        ColorFor(entry.tone));
+                        ColorFor(commandOutput.tone));
 
                     ImGui::TextUnformatted(entry.message.c_str());
                     ImGui::PopStyleColor();
@@ -267,14 +280,14 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
 
                 ImGui::EndGroup();
 
-                if (entry.hasSource && ImGui::IsItemHovered())
+                if (log != nullptr && ImGui::IsItemHovered())
                 {
                     ImGui::SetTooltip(
                         "%s:%u\n%s",
-                        entry.source.file_name(),
+                        log->source.file_name(),
                         static_cast<unsigned>(
-                            entry.source.line()),
-                        entry.source.function_name());
+                            log->source.line()),
+                        log->source.function_name());
                 }
             }
         }
