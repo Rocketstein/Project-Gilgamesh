@@ -30,5 +30,5 @@ private:
     mutable std::mutex mutex_;
     std::deque<LogEntry> entries_;
     std::size_t capacity_;
-    std::size_t revision_ = 0;
+    std::uint64_t revision_ = 0;
 };

@@ -32,7 +32,7 @@ private:
     std::array<char, 128> search_{};
     std::array<char, 256> commandInput_{};
 
-    std::size_t snapshotRevision_ = 0;
+    std::uint64_t snapshotRevision_ = 0;
     std::vector<LogEntry> entries_;
     std::vector<std::size_t> filteredIndices_;
 

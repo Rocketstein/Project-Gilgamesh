@@ -124,7 +124,18 @@ CommandResult CommandRegistry::Execute(
     const CommandDefinition& definition =
         found->second;
 
-    return definition.handler(context, arguments);
+    CommandResult result =
+        definition.handler(context, arguments);
+
+    if (result.status == CommandStatus::UsageError
+        && result.message.empty())
+    {
+        result.message = std::format(
+            "Usage: {}",
+            definition.usage);
+    }
+
+    return result;
 }
 
 const CommandDefinition* CommandRegistry::Find(

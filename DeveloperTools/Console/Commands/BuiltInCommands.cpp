@@ -11,7 +11,7 @@ namespace
         std::span<const std::string_view> arguments)
     {
         if (!arguments.empty())
-            return CommandResult::Usage("clear");
+            return CommandResult::Usage();
 
         context.output.Clear();
         return CommandResult::Success();
@@ -22,7 +22,7 @@ namespace
         std::span<const std::string_view> arguments)
     {
         if (arguments.size() > 1)
-            return CommandResult::Usage("help [command]");
+            return CommandResult::Usage();
 
         if (arguments.size() == 1)
         {
@@ -74,10 +74,7 @@ namespace
         std::span<const std::string_view> arguments)
     {
         if (arguments.empty())
-        {
-            return CommandResult::Usage(
-                "Usage: echo <message>");
-        }
+            return CommandResult::Usage();
 
         std::string message;
 
@@ -114,7 +111,7 @@ CommandRegistry CreateBuiltInCommandRegistry()
         {
             .name = "echo",
             .description = "Mirrors the command line.",
-            .usage = "echo [command]",
+            .usage = "echo <message>",
             .handler = &EchoCommand
         },
     };

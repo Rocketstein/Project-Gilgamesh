@@ -19,7 +19,11 @@ struct CommandResult
     std::string message;
 
     static CommandResult Success(std::string message = {});
-    static CommandResult Usage(std::string message);
+
+    // Leave the message empty to have the registry fill in the usage text from
+    // the command's own CommandDefinition, which is the source of truth.
+    static CommandResult Usage(std::string message = {});
+
     static CommandResult Error(std::string message);
 };
 
