@@ -1,53 +1,47 @@
 #include "ConsoleLogSink.h"
 
-#include <algorithm>
-#include <limits>
+#include <cassert>
+#include <utility>
 
-ConsoleLogSink::ConsoleLogSink(std::size_t capacity)
-    : capacity_(std::max<std::size_t>(capacity, 1))
+namespace
 {
+    ConsoleEntryTone ToneFor(LogLevel level)
+    {
+        switch (level)
+        {
+        case LogLevel::Warning:
+            return ConsoleEntryTone::Warning;
+
+        case LogLevel::Error:
+        case LogLevel::Critical:
+            return ConsoleEntryTone::Error;
+
+        default:
+            return ConsoleEntryTone::Normal;
+        }
+    }
+}
+
+ConsoleLogSink::ConsoleLogSink(
+    std::shared_ptr<ConsoleBuffer> buffer)
+    : buffer_(std::move(buffer))
+{
+    assert(buffer_ != nullptr);
 }
 
 void ConsoleLogSink::Write(const LogEntry& entry)
 {
-    std::scoped_lock lock(mutex_);
+    if (buffer_ == nullptr)
+        return;
 
-    if (entries_.size() == capacity_)
-        entries_.pop_front();
-
-    entries_.push_back(entry);
-    ++revision_;
-}
-
-bool ConsoleLogSink::Snapshot(
-    std::uint64_t& lastSeenRevision,
-    std::vector<LogEntry>& output) const
-{
-    std::scoped_lock lock(mutex_);
-
-    if (lastSeenRevision == revision_)
-        return false;
-
-    output.assign(entries_.begin(), entries_.end());
-    lastSeenRevision = revision_;
-
-    return true;
-}
-
-std::size_t ConsoleLogSink::Size() const
-{
-    std::scoped_lock lock(mutex_);
-    return entries_.size();
-}
-
-std::size_t ConsoleLogSink::Capacity() const noexcept
-{
-    return capacity_;
-}
-
-void ConsoleLogSink::Clear()
-{
-    std::scoped_lock lock(mutex_);
-    entries_.clear();
-    ++revision_;
+    buffer_->Push({
+        .kind = ConsoleEntryKind::Log,
+        .tone = ToneFor(entry.level),
+        .message = entry.message,
+        .timestamp = entry.timestamp,
+        .logCategory = entry.category,
+        .logLevel = entry.level,
+        .source = entry.source,
+        .hasSource = true
+    });
 }

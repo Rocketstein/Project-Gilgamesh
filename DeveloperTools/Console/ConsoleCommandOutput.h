@@ -6,14 +6,17 @@
 #include "DeveloperTools/Console/Commands/CommandInvocation.h"
 #include "DeveloperTools/Console/Commands/CommandTypes.h"
 
-class ConsoleLogSink;
+class ConsoleBuffer;
+enum class ConsoleEntryKind;
+enum class ConsoleEntryTone;
 
-// Adapts command responses to the existing logging-backed console.
+// Writes command traffic directly to the console without routing through the
+// engine logger or its other sinks.
 class ConsoleCommandOutput final : public ICommandOutput
 {
 public:
     explicit ConsoleCommandOutput(
-        std::shared_ptr<ConsoleLogSink> sink);
+        std::shared_ptr<ConsoleBuffer> buffer);
 
     void WriteInfo(std::string_view message) override;
     void WriteWarning(std::string_view message) override;
@@ -24,5 +27,10 @@ public:
     void WriteResult(const CommandResult& result);
 
 private:
-    std::shared_ptr<ConsoleLogSink> sink_;
+    void Push(
+        ConsoleEntryKind kind,
+        ConsoleEntryTone tone,
+        std::string_view message);
+
+    std::shared_ptr<ConsoleBuffer> buffer_;
 };

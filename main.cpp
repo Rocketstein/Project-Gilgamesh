@@ -22,6 +22,7 @@
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 #include "DeveloperTools/Console/Commands/BuiltInCommands.h"
+#include "DeveloperTools/Console/ConsoleBuffer.h"
 #include "DeveloperTools/Console/ConsoleCommandOutput.h"
 #include "DeveloperTools/Console/ConsoleLogSink.h"
 #include "DeveloperTools/Console/OutputLogPanel.h"
@@ -59,8 +60,11 @@ int Launch()
 #endif
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+	auto consoleBuffer =
+		std::make_shared<ConsoleBuffer>(5000);
+
 	auto consoleSink =
-		std::make_shared<ConsoleLogSink>(5000);
+		std::make_shared<ConsoleLogSink>(consoleBuffer);
 
 	auto consoleRegistration =
 		Logger::AddSink(consoleSink);
@@ -107,8 +111,8 @@ int Launch()
 		return 1;
 	}
 
-	OutputLogPanel outputLogPanel(consoleSink);
-	ConsoleCommandOutput commandOutput(consoleSink);
+	OutputLogPanel outputLogPanel(consoleBuffer);
+	ConsoleCommandOutput commandOutput(consoleBuffer);
 	CommandRegistry commandRegistry =
 		CreateBuiltInCommandRegistry();
 

@@ -1,34 +1,19 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <deque>
-#include <mutex>
-#include <vector>
+#include <memory>
 
+#include "ConsoleBuffer.h"
 #include "Engine/Core/Logging/ILogSink.h"
 
-// Stores the bounded history consumed by the in-process developer console.
-// It deliberately has no dependency on Dear ImGui or any other presentation.
+// Adapts engine log entries into the shared console history.
 class ConsoleLogSink final : public ILogSink
 {
 public:
-    explicit ConsoleLogSink(std::size_t capacity = 5000);
+    explicit ConsoleLogSink(
+        std::shared_ptr<ConsoleBuffer> buffer);
 
     void Write(const LogEntry& entry) override;
 
-    [[nodiscard]] bool Snapshot(
-        std::uint64_t& lastSeenRevision,
-        std::vector<LogEntry>& output) const;
-
-    [[nodiscard]] std::size_t Size() const;
-    [[nodiscard]] std::size_t Capacity() const noexcept;
-
-    void Clear();
-
 private:
-    mutable std::mutex mutex_;
-    std::deque<LogEntry> entries_;
-    std::size_t capacity_;
-    std::uint64_t revision_ = 0;
+    std::shared_ptr<ConsoleBuffer> buffer_;
 };

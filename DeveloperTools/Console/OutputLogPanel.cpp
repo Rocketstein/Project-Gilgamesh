@@ -65,33 +65,50 @@ namespace
         }
     }
 
+    ImVec4 ColorFor(ConsoleEntryTone tone)
+    {
+        switch (tone)
+        {
+        case ConsoleEntryTone::Warning:
+            return { 1.0f, 0.75f, 0.2f, 1.0f };
+
+        case ConsoleEntryTone::Error:
+            return { 1.0f, 0.35f, 0.3f, 1.0f };
+
+        case ConsoleEntryTone::Normal:
+        default:
+            return { 1.0f, 1.0f, 1.0f, 1.0f };
+        }
+    }
+
     bool MatchesSearch(
-        const LogEntry& entry,
+        const ConsoleEntry& entry,
         std::string_view search)
     {
         if (search.empty())
             return true;
 
-        const std::string_view category =
-            ToString(entry.category);
+        if (entry.message.find(search) != std::string::npos)
+            return true;
 
-        const std::string_view level =
-            ToString(entry.level);
+        if (entry.logCategory
+            && std::string_view(ToString(*entry.logCategory)).find(search)
+                != std::string_view::npos)
+        {
+            return true;
+        }
 
-        return entry.message.find(search)
-            != std::string::npos
-            || category.find(search)
-            != std::string_view::npos
-            || level.find(search)
-            != std::string_view::npos;
+        return entry.logLevel
+            && std::string_view(ToString(*entry.logLevel)).find(search)
+                != std::string_view::npos;
     }
 } // Anonymous Namespace
 
 OutputLogPanel::OutputLogPanel(
-    std::shared_ptr<ConsoleLogSink> sink)
-    : sink_(std::move(sink))
+    std::shared_ptr<ConsoleBuffer> buffer)
+    : buffer_(std::move(buffer))
 {
-    assert(sink_ != nullptr);
+    assert(buffer_ != nullptr);
     visibleLevels_.fill(true);
 }
 
@@ -106,10 +123,14 @@ void OutputLogPanel::RebuildFilteredIndices()
         index < entries_.size();
         ++index)
     {
-        const LogEntry& entry = entries_[index];
+        const ConsoleEntry& entry = entries_[index];
 
-        if (!visibleLevels_[ToIndex(entry.level)])
+        if (entry.kind == ConsoleEntryKind::Log
+            && entry.logLevel
+            && !visibleLevels_[ToIndex(*entry.logLevel)])
+        {
             continue;
+        }
 
         if (!MatchesSearch(entry, search))
             continue;
@@ -120,7 +141,7 @@ void OutputLogPanel::RebuildFilteredIndices()
 
 std::optional<std::string> OutputLogPanel::Draw(bool* open)
 {
-    if (sink_ == nullptr)
+    if (buffer_ == nullptr)
         return {};
 
     if (!ImGui::Begin("Output Log", open))
@@ -130,7 +151,7 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
     }
 
     if (ImGui::Button("Clear"))
-        sink_->Clear();
+        buffer_->Clear();
 
     ImGui::SameLine();
     ImGui::Checkbox("Auto-scroll", &autoScroll_);
@@ -160,7 +181,7 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
     ImGui::Separator();
 
     const bool entriesChanged =
-        sink_->Snapshot(
+        buffer_->Snapshot(
             snapshotRevision_,
             entries_);
 
@@ -200,7 +221,7 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
                 index < clipper.DisplayEnd;
                 ++index)
             {
-                const LogEntry& entry =
+                const ConsoleEntry& entry =
                     entries_[filteredIndices_[
                         static_cast<std::size_t>(index)]];
 
@@ -209,23 +230,44 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
 
                 ImGui::BeginGroup();
 
-                ImGui::TextColored(
-                    ColorFor(entry.category),
-                    "[%s]",
-                    ToString(entry.category));
+                if (entry.kind == ConsoleEntryKind::Log
+                    && entry.logCategory
+                    && entry.logLevel)
+                {
+                    ImGui::TextColored(
+                        ColorFor(*entry.logCategory),
+                        "[%s]",
+                        ToString(*entry.logCategory));
 
-                ImGui::SameLine(0.0f, 0.0f);
-                ImGui::TextColored(
-                    ColorFor(entry.level),
-                    "[%s] ",
-                    ToString(entry.level));
+                    ImGui::SameLine(0.0f, 0.0f);
+                    ImGui::TextColored(
+                        ColorFor(*entry.logLevel),
+                        "[%s] ",
+                        ToString(*entry.logLevel));
 
-                ImGui::SameLine(0.0f, 0.0f);
-                ImGui::TextUnformatted(entry.message.c_str());
+                    ImGui::SameLine(0.0f, 0.0f);
+                    ImGui::TextUnformatted(entry.message.c_str());
+                }
+                else if (entry.kind == ConsoleEntryKind::CommandInput)
+                {
+                    ImGui::TextColored(
+                        { 0.55f, 0.75f, 1.0f, 1.0f },
+                        "> %s",
+                        entry.message.c_str());
+                }
+                else
+                {
+                    ImGui::PushStyleColor(
+                        ImGuiCol_Text,
+                        ColorFor(entry.tone));
+
+                    ImGui::TextUnformatted(entry.message.c_str());
+                    ImGui::PopStyleColor();
+                }
 
                 ImGui::EndGroup();
 
-                if (ImGui::IsItemHovered())
+                if (entry.hasSource && ImGui::IsItemHovered())
                 {
                     ImGui::SetTooltip(
                         "%s:%u\n%s",

@@ -1,43 +1,55 @@
 #include "ConsoleCommandOutput.h"
 
 #include <cassert>
+#include <chrono>
 #include <utility>
 
-#include "DeveloperTools/Console/ConsoleLogSink.h"
-#include "Engine/Core/Logging/Logger.h"
+#include "DeveloperTools/Console/ConsoleBuffer.h"
 
 ConsoleCommandOutput::ConsoleCommandOutput(
-    std::shared_ptr<ConsoleLogSink> sink)
-    : sink_(std::move(sink))
+    std::shared_ptr<ConsoleBuffer> buffer)
+    : buffer_(std::move(buffer))
 {
-    assert(sink_ != nullptr);
+    assert(buffer_ != nullptr);
 }
 
 void ConsoleCommandOutput::WriteInfo(std::string_view message)
 {
-    GILGAMESH_LOG(Tools, Info, "{}", message);
+    Push(
+        ConsoleEntryKind::CommandOutput,
+        ConsoleEntryTone::Normal,
+        message);
 }
 
 void ConsoleCommandOutput::WriteWarning(std::string_view message)
 {
-    GILGAMESH_LOG(Tools, Warning, "{}", message);
+    Push(
+        ConsoleEntryKind::CommandOutput,
+        ConsoleEntryTone::Warning,
+        message);
 }
 
 void ConsoleCommandOutput::WriteError(std::string_view message)
 {
-    GILGAMESH_LOG(Tools, Error, "{}", message);
+    Push(
+        ConsoleEntryKind::CommandOutput,
+        ConsoleEntryTone::Error,
+        message);
 }
 
 void ConsoleCommandOutput::Clear()
 {
-    if (sink_ != nullptr)
-        sink_->Clear();
+    if (buffer_ != nullptr)
+        buffer_->Clear();
 }
 
 void ConsoleCommandOutput::WriteCommand(
     std::string_view commandLine)
 {
-    GILGAMESH_LOG(Tools, Info, "> {}", commandLine);
+    Push(
+        ConsoleEntryKind::CommandInput,
+        ConsoleEntryTone::Normal,
+        commandLine);
 }
 
 void ConsoleCommandOutput::WriteResult(
@@ -60,4 +72,20 @@ void ConsoleCommandOutput::WriteResult(
         WriteError(result.message);
         break;
     }
+}
+
+void ConsoleCommandOutput::Push(
+    ConsoleEntryKind kind,
+    ConsoleEntryTone tone,
+    std::string_view message)
+{
+    if (buffer_ == nullptr)
+        return;
+
+    buffer_->Push({
+        .kind = kind,
+        .tone = tone,
+        .message = std::string(message),
+        .timestamp = std::chrono::system_clock::now()
+    });
 }
