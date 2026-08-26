@@ -23,6 +23,9 @@ namespace
         case LogLevel::Debug:
             return { 0.55f, 0.75f, 1.0f, 1.0f };
 
+        case LogLevel::Info:
+            return { 0.55f, 0.9f, 0.65f, 1.0f };
+
         case LogLevel::Warning:
             return { 1.0f, 0.75f, 0.2f, 1.0f };
 
@@ -34,6 +37,31 @@ namespace
 
         default:
             return { 1.0f, 1.0f, 1.0f, 1.0f };
+        }
+    }
+
+    ImVec4 ColorFor(LogCategory category)
+    {
+        switch (category)
+        {
+        case LogCategory::Core:
+            return { 0.65f, 0.8f, 1.0f, 1.0f };
+
+        case LogCategory::Platform:
+            return { 0.45f, 0.85f, 0.9f, 1.0f };
+
+        case LogCategory::Runtime:
+            return { 0.65f, 0.9f, 0.65f, 1.0f };
+
+        case LogCategory::Renderer:
+            return { 0.95f, 0.7f, 0.4f, 1.0f };
+
+        case LogCategory::Tools:
+            return { 0.8f, 0.65f, 1.0f, 1.0f };
+
+        case LogCategory::Misc:
+        default:
+            return { 0.75f, 0.75f, 0.75f, 1.0f };
         }
     }
 
@@ -140,33 +168,18 @@ void OutputLogPanel::Draw(bool* open)
         RebuildFilteredIndices();
 
     constexpr ImGuiTableFlags tableFlags =
-        ImGuiTableFlags_BordersInnerV
-        | ImGuiTableFlags_RowBg
-        | ImGuiTableFlags_Resizable
+        ImGuiTableFlags_RowBg
         | ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable(
         "OutputLogTable",
-        3,
+        1,
         tableFlags,
         ImVec2(0.0f, 0.0f)))
     {
         ImGui::TableSetupColumn(
-            "Category",
-            ImGuiTableColumnFlags_WidthFixed,
-            90.0f);
-
-        ImGui::TableSetupColumn(
-            "Level",
-            ImGuiTableColumnFlags_WidthFixed,
-            80.0f);
-
-        ImGui::TableSetupColumn(
             "Message",
             ImGuiTableColumnFlags_WidthStretch);
-
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableHeadersRow();
 
         const bool shouldScroll =
             entriesChanged
@@ -189,24 +202,25 @@ void OutputLogPanel::Draw(bool* open)
                         static_cast<std::size_t>(index)]];
 
                 ImGui::TableNextRow();
-
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(
+
+                ImGui::BeginGroup();
+
+                ImGui::TextColored(
+                    ColorFor(entry.category),
+                    "[%s]",
                     ToString(entry.category));
 
-                ImGui::TableSetColumnIndex(1);
-                ImGui::PushStyleColor(
-                    ImGuiCol_Text,
-                    ColorFor(entry.level));
-
-                ImGui::TextUnformatted(
+                ImGui::SameLine(0.0f, 0.0f);
+                ImGui::TextColored(
+                    ColorFor(entry.level),
+                    "[%s] ",
                     ToString(entry.level));
 
-                ImGui::PopStyleColor();
+                ImGui::SameLine(0.0f, 0.0f);
+                ImGui::TextUnformatted(entry.message.c_str());
 
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextUnformatted(
-                    entry.message.c_str());
+                ImGui::EndGroup();
 
                 if (ImGui::IsItemHovered())
                 {
