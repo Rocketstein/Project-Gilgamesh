@@ -4,7 +4,7 @@ target_sources (GilgameshDeveloperTools
 	PRIVATE
 		Console/Commands/BuiltInCommands.cpp
 		Console/Commands/BuiltInCommands.h
-		Console/Commands/CommandContext.h
+		Console/Commands/CommandInvocation.h
 		Console/Commands/CommandLineTokenizer.cpp
 		Console/Commands/CommandLineTokenizer.h
 		Console/Commands/CommandRegistry.cpp

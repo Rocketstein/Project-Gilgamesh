@@ -22,7 +22,6 @@
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 #include "DeveloperTools/Console/Commands/BuiltInCommands.h"
-#include "DeveloperTools/Console/Commands/CommandContext.h"
 #include "DeveloperTools/Console/ConsoleCommandOutput.h"
 #include "DeveloperTools/Console/ConsoleLogSink.h"
 #include "DeveloperTools/Console/OutputLogPanel.h"
@@ -113,12 +112,6 @@ int Launch()
 	CommandRegistry commandRegistry =
 		CreateBuiltInCommandRegistry();
 
-	CommandContext commandContext{
-		.renderer = renderer,
-		.registry = commandRegistry,
-		.output = commandOutput
-	};
-
 	std::optional<std::string> pendingCommand;
 #endif
 
@@ -204,7 +197,7 @@ int Launch()
 
 			const CommandResult commandResult =
 				commandRegistry.Execute(
-					commandContext,
+					commandOutput,
 					*pendingCommand);
 
 			commandOutput.WriteResult(commandResult);

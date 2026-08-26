@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "CommandInvocation.h"
 #include "CommandLineTokenizer.h"
 
 namespace
@@ -82,7 +83,7 @@ bool CommandRegistry::Register(CommandDefinition definition)
 }
 
 CommandResult CommandRegistry::Execute(
-    CommandContext& context,
+    ICommandOutput& output,
     std::string_view commandLine)
 {
     CommandLineTokenizeResult parsed =
@@ -124,8 +125,14 @@ CommandResult CommandRegistry::Execute(
     const CommandDefinition& definition =
         found->second;
 
+    const CommandInvocation invocation{
+        .arguments = arguments,
+        .registry = *this,
+        .output = output
+    };
+
     CommandResult result =
-        definition.handler(context, arguments);
+        definition.handler(invocation);
 
     if (result.status == CommandStatus::UsageError
         && result.message.empty())

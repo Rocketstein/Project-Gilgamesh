@@ -2,48 +2,47 @@
 
 #include <format>
 
-#include "CommandContext.h"
+#include "CommandInvocation.h"
 
 namespace
 {
     CommandResult ClearCommand(
-        CommandContext& context,
-        std::span<const std::string_view> arguments)
+        const CommandInvocation& invocation)
     {
-        if (!arguments.empty())
+        if (!invocation.arguments.empty())
             return CommandResult::Usage();
 
-        context.output.Clear();
+        invocation.output.Clear();
         return CommandResult::Success();
     }
 
     CommandResult HelpCommand(
-        CommandContext& context,
-        std::span<const std::string_view> arguments)
+        const CommandInvocation& invocation)
     {
-        if (arguments.size() > 1)
+        if (invocation.arguments.size() > 1)
             return CommandResult::Usage();
 
-        if (arguments.size() == 1)
+        if (invocation.arguments.size() == 1)
         {
             const CommandDefinition* definition =
-                context.registry.Find(arguments.front());
+                invocation.registry.Find(
+                    invocation.arguments.front());
 
             if (definition == nullptr)
             {
                 return CommandResult::Error(
                     std::format(
                         "Unknown command '{}'.",
-                        arguments.front()));
+                        invocation.arguments.front()));
             }
 
-            context.output.WriteInfo(
+            invocation.output.WriteInfo(
                 std::format(
                     "{} - {}",
                     definition->name,
                     definition->description));
 
-            context.output.WriteInfo(
+            invocation.output.WriteInfo(
                 std::format(
                     "Usage: {}",
                     definition->usage));
@@ -51,41 +50,40 @@ namespace
             return CommandResult::Success();
         }
 
-        context.output.WriteInfo("Available commands:");
+        invocation.output.WriteInfo("Available commands:");
 
         for (const CommandDefinition* definition
-             : context.registry.ListCommands())
+             : invocation.registry.ListCommands())
         {
-            context.output.WriteInfo(
+            invocation.output.WriteInfo(
                 std::format(
                     "  {:<12} {}",
                     definition->name,
                     definition->description));
         }
 
-        context.output.WriteInfo(
+        invocation.output.WriteInfo(
             "Type 'help <command>' for detailed usage.");
 
         return CommandResult::Success();
     }
 
     CommandResult EchoCommand(
-        CommandContext& context,
-        std::span<const std::string_view> arguments)
+        const CommandInvocation& invocation)
     {
-        if (arguments.empty())
+        if (invocation.arguments.empty())
             return CommandResult::Usage();
 
         std::string message;
 
         for (std::size_t index = 0;
-            index < arguments.size();
+            index < invocation.arguments.size();
             ++index)
         {
             if (index != 0)
                 message += ' ';
 
-            message += arguments[index];
+            message += invocation.arguments[index];
         }
 
         return CommandResult::Success(

@@ -6,6 +6,8 @@
 
 #include "CommandTypes.h"
 
+class ICommandOutput;
+
 class CommandRegistry
 {
 public:
@@ -15,7 +17,7 @@ public:
 
 	bool Register(CommandDefinition definition);
 	CommandResult Execute(
-		CommandContext& context,
+		ICommandOutput& output,
 		std::string_view commandLine);
 
 	[[nodiscard]]

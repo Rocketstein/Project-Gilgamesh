@@ -1,10 +1,9 @@
 #pragma once
 
-#include <span>
+#include <functional>
 #include <string>
-#include <string_view>
 
-struct CommandContext;
+struct CommandInvocation;
 
 enum class CommandStatus
 {
@@ -27,9 +26,9 @@ struct CommandResult
     static CommandResult Error(std::string message);
 };
 
-using CommandHandler = CommandResult(*)(
-    CommandContext& context,
-    std::span<const std::string_view> arguments);
+using CommandHandler =
+    std::function<CommandResult(
+        const CommandInvocation& invocation)>;
 
 struct CommandDefinition
 {

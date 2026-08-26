@@ -3,7 +3,7 @@
 #include <memory>
 #include <string_view>
 
-#include "DeveloperTools/Console/Commands/CommandContext.h"
+#include "DeveloperTools/Console/Commands/CommandInvocation.h"
 #include "DeveloperTools/Console/Commands/CommandTypes.h"
 
 class ConsoleLogSink;

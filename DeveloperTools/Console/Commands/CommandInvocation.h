@@ -1,8 +1,8 @@
 #pragma once
 
+#include <span>
 #include <string_view>
 
-class Renderer;
 class CommandRegistry;
 
 // Command handlers can emit additional lines without depending on ImGui or a
@@ -19,11 +19,11 @@ public:
     virtual void Clear() = 0;
 };
 
-// Services made available to command handlers. Add another service here only
-// when a command genuinely needs it; this keeps handler dependencies visible.
-struct CommandContext
+// Per-execution command infrastructure. Engine dependencies belong in the
+// individual handler's capture rather than in this shared invocation object.
+struct CommandInvocation
 {
-    Renderer& renderer;
-    CommandRegistry& registry;
+    std::span<const std::string_view> arguments;
+    const CommandRegistry& registry;
     ICommandOutput& output;
 };
