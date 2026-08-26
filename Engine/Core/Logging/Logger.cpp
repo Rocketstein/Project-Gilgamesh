@@ -1,6 +1,7 @@
 #include "Logger.h"
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -13,11 +14,23 @@ namespace
 		std::shared_ptr<ILogSink> sink;
 	};
 
+	using SinkList = std::vector<RegisteredSink>;
+
 	struct LoggerState
 	{
-		std::mutex mutex;
-		std::vector<RegisteredSink> sinks;
+		LoggerState()
+			: sinks(std::make_shared<const SinkList>())
+		{
+		}
+
+		// Sink-list mutations are rare and serialized here. Published lists are
+		// immutable, so logging threads never need this mutex.
+		std::mutex mutationMutex;
+		std::atomic<std::shared_ptr<const SinkList>> sinks;
 		std::uint64_t nextSinkId = 1;
+
+		std::atomic<bool>     hasSinks{ false };
+		std::atomic<LogLevel> minimumLevel{ LogLevel::Trace };
 	};
 
 	LoggerState& GetLoggerState()
@@ -66,50 +79,74 @@ LogSinkRegistration Logger::AddSink(
 		return {};
 
 	auto& state = GetLoggerState();
-	std::scoped_lock lock(state.mutex);
+	std::scoped_lock lock(state.mutationMutex);
 
-	const std::uint64_t id = state.nextSinkId++;
-	state.sinks.push_back({ id, std::move(sink) });
+	const auto current = state.sinks.load(std::memory_order_acquire);
+	const std::uint64_t id = state.nextSinkId;
 
+	auto updated = std::make_shared<SinkList>(*current);
+	updated->push_back({ id, std::move(sink) });
+
+	state.sinks.store(
+		std::shared_ptr<const SinkList>(std::move(updated)),
+		std::memory_order_release);
+
+	state.hasSinks.store(true, std::memory_order_relaxed);
+
+	++state.nextSinkId;              // only after everything that can throw
 	return LogSinkRegistration(id);
 }
 
-bool Logger::ShouldLog(LogLevel level)
+bool Logger::ShouldLog()
 {
-	auto& state = GetLoggerState();
-	std::scoped_lock lock(state.mutex);
+	const auto sinks = GetLoggerState().sinks.load(
+		std::memory_order_acquire);
 
-	return !state.sinks.empty();
+	return !sinks->empty();
 }
 
 void Logger::Dispatch(const LogEntry& entry)
 {
-	std::vector<std::shared_ptr<ILogSink>> sinks;
+	const auto sinks = GetLoggerState().sinks.load(
+		std::memory_order_acquire);
 
+	for (const auto& registeredSink : *sinks)
 	{
-		auto& state = GetLoggerState();
-		std::scoped_lock lock(state.mutex);
-
-		sinks.reserve(state.sinks.size());
-		for (const auto& registeredSink : state.sinks)
-			sinks.push_back(registeredSink.sink);
-	}
-
-	for (const auto& sink : sinks)
-	{
-		sink->Write(entry);
+		registeredSink.sink->Write(entry);
 	}
 }
 
 void Logger::RemoveSink(std::uint64_t id) noexcept
 {
 	auto& state = GetLoggerState();
-	std::scoped_lock lock(state.mutex);
+	std::scoped_lock lock(state.mutationMutex);
 
-	std::erase_if(
-		state.sinks,
-		[id](const RegisteredSink& registeredSink)
-		{
-			return registeredSink.id == id;
-		});
+	const auto current = state.sinks.load(std::memory_order_acquire);
+
+	const bool present = std::any_of(
+		current->begin(), current->end(),
+		[id](const RegisteredSink& s) { return s.id == id; });
+
+	if (!present)
+		return;                                  // no allocation at all
+
+	try
+	{
+		auto updated = std::make_shared<SinkList>();
+		updated->reserve(current->size() - 1);
+
+		for (const auto& s : *current)
+			if (s.id != id)
+				updated->push_back(s);
+
+		state.hasSinks.store(!updated->empty(), std::memory_order_relaxed);
+
+		state.sinks.store(
+			std::shared_ptr<const SinkList>(std::move(updated)),
+			std::memory_order_release);
+	}
+	catch (const std::bad_alloc&)
+	{
+		// Out of memory while tearing down a sink.
+	}
 }

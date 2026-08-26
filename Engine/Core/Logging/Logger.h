@@ -12,12 +12,18 @@
 #include "ILogSink.h"
 #include "Engine/Core/Text/Utf8.h"
 
-#define GILGAMESH_LOG(Category, Level, ...)          \
-    ::Logger::Write(                                 \
-        ::LogCategory::Category,                     \
-        ::LogLevel::Level,                           \
-        std::source_location::current(),             \
-        __VA_ARGS__)
+#define GILGAMESH_LOG(Category, Level, ...)              \
+    do                                                   \
+    {                                                    \
+        if (::Logger::ShouldLog())                       \
+        {                                                \
+            ::Logger::Write(                             \
+                ::LogCategory::Category,                 \
+                ::LogLevel::Level,                       \
+                std::source_location::current(),         \
+                __VA_ARGS__);                            \
+        }                                                \
+    } while (false)
 
 class Logger;
 
@@ -78,7 +84,7 @@ public:
 	static LogSinkRegistration AddSink(
 		std::shared_ptr<ILogSink> sink);
 
-	static bool ShouldLog(LogLevel level);
+	static bool ShouldLog();
 
     template<typename... Args>
     static void Write(
@@ -89,7 +95,7 @@ public:
             LoggerDetail::FormatArgument<Args>...> format,
         Args&&... args)
     {
-        if (!ShouldLog(level))
+        if (!ShouldLog())
             return;
 
         LogEntry entry{
