@@ -147,7 +147,7 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
     if (buffer_ == nullptr)
         return {};
 
-    if (!ImGui::Begin("Output Log", open))
+    if (!ImGui::Begin(WindowName, open))
     {
         ImGui::End();
         return {};

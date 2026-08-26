@@ -16,6 +16,9 @@ class ConsoleConfiguration;
 class OutputLogPanel
 {
 public:
+    static constexpr const char* WindowName =
+        "Output Log###OutputLog";
+
     explicit OutputLogPanel(
         std::shared_ptr<ConsoleBuffer> buffer,
         ConsoleConfiguration& configuration);

@@ -28,6 +28,7 @@
 #include "DeveloperTools/Console/ConsoleLogSink.h"
 #include "DeveloperTools/Console/OutputLogPanel.h"
 #include "DeveloperTools/Runtime/ImGuiIntegration.h"
+#include "DeveloperTools/Workspace/DeveloperToolsWorkspace.h"
 #endif
 
 using Microsoft::WRL::ComPtr;
@@ -113,6 +114,7 @@ int Launch()
 	}
 
 	ConsoleConfiguration consoleConfiguration;
+	DeveloperToolsWorkspace developerToolsWorkspace;
 	OutputLogPanel outputLogPanel(
 		consoleBuffer,
 		consoleConfiguration);
@@ -249,6 +251,8 @@ int Launch()
 		context->Draw(3, 0);
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+		developerToolsWorkspace.DrawDockSpace();
+
 		if (auto command = outputLogPanel.Draw())
 			pendingCommand = std::move(*command);
 

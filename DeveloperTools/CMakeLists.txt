@@ -24,6 +24,9 @@ target_sources (GilgameshDeveloperTools
 
 		Runtime/ImGuiIntegration.cpp
 		Runtime/ImGuiIntegration.h
+
+		Workspace/DeveloperToolsWorkspace.cpp
+		Workspace/DeveloperToolsWorkspace.h
 )
 
 get_target_property (
