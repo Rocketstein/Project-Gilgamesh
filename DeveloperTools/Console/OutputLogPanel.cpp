@@ -118,15 +118,15 @@ void OutputLogPanel::RebuildFilteredIndices()
     }
 }
 
-void OutputLogPanel::Draw(bool* open)
+std::optional<std::string> OutputLogPanel::Draw(bool* open)
 {
     if (sink_ == nullptr)
-        return;
+        return {};
 
     if (!ImGui::Begin("Output Log", open))
     {
         ImGui::End();
-        return;
+        return {};
     }
 
     if (ImGui::Button("Clear"))
@@ -171,11 +171,14 @@ void OutputLogPanel::Draw(bool* open)
         ImGuiTableFlags_RowBg
         | ImGuiTableFlags_ScrollY;
 
+    const float commandInputHeight =
+        ImGui::GetFrameHeightWithSpacing();
+
     if (ImGui::BeginTable(
         "OutputLogTable",
         1,
         tableFlags,
-        ImVec2(0.0f, 0.0f)))
+        ImVec2(0.0f, -commandInputHeight)))
     {
         ImGui::TableSetupColumn(
             "Message",
@@ -239,5 +242,41 @@ void OutputLogPanel::Draw(bool* open)
         ImGui::EndTable();
     }
 
+    ImGui::Separator();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(">");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1.0f);
+
+    const bool commandSubmitted = ImGui::InputTextWithHint(
+        "##CommandInput",
+        "Enter command...",
+        commandInput_.data(),
+        commandInput_.size(),
+        ImGuiInputTextFlags_EnterReturnsTrue);
+
+    std::optional<std::string> submittedCommand;
+
+    if (commandSubmitted)
+    {
+        const std::string_view command(commandInput_.data());
+        const std::size_t first = command.find_first_not_of(" \t");
+
+        if (first != std::string_view::npos)
+        {
+            const std::size_t last =
+                command.find_last_not_of(" \t");
+
+            submittedCommand.emplace(
+                command.substr(first, last - first + 1));
+        }
+
+        commandInput_.fill('\0');
+
+        // Keep keyboard-driven command entry fast after submission.
+        ImGui::SetKeyboardFocusHere(-1);
+    }
+
     ImGui::End();
+    return submittedCommand;
 }

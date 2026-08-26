@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "DeveloperTools/Console/ConsoleLogSink.h"
@@ -14,8 +16,9 @@ public:
     explicit OutputLogPanel(
         std::shared_ptr<ConsoleLogSink> sink);
 
-    // open can be controlled later by a developer-tools menu.
-    void Draw(bool* open = nullptr);
+    // Draws the console and returns a command when the user presses Enter.
+    // Command parsing and execution belong to the future command system.
+    std::optional<std::string> Draw(bool* open = nullptr);
 
 private:
     void RebuildFilteredIndices();
@@ -27,6 +30,7 @@ private:
 
     std::array<bool, LevelCount> visibleLevels_{};
     std::array<char, 128> search_{};
+    std::array<char, 256> commandInput_{};
 
     std::size_t snapshotRevision_ = 0;
     std::vector<LogEntry> entries_;
