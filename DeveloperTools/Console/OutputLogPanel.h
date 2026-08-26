@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,8 +32,9 @@ private:
     std::array<char, 128> search_{};
     std::array<char, 256> commandInput_{};
 
-    std::uint64_t snapshotRevision_ = 0;
-    std::vector<ConsoleEntry> entries_;
+    std::uint64_t lastSeenSequence_ = 0;
+    std::deque<ConsoleEntry> entries_;
+    std::vector<ConsoleEntry> pendingEntries_;
     std::vector<std::size_t> filteredIndices_;
 
     bool autoScroll_ = true;

@@ -186,10 +186,27 @@ std::optional<std::string> OutputLogPanel::Draw(bool* open)
 
     ImGui::Separator();
 
-    const bool entriesChanged =
-        buffer_->Snapshot(
-            snapshotRevision_,
-            entries_);
+    std::uint64_t discardBeforeSequence = 0;
+
+    const bool entriesChanged = buffer_->ReadDelta(
+        lastSeenSequence_,
+        discardBeforeSequence,
+        pendingEntries_);
+
+    if (entriesChanged)
+    {
+        while (!entries_.empty()
+            && entries_.front().sequence
+                < discardBeforeSequence)
+        {
+            entries_.pop_front();
+        }
+
+        for (ConsoleEntry& entry : pendingEntries_)
+            entries_.push_back(std::move(entry));
+
+        pendingEntries_.clear();
+    }
 
     if (entriesChanged || filterChanged)
         RebuildFilteredIndices();

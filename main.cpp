@@ -61,7 +61,7 @@ int Launch()
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 	auto consoleBuffer =
-		std::make_shared<ConsoleBuffer>(5000);
+		std::make_shared<ConsoleBuffer>(1024);
 
 	auto consoleSink =
 		std::make_shared<ConsoleLogSink>(consoleBuffer);

@@ -108,7 +108,7 @@ CommandResult CommandRegistry::Execute(
     {
         return CommandResult::Error(
             std::format(
-                "Unknown command '{}'. Type 'help' for a list.",
+                "Unknown command '{}'. Type 'help' for a list of available commands.",
                 commandName));
     }
 

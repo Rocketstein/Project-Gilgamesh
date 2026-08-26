@@ -42,6 +42,9 @@ using ConsoleEntryMetadata = std::variant<
 
 struct ConsoleEntry
 {
+    // Assigned by ConsoleBuffer when the entry is inserted.
+    std::uint64_t sequence = 0;
+
     ConsoleEntryMetadata metadata;
     std::string message;
     std::chrono::system_clock::time_point timestamp;
@@ -57,9 +60,10 @@ public:
     void Push(ConsoleEntry entry);
 
     [[nodiscard]]
-    bool Snapshot(
-        std::uint64_t& lastSeenRevision,
-        std::vector<ConsoleEntry>& output) const;
+    bool ReadDelta(
+        std::uint64_t& lastSeenSequence,
+        std::uint64_t& discardBeforeSequence,
+        std::vector<ConsoleEntry>& appendedEntries) const;
 
     [[nodiscard]]
     std::size_t Size() const;
@@ -73,5 +77,5 @@ private:
     mutable std::mutex mutex_;
     std::deque<ConsoleEntry> entries_;
     std::size_t capacity_;
-    std::uint64_t revision_ = 0;
+    std::uint64_t latestSequence_ = 0;
 };
