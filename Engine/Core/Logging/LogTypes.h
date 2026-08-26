@@ -39,7 +39,7 @@ struct LogEntry
 	std::source_location source;
 };
 
-constexpr std::string_view ToString(LogLevel level)
+constexpr const char* ToString(LogLevel level)
 {
 	switch (level)
 	{
@@ -53,7 +53,7 @@ constexpr std::string_view ToString(LogLevel level)
 	}
 }
 
-constexpr std::string_view ToString(LogCategory category)
+constexpr const char* ToString(LogCategory category)
 {
 	switch (category)
 	{

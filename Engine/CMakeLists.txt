@@ -8,6 +8,8 @@ target_sources (GilgameshEngine
 		Core/Logging/Logger.cpp
 		Core/Logging/Logger.h
 		Core/Logging/LogTypes.h
+		Core/Text/Utf8.cpp
+		Core/Text/Utf8.h
 
 		Platform/Windows/Window.cpp
 		Platform/Windows/Window.h
@@ -42,6 +44,11 @@ source_group (TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${GILGAMESH_ENGINE_SOURCES}
 target_include_directories(GilgameshEngine
 	PUBLIC
 		${CMAKE_SOURCE_DIR}
+)
+
+target_compile_options(GilgameshEngine
+    PUBLIC
+        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>
 )
 
 target_compile_definitions(GilgameshEngine

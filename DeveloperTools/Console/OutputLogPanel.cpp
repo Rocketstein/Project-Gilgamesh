@@ -44,10 +44,17 @@ namespace
         if (search.empty())
             return true;
 
-        return entry.message.find(search) != std::string::npos
-            || ToString(entry.category).find(search)
+        const std::string_view category =
+            ToString(entry.category);
+
+        const std::string_view level =
+            ToString(entry.level);
+
+        return entry.message.find(search)
+            != std::string::npos
+            || category.find(search)
             != std::string_view::npos
-            || ToString(entry.level).find(search)
+            || level.find(search)
             != std::string_view::npos;
     }
 } // Anonymous Namespace
@@ -118,7 +125,7 @@ void OutputLogPanel::Draw(bool* open)
             static_cast<LogLevel>(index);
 
         filterChanged |= ImGui::Checkbox(
-            ToString(level).data(),
+            ToString(level),
             &visibleLevels_[index]);
     }
 
@@ -185,7 +192,7 @@ void OutputLogPanel::Draw(bool* open)
 
                 ImGui::TableSetColumnIndex(0);
                 ImGui::TextUnformatted(
-                    ToString(entry.category).data());
+                    ToString(entry.category));
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::PushStyleColor(
@@ -193,7 +200,7 @@ void OutputLogPanel::Draw(bool* open)
                     ColorFor(entry.level));
 
                 ImGui::TextUnformatted(
-                    ToString(entry.level).data());
+                    ToString(entry.level));
 
                 ImGui::PopStyleColor();
 
