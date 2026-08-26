@@ -1,12 +1,16 @@
 #pragma once
 
-#include <format>
 #include <cstdint>
+#include <filesystem>
+#include <format>
 #include <memory>
 #include <source_location>
+#include <string>
+#include <type_traits>
 #include <utility>
 
 #include "ILogSink.h"
+#include "Engine/Core/Text/Utf8.h"
 
 #define GILGAMESH_LOG(Category, Level, ...)          \
     ::Logger::Write(                                 \
@@ -16,6 +20,32 @@
         __VA_ARGS__)
 
 class Logger;
+
+namespace LoggerDetail
+{
+    template<typename T>
+    using FormatArgument = std::conditional_t<
+        std::is_same_v<
+            std::remove_cvref_t<T>,
+            std::filesystem::path>,
+        std::string,
+        T>;
+
+    template<typename T>
+    decltype(auto) NormalizeArgument(T&& value)
+    {
+        if constexpr (std::is_same_v<
+            std::remove_cvref_t<T>,
+            std::filesystem::path>)
+        {
+            return Gilgamesh::Text::PathToUtf8(value);
+        }
+        else
+        {
+            return std::forward<T>(value);
+        }
+    }
+}
 
 class LogSinkRegistration
 {
@@ -55,7 +85,8 @@ public:
         LogCategory category,
         LogLevel level,
         std::source_location source,
-        std::format_string<Args...> format,
+        std::format_string<
+            LoggerDetail::FormatArgument<Args>...> format,
         Args&&... args)
     {
         if (!ShouldLog(level))
@@ -66,7 +97,8 @@ public:
             .level = level,
             .message = std::format(
                 format,
-                std::forward<Args>(args)...),
+                LoggerDetail::NormalizeArgument(
+                    std::forward<Args>(args))...),
             .timestamp =
                 std::chrono::system_clock::now(),
             .source = source

@@ -51,16 +51,3 @@ void ConsoleLogSink::Clear()
     entries_.clear();
     ++revision_;
 }
-
-void ConsoleLogSink::UpdateRevision()
-{
-    // Check if revision_ is at the maximum limit for size_t
-    if (revision_ == std::numeric_limits<size_t>::max())
-    {
-        revision_ = 1;
-    }
-    else
-    {
-        revision_++;
-    }
-}

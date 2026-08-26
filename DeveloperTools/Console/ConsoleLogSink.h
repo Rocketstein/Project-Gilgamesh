@@ -27,9 +27,6 @@ public:
     void Clear();
 
 private:
-    void UpdateRevision();
-
-private:
     mutable std::mutex mutex_;
     std::deque<LogEntry> entries_;
     std::size_t capacity_;
