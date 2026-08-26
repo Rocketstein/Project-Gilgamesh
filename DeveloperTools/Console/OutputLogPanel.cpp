@@ -1,5 +1,6 @@
 #include "OutputLogPanel.h"
 
+#include <algorithm>
 #include <cassert>
 #include <string_view>
 #include <utility>
@@ -77,14 +78,43 @@ namespace
         }
     }
 
-    bool MatchesSearch(
-        const ConsoleEntry& entry,
+    constexpr char ToLowerAscii(char character)
+    {
+        if (character >= 'A' && character <= 'Z')
+        {
+            return static_cast<char>(
+                character - 'A' + 'a');
+        }
+
+        return character;
+    }
+
+    bool ContainsIgnoreCase(
+        std::string_view text,
         std::string_view search)
     {
         if (search.empty())
             return true;
 
-        if (entry.message.find(search) != std::string::npos)
+        const auto match = std::search(
+            text.begin(),
+            text.end(),
+            search.begin(),
+            search.end(),
+            [](char left, char right)
+            {
+                return ToLowerAscii(left)
+                    == ToLowerAscii(right);
+            });
+
+        return match != text.end();
+    }
+
+    bool MatchesSearch(
+        const ConsoleEntry& entry,
+        std::string_view search)
+    {
+        if (ContainsIgnoreCase(entry.message, search))
             return true;
 
         const auto* log =
@@ -93,14 +123,12 @@ namespace
         if (log == nullptr)
             return false;
 
-        if (std::string_view(ToString(log->category)).find(search)
-            != std::string_view::npos)
-        {
-            return true;
-        }
-
-        return std::string_view(ToString(log->level)).find(search)
-                != std::string_view::npos;
+        return ContainsIgnoreCase(
+            ToString(log->category),
+            search)
+            || ContainsIgnoreCase(
+                ToString(log->level),
+                search);
     }
 } // Anonymous Namespace
 
