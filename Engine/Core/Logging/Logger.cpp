@@ -29,8 +29,7 @@ namespace
 		std::atomic<std::shared_ptr<const SinkList>> sinks;
 		std::uint64_t nextSinkId = 1;
 
-		std::atomic<bool>     hasSinks{ false };
-		std::atomic<LogLevel> minimumLevel{ LogLevel::Trace };
+		std::atomic<bool> hasSinks{ false };
 	};
 
 	LoggerState& GetLoggerState()
@@ -99,10 +98,8 @@ LogSinkRegistration Logger::AddSink(
 
 bool Logger::ShouldLog()
 {
-	const auto sinks = GetLoggerState().sinks.load(
-		std::memory_order_acquire);
-
-	return !sinks->empty();
+	const auto& state = GetLoggerState();
+	return state.hasSinks.load(std::memory_order_relaxed);
 }
 
 void Logger::Dispatch(const LogEntry& entry)

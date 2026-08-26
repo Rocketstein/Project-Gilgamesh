@@ -86,6 +86,7 @@ public:
 
 	static bool ShouldLog();
 
+    // Do not call this function directly; use logging macro instead.
     template<typename... Args>
     static void Write(
         LogCategory category,
@@ -95,9 +96,6 @@ public:
             LoggerDetail::FormatArgument<Args>...> format,
         Args&&... args)
     {
-        if (!ShouldLog())
-            return;
-
         LogEntry entry{
             .category = category,
             .level = level,
