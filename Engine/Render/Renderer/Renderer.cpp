@@ -1,5 +1,9 @@
 #include "Renderer.h"
 
+namespace {
+    Color4 clearColor = Color4{ 0.1f, 0.12f, 0.16f };
+} // Anonymous Namespace
+
 bool Renderer::Initialize(RendererDesc desc)
 {
     if (desc.outputWindow == nullptr ||
@@ -46,7 +50,7 @@ bool Renderer::Resize(Extent2D extent)
 	return true;
 }
 
-bool Renderer::BeginFrame(const Color4& clearColor)
+bool Renderer::BeginFrame()
 {
     if (!device_.IsInitialized() ||
         !surface_.IsInitialized())

@@ -27,7 +27,7 @@ public:
 	bool Initialize(RendererDesc desc);
 	bool Resize(Extent2D extent);
 
-	bool BeginFrame(const Color4& clearColor);
+	bool BeginFrame();
 	// Render();
 	RenderResult EndFrame();
 

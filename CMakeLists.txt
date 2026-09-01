@@ -52,8 +52,23 @@ endif()
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include (CompileHLSL)
 
-# 진입점 실행 파일을 정의합니다.
-add_executable (Gilgamesh WIN32 "main.cpp")
+# Define the editor executable and its process-level composition sources.
+add_executable (Gilgamesh WIN32)
+
+target_sources (Gilgamesh
+  PRIVATE
+    main.cpp
+    Application/Application.cpp
+    Application/Application.h
+    "Editor/EditorProgram.cpp"
+    "Editor/EditorProgram.h"
+)
+
+get_target_property (GILGAMESH_APPLICATION_SOURCES Gilgamesh SOURCES)
+source_group (
+  TREE ${CMAKE_CURRENT_SOURCE_DIR}
+  FILES ${GILGAMESH_APPLICATION_SOURCES}
+)
 
 # UNICODE / NOMINMAX / WIN32_LEAN_AND_MEAN 는 GilgameshEngine 이 PUBLIC 으로
 # 전파합니다. Windows.h 를 공개 헤더에서 포함하므로 한 곳에서만 정의합니다.
@@ -85,6 +100,7 @@ endif()
 
 target_compile_definitions (Gilgamesh
   PRIVATE
+    GILGAMESH_BUILD_EDITOR=1
     GILGAMESH_ENABLE_DEVELOPER_TOOLS=$<BOOL:${GILGAMESH_ENABLE_DEVELOPER_TOOLS}>
 )
 

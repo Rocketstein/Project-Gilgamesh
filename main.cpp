@@ -231,7 +231,7 @@ int Launch()
 		imgui.BeginFrame();
 #endif
 
-		renderer.BeginFrame(Color4{ 0.1f, 0.12f, 0.16f });
+		renderer.BeginFrame();
 
 		ID3D11DeviceContext* context =
 			renderer.GetDeviceContext();
