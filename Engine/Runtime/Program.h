@@ -13,6 +13,4 @@ public:
     virtual void Update(const FrameContext&) = 0;
     virtual void Render(RenderContext&) = 0;
     virtual void Shutdown() = 0;
-
-    bool isProgramAlive = false;
 };

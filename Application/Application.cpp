@@ -23,8 +23,11 @@ bool Application::InitializeEngine()
 
 void Application::Shutdown()
 {
-	program_->Shutdown();
-	program_.reset();
+	if (program_)
+	{
+		program_->Shutdown();
+		program_.reset();
+	}
 
 	engine_.Shutdown();
 }

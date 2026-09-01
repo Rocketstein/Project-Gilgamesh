@@ -21,8 +21,6 @@
 bool EditorProgram::Initialize(EngineServices& serives)
 {
 
-
-	isProgramAlive = true;
 	return true;
 }
 
@@ -38,6 +36,5 @@ void EditorProgram::Render(RenderContext& context)
 
 void EditorProgram::Shutdown()
 {
-	if (!isProgramAlive) return;
 
 }
