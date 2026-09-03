@@ -186,10 +186,10 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
     // Shader Manager test. Move this to graphics pipeline later on.
     ShaderManager& shaders = renderer.GetShaderManager();
     const auto vsLoad = shaders.LoadVertex(L"Primitive");
-    if (!vsLoad) return 1;
+    if (!vsLoad) return false;
 
     const auto psLoad = shaders.LoadPixel(L"Primitive");
-    if (!psLoad) return 1;
+    if (!psLoad) return false;
 
     const VertexShaderHandle vsHandle = vsLoad.resource;
     const PixelShaderHandle  psHandle = psLoad.resource;

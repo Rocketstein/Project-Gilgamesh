@@ -18,7 +18,7 @@ Engine and application threads
 
 Console command input
   -> OutputLogPanel
-  -> pending command in main.cpp
+  -> pending command in EditorProgram
   -> CommandRegistry on the next frame
   -> ConsoleCommandOutput
   -> ConsoleBuffer
@@ -46,7 +46,7 @@ The important ownership boundary is that producers write entries into `ConsoleBu
 | Built-in command definitions | `DeveloperTools/Console/Commands/BuiltInCommands.*` |
 | Adapter from command responses to console entries | `DeveloperTools/Console/ConsoleCommandOutput.*` |
 | Dockspace and initial layout | `DeveloperTools/Workspace/DeveloperToolsWorkspace.*` |
-| Construction and per-frame orchestration | `main.cpp` |
+| Construction and per-frame orchestration | `Editor/EditorProgram.cpp` |
 
 ## Entry model and buffer
 
@@ -63,7 +63,7 @@ There are three metadata variants:
 2. `ConsoleCommandInputMetadata` identifies an entered command.
 3. `ConsoleCommandOutputMetadata` contains a normal, warning, or error tone.
 
-`ConsoleBuffer` is thread-safe and bounded. Its default capacity is 5,000 entries, but `main.cpp` currently constructs the application buffer with a capacity of 1,024. When full, pushing an entry discards the oldest entry before appending the new one.
+`ConsoleBuffer` is thread-safe and bounded. `EditorProgram` currently constructs the application buffer with a capacity of 1,024. When full, pushing an entry discards the oldest entry before appending the new one.
 
 Consumers use `ReadDelta()` rather than copying the entire buffer each frame. The panel supplies its last-seen sequence and receives:
 
@@ -139,7 +139,7 @@ The filtered index cache is rebuilt when:
 
 ### Submission lifecycle
 
-`OutputLogPanel::Draw()` returns a trimmed command string when Enter is pressed. `main.cpp` stores it as `pendingCommand`. At the beginning of the next frame, before building the new ImGui UI, the application:
+`OutputLogPanel::Draw()` returns a trimmed command string when Enter is pressed. `EditorProgram` stores it as `pendingCommand`. At the beginning of the next frame, before building the new ImGui UI, the editor program:
 
 1. Writes the entered command into the buffer.
 2. Executes it through `CommandRegistry`.

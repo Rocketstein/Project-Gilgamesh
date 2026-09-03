@@ -4,5 +4,6 @@ A Clausewitz-Jomini-Project Alice inspired game engine, specialized in grand str
 
 ## Documentation
 
-- [Developer console system](Docs/ConsoleSystem.md)
-- [Rendering trajectory](Docs/RenderingTrajectory.md)
+- [Current prototype architecture](Docs/Architecture/CurrentArchitecture.md)
+- [Developer console system](Docs/Console/ConsoleSystem.md)
+- [Rendering trajectory](Docs/Rendering/RenderingTrajectory.md)

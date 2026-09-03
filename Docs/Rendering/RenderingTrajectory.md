@@ -105,7 +105,7 @@ Add only the resource and state support needed for the first map prototype:
 
 Keep resource creation D3D11-specific. Do not introduce a generic RHI or a pipeline cache during this milestone.
 
-Move window and frame-loop orchestration into `Application` when doing so makes the sample or client boundary clearer. The engine should eventually stop using `main.cpp` as its rendering test harness.
+Window and frame-loop orchestration now lives in `Engine`, with `Application` composing the process and `EditorProgram` owning the primitive rendering test. `main.cpp` contains only the Windows entry point.
 
 ### Milestone 3: strategic-map color rendering
 
