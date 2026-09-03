@@ -1,17 +1,15 @@
 #pragma once
 #include <DirectXMath.h>
 
-using namespace DirectX;
-
 // Minimal snapshot of the camera's current state
 struct CameraState
 {
 	// Fixed World Position for now
-	XMVECTOR3 position_ = XMVectorSet(-3.0f, 0.0f, 0.0f, 1.0f);
+	DirectX::XMFLOAT3 position_ = { -3.0f, 0.0f, 0.0f };
 
 	float yawRadians_   = 0.0f;
 	float pitchRadians_ = 0.0f;
-	float FOVRadians_   = XMConvertToRadians(60.0f);
+	float FOVRadians_   = DirectX::XMConvertToRadians(60.0f);
 
 	bool isOrthographic_ = false;
 };
@@ -27,22 +25,44 @@ public:
 
 	// Accessors
 	[[nodiscard]]
-	XMVECTOR GetPosition() const { return currentState_.position_; } const;
-	void SetPosition(const XMVECTOR& position) { pendingState_.position_ = position; }
+	const DirectX::XMFLOAT3& GetPosition() const noexcept { return currentState_.position_; }
+	void SetPosition(DirectX::XMFLOAT3 position) noexcept
+	{
+		pendingState_.position_ = position;
+		isDirty_ = true;
+	}
 
 	[[nodiscard]]
-	float GetFOV() const { return currentState_.FOVRadians_; } const;
-	void SetFOV(float fovRadians) { pendingState_.FOVRadians_ = fovRadians; }
+	float GetFOV() const noexcept { return currentState_.FOVRadians_; }
+	void SetFOV(float fovRadians) noexcept
+	{
+		pendingState_.FOVRadians_ = fovRadians;
+		isDirty_ = true;
+	}
 
 	[[nodiscard]]
-	bool IsOrthographic() const { return currentState_.isOrthographic_; }
-	void SetOrthographic(bool isOrthographic) { pendingState_.isOrthographic_ = isOrthographic; }
+	bool IsOrthographic() const noexcept { return currentState_.isOrthographic_; }
+	void SetOrthographic(bool isOrthographic) noexcept
+	{
+		pendingState_.isOrthographic_ = isOrthographic;
+		isDirty_ = true;
+	}
 
 	[[nodiscard]]
-	float GetYaw() const { return currentState_.yawRadians_; } const;
+	float GetYaw() const noexcept { return currentState_.yawRadians_; }
+	void SetYaw(float yawRadians) noexcept
+	{
+		pendingState_.yawRadians_ = yawRadians;
+		isDirty_ = true;
+	}
 
 	[[nodiscard]]
-	float SetYaw() const { return currentState_.yawRadians_; } const;
+	float GetPitch() const noexcept { return currentState_.pitchRadians_; }
+	void SetPitch(float pitchRadians) noexcept
+	{
+		pendingState_.pitchRadians_ = pitchRadians;
+		isDirty_ = true;
+	}
 
 	[[nodiscard]]
 	DirectX::XMMATRIX GetViewMatrix() const noexcept;

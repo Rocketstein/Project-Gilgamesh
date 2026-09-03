@@ -60,6 +60,8 @@ target_sources (Gilgamesh
     main.cpp
     Application/Application.cpp
     Application/Application.h
+    Editor/Camera/EditorCamera.cpp
+    Editor/Camera/EditorCamera.h
     "Editor/EditorProgram.cpp"
     "Editor/EditorProgram.h"
 )

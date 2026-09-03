@@ -9,7 +9,7 @@ struct VSOut
     float3 col : COLOR;
 };
 
-VSOut VSMain(float2 pos : POSITION , float3 col : COLOR)
+VSOut VSMain(float3 pos : POSITION, float3 col : COLOR)
 {
     VSOut output;
     output.pos =

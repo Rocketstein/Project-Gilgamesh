@@ -2,6 +2,7 @@
 
 #include "Camera/EditorCamera.h"
 #include "Engine/Core/Logging/Logger.h"
+#include "Engine/Render/Buffers/ConstantBuffers.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/VertexTypes/VertexTypes.h"
@@ -49,8 +50,8 @@ struct EditorProgram::Impl
 
     // Temporary stuffs
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
-    EditorCamera camera;
-
+    Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer;
+    EditorCamera camera; // Move this to a viewport later
 };
 
 EditorProgram::EditorProgram() = default;
@@ -103,6 +104,8 @@ bool EditorProgram::Initialize(EngineServices& services)
 
 void EditorProgram::Update(const FrameContext& frame)
 {
+	impl_->camera.Update();
+
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 	// Process any pending console command from the previous frame before
     if (impl_->pendingCommand)
@@ -121,8 +124,6 @@ void EditorProgram::Update(const FrameContext& frame)
 
     impl_->imgui.BeginFrame();
 #endif
-
-
 }
 
 void EditorProgram::Render(RenderContext& context)
@@ -131,7 +132,7 @@ void EditorProgram::Render(RenderContext& context)
     ID3D11DeviceContext* deviceContext =
         renderer.GetDeviceContext();
 
-    const UINT stride = sizeof(SimpleVertex2D);
+    const UINT stride = sizeof(SimpleVertex3D);
     const UINT offset = 0;
 
     impl_->primitivePipeline.Bind(deviceContext);
@@ -145,6 +146,38 @@ void EditorProgram::Render(RenderContext& context)
         &vertexBuffer,
         &stride,
         &offset);
+
+    const float aspectRatio =
+        static_cast<float>(context.outputExtent.width) /
+        static_cast<float>(
+            context.outputExtent.height > 0
+                ? context.outputExtent.height
+                : 1u);
+
+    const DirectX::XMMATRIX model = DirectX::XMMatrixIdentity();
+    const DirectX::XMMATRIX view = impl_->camera.GetViewMatrix();
+    const DirectX::XMMATRIX projection =
+        impl_->camera.GetProjectionMatrix(aspectRatio);
+
+    ObjectConstants constants{};
+    DirectX::XMStoreFloat4x4(
+        &constants.modelViewProjection,
+        DirectX::XMMatrixTranspose(model * view * projection));
+
+    deviceContext->UpdateSubresource(
+        impl_->objectConstantBuffer.Get(),
+        0,
+        nullptr,
+        &constants,
+        0,
+        0);
+
+    ID3D11Buffer* objectConstantBuffer =
+        impl_->objectConstantBuffer.Get();
+    deviceContext->VSSetConstantBuffers(
+        0,
+        1,
+        &objectConstantBuffer);
 
     deviceContext->Draw(3, 0);
 
@@ -186,6 +219,21 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
 		GILGAMESH_LOG(Core, Error, "Failed to create vertex buffer: HRESULT=0x{:X}", hr);
 		return false;
 	}
+
+    D3D11_BUFFER_DESC constantBufferDesc{};
+    constantBufferDesc.ByteWidth = sizeof(ObjectConstants);
+    constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+
+    hr = renderer.GetDevice()->CreateBuffer(
+        &constantBufferDesc,
+        nullptr,
+        impl_->objectConstantBuffer.GetAddressOf());
+    if (FAILED(hr))
+    {
+        GILGAMESH_LOG(Core, Error, "Failed to create object constant buffer: HRESULT=0x{:X}", hr);
+        return false;
+    }
 
 	// Initialize the primitive graphics pipeline.
     // Shader Manager test. Move this to graphics pipeline later on.

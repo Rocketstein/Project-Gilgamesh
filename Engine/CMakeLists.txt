@@ -11,6 +11,8 @@ target_sources (GilgameshEngine
 		Core/Text/Utf8.cpp
 		Core/Text/Utf8.h
 
+		Render/Buffers/ConstantBuffers.h
+
 		Platform/Windows/Window.cpp
 		Platform/Windows/Window.h
 		Platform/Windows/Logging/DebugOutputSink.cpp
