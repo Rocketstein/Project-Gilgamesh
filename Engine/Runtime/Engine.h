@@ -24,5 +24,5 @@ private:
 	Renderer renderer_;
 	FrameClock clock_;
 
-	bool isEngineAlive = false;
+	bool isEngineAlive_ = false;
 };

@@ -2,6 +2,10 @@
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Runtime/Engine.h"
 
+#ifdef _DEBUG
+#include "Engine/Platform/Windows/Logging/DebugOutputSink.h"
+#endif
+
 #if GILGAMESH_BUILD_EDITOR
 	#include "Editor/EditorProgram.h"
 #else
@@ -34,6 +38,16 @@ void Application::Shutdown()
 
 int Application::Run()
 {
+#ifdef _DEBUG
+	auto debuggerSink =
+		std::make_shared<DebugOutputSink>();
+
+	auto debuggerRegistration =
+		Logger::AddSink(debuggerSink);
+#endif
+
+	GILGAMESH_LOG(Core, Info, "Gilgamesh embarking on a new journey!");
+
 	if (!Initialize())
 	{
 		Shutdown();

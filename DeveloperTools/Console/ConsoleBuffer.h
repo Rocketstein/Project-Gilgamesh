@@ -55,7 +55,7 @@ struct ConsoleEntry
 class ConsoleBuffer
 {
 public:
-    explicit ConsoleBuffer(std::size_t capacity = 5000);
+    explicit ConsoleBuffer(std::size_t capacity = 1024);
 
     void Push(ConsoleEntry entry);
 

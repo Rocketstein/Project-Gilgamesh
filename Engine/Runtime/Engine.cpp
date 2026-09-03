@@ -17,6 +17,9 @@ namespace {
 
 bool Engine::Initialize()
 {
+	// Guard against double initialization
+    if (isEngineAlive_) return false;
+
     if (!window_.Create()) return false;
     GILGAMESH_LOG(Core, Info, "Engine Window Initialized Successfully");
 
@@ -29,17 +32,21 @@ bool Engine::Initialize()
     if (!renderer_.Initialize(rendererDesc)) return false;
     GILGAMESH_LOG(Core, Info, "Renderer Initialized Successfully");
 
-    isEngineAlive = true;
+    isEngineAlive_ = true;
 	return true;
 }
 
 void Engine::Shutdown()
 {
-    if (!isEngineAlive) return;
+    if (!isEngineAlive_) return;
+    isEngineAlive_ = false;
 }
 
 int Engine::Run(IProgram& program)
 {
+    if (!isEngineAlive_) return 1;
+    clock_.Reset();
+
     while (window_.PumpMessages())
     {
         if (window_.IsMinimized())
