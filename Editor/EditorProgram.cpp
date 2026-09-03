@@ -1,5 +1,6 @@
 #include "EditorProgram.h"
 
+#include "Camera/EditorCamera.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
@@ -45,7 +46,11 @@ struct EditorProgram::Impl
 
 	// Graphics Pipeline
     GraphicsPipeline primitivePipeline;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer; // Temporary
+
+    // Temporary stuffs
+    Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
+    EditorCamera camera;
+
 };
 
 EditorProgram::EditorProgram() = default;
@@ -161,10 +166,10 @@ void EditorProgram::Shutdown()
 bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
 {
 	// Create a simple triangle vertex buffer for testing.
-    SimpleVertex2D vertices[] = {
-        {  0.0f,  0.5f,  1, 0, 0 },
-        {  0.5f, -0.5f,  0, 1, 0 },
-        { -0.5f, -0.5f,  0, 0, 1 },
+    SimpleVertex3D vertices[] = {
+        { 0.0f, -0.5f, -0.5f, 1, 0, 0 },
+        { 0.0f,  0.0f,  0.5f, 0, 1, 0 },
+        { 0.0f,  0.5f, -0.5f, 0, 0, 1 },
     };
 	D3D11_BUFFER_DESC bufferDesc{};
 	bufferDesc.ByteWidth = sizeof(vertices);
@@ -199,7 +204,7 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
         {
             "POSITION",
             0,
-            DXGI_FORMAT_R32G32_FLOAT,
+            DXGI_FORMAT_R32G32B32_FLOAT,
             0,
             0,
             D3D11_INPUT_PER_VERTEX_DATA,
