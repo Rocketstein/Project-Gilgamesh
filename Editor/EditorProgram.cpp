@@ -10,6 +10,9 @@
 #include "Engine/Runtime/FrameContext.h"
 #include "Engine/Runtime/RenderContext.h"
 
+#include <cstdint>
+#include <iterator>
+
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
     #include "DeveloperTools/Console/Commands/BuiltInCommands.h"
     #include "DeveloperTools/Console/ConsoleBuffer.h"
@@ -50,6 +53,8 @@ struct EditorProgram::Impl
 
     // Temporary stuffs
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
+    UINT indexCount = 0;
     Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer;
     EditorCamera camera; // Move this to a viewport later
 };
@@ -147,6 +152,12 @@ void EditorProgram::Render(RenderContext& context)
         &stride,
         &offset);
 
+    deviceContext->IASetIndexBuffer(
+        impl_->indexBuffer.Get(),
+        DXGI_FORMAT_R16_UINT,
+        0
+    );
+
     const float aspectRatio =
         static_cast<float>(context.outputExtent.width) /
         static_cast<float>(
@@ -179,7 +190,7 @@ void EditorProgram::Render(RenderContext& context)
         1,
         &objectConstantBuffer);
 
-    deviceContext->Draw(3, 0);
+    deviceContext->DrawIndexed(impl_->indexCount, 0, 0);
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
     impl_->workspace.DrawDockSpace();
@@ -198,27 +209,66 @@ void EditorProgram::Shutdown()
 
 bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
 {
-	// Create a simple triangle vertex buffer for testing.
-    SimpleVertex3D vertices[] = {
-        { 0.0f, -0.5f, -0.5f, 1, 0, 0 },
-        { 0.0f,  0.0f,  0.5f, 0, 1, 0 },
-        { 0.0f,  0.5f, -0.5f, 0, 0, 1 },
+    // Cube corners in Gilgamesh world space:
+    // +X forward, +Y right, +Z up.
+    constexpr float halfExtent = 0.5f;
+    const SimpleVertex3D vertices[] = {
+        { -halfExtent, -halfExtent, -halfExtent, 1, 0, 0 }, // 0
+        { -halfExtent,  halfExtent, -halfExtent, 0, 1, 0 }, // 1
+        { -halfExtent,  halfExtent,  halfExtent, 0, 0, 1 }, // 2
+        { -halfExtent, -halfExtent,  halfExtent, 1, 1, 0 }, // 3
+        {  halfExtent, -halfExtent, -halfExtent, 1, 0, 1 }, // 4
+        {  halfExtent,  halfExtent, -halfExtent, 0, 1, 1 }, // 5
+        {  halfExtent,  halfExtent,  halfExtent, 1, 1, 1 }, // 6
+        {  halfExtent, -halfExtent,  halfExtent, 1, 0.5f, 0 }, // 7
     };
-	D3D11_BUFFER_DESC bufferDesc{};
-	bufferDesc.ByteWidth = sizeof(vertices);
-	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	D3D11_SUBRESOURCE_DATA initData{};
-	initData.pSysMem = vertices;
-	HRESULT hr = renderer.GetDevice()->CreateBuffer(
-		&bufferDesc,
-		&initData,
-		impl_->vertexBuffer.GetAddressOf());
-	if (FAILED(hr))
-	{
-		GILGAMESH_LOG(Core, Error, "Failed to create vertex buffer: HRESULT=0x{:X}", hr);
-		return false;
-	}
+
+    const std::uint16_t indices[] = {
+        0, 2, 3,  0, 1, 2, // -X
+        4, 6, 5,  4, 7, 6, // +X
+        0, 7, 4,  0, 3, 7, // -Y
+        1, 6, 2,  1, 5, 6, // +Y
+        0, 5, 1,  0, 4, 5, // -Z
+        3, 6, 7,  3, 2, 6, // +Z
+    };
+
+    D3D11_BUFFER_DESC vertexBufferDesc{};
+    vertexBufferDesc.ByteWidth = sizeof(vertices);
+    vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    D3D11_SUBRESOURCE_DATA vertexData{};
+    vertexData.pSysMem = vertices;
+
+    HRESULT hr = renderer.GetDevice()->CreateBuffer(
+        &vertexBufferDesc,
+        &vertexData,
+        impl_->vertexBuffer.GetAddressOf());
+    if (FAILED(hr))
+    {
+        GILGAMESH_LOG(Core, Error, "Failed to create vertex buffer: HRESULT=0x{:X}", hr);
+        return false;
+    }
+
+    D3D11_BUFFER_DESC indexBufferDesc{};
+    indexBufferDesc.ByteWidth = sizeof(indices);
+    indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+
+    D3D11_SUBRESOURCE_DATA indexData{};
+    indexData.pSysMem = indices;
+
+    hr = renderer.GetDevice()->CreateBuffer(
+        &indexBufferDesc,
+        &indexData,
+        impl_->indexBuffer.GetAddressOf());
+    if (FAILED(hr))
+    {
+        GILGAMESH_LOG(Core, Error, "Failed to create index buffer: HRESULT=0x{:X}", hr);
+        return false;
+    }
+
+    impl_->indexCount = static_cast<UINT>(std::size(indices));
 
     D3D11_BUFFER_DESC constantBufferDesc{};
     constantBufferDesc.ByteWidth = sizeof(ObjectConstants);

@@ -7,8 +7,8 @@ struct CameraState
 	// Fixed World Position for now
 	DirectX::XMFLOAT3 position_ = { -3.0f, 0.0f, 0.0f };
 
-	float yawRadians_   = 0.0f;
-	float pitchRadians_ = 0.0f;
+	float yawRadians_   = 0.7f;
+	float pitchRadians_ = 0.10f;
 	float FOVRadians_   = DirectX::XMConvertToRadians(60.0f);
 
 	bool isOrthographic_ = false;
