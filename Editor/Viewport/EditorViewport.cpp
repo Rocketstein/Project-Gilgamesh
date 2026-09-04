@@ -75,16 +75,17 @@ void EditorViewport::BindAndClear(ID3D11DeviceContext* context) const noexcept
 	}
 
 	context->ClearRenderTargetView(renderTargetView_.Get(), clearColor.Data());
-	context->ClearDepthStencilView(depthStencilView_.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+	context->ClearDepthStencilView(depthStencilView_.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
 	context->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), depthStencilView_.Get());
 	context->RSSetViewports(1, &viewport_);
 }
 
 void EditorViewport::Unbind(ID3D11DeviceContext* context) const noexcept
 {
-	if (!context)
+	if (context == nullptr)
 	{
 		GILGAMESH_LOG(Core, Error, "EditorViewport::Unbind called with null context");
+		return;
 	}
 
 	context->OMSetRenderTargets(0, nullptr, nullptr);
@@ -121,6 +122,21 @@ bool EditorViewport::CreateResources(Extent2D extent)
 		return false;
 	}
 
+	Microsoft::WRL::ComPtr<ID3D11Texture2D>
+		newColorTexture;
+
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView>
+		newRenderTargetView;
+
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>
+		newShaderResourceView;
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D>
+		newDepthTexture;
+
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView>
+		newDepthStencilView;
+
 	// Render target texture and render target view
 	D3D11_TEXTURE2D_DESC textureDesc{};
 	textureDesc.Width = extent.width;
@@ -132,21 +148,21 @@ bool EditorViewport::CreateResources(Extent2D extent)
 	textureDesc.Usage = D3D11_USAGE_DEFAULT;
 	textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-	HRESULT hr = device_->CreateTexture2D(&textureDesc, nullptr, colorTexture_.GetAddressOf());
+	HRESULT hr = device_->CreateTexture2D(&textureDesc, nullptr, newColorTexture.GetAddressOf());
 	if (FAILED(hr))
 	{
 		GILGAMESH_LOG(Core, Error, "Failed to create color texture: HRESULT=0x{:X}", hr);
 		return false;
 	}
 
-	hr = device_->CreateRenderTargetView(colorTexture_.Get(), nullptr, renderTargetView_.GetAddressOf());
+	hr = device_->CreateRenderTargetView(newColorTexture.Get(), nullptr, newRenderTargetView.GetAddressOf());
 	if (FAILED(hr))
 	{
 		GILGAMESH_LOG(Core, Error, "Failed to create render target view: HRESULT=0x{:X}", hr);
 		return false;
 	}
 
-	hr = device_->CreateShaderResourceView(colorTexture_.Get(), nullptr, shaderResourceView_.GetAddressOf());
+	hr = device_->CreateShaderResourceView(newColorTexture.Get(), nullptr, newShaderResourceView.GetAddressOf());
 	if (FAILED(hr))
 	{
 		GILGAMESH_LOG(Core, Error, "Failed to create shader resource view: HRESULT=0x{:X}", hr);
@@ -160,23 +176,48 @@ bool EditorViewport::CreateResources(Extent2D extent)
 	depthDesc.MipLevels = 1;
 	depthDesc.ArraySize = 1;
 	depthDesc.SampleDesc.Count = 1;
-	depthDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+	depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
 	depthDesc.Usage = D3D11_USAGE_DEFAULT;
-	depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+	depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 
-	hr = device_->CreateTexture2D(&depthDesc, nullptr, depthTexture_.GetAddressOf());
+	hr = device_->CreateTexture2D(&depthDesc, nullptr, newDepthTexture.GetAddressOf());
 	if (FAILED(hr))
 	{
 		GILGAMESH_LOG(Core, Error, "Failed to create depth texture: HRESULT=0x{:X}", hr);
 		return false;
 	}
 
-	hr = device_->CreateDepthStencilView(depthTexture_.Get(), nullptr, depthStencilView_.GetAddressOf());
+	hr = device_->CreateDepthStencilView(newDepthTexture.Get(), nullptr, newDepthStencilView.GetAddressOf());
 	if (FAILED(hr))
 	{
 		GILGAMESH_LOG(Core, Error, "Failed to create depth stencil view: HRESULT=0x{:X}", hr);
 		return false;
 	}
+
+	colorTexture_ =
+		std::move(newColorTexture);
+
+	renderTargetView_ =
+		std::move(newRenderTargetView);
+
+	shaderResourceView_ =
+		std::move(newShaderResourceView);
+
+	depthTexture_ =
+		std::move(newDepthTexture);
+
+	depthStencilView_ =
+		std::move(newDepthStencilView);
+
+	// Viewport
+	viewport_.TopLeftX = 0.0f;
+	viewport_.TopLeftY = 0.0f;
+	viewport_.Width =
+		static_cast<float>(extent_.width);
+	viewport_.Height =
+		static_cast<float>(extent_.height);
+	viewport_.MinDepth = 0.0f;
+	viewport_.MaxDepth = 1.0f;
 
 	return true;
 }
