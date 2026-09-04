@@ -106,12 +106,6 @@ bool EditorProgram::Initialize(EngineServices& services)
     // Initialize editor viewport
     impl_->viewport.Initialize(services.renderer.GetDevice());
 
-    if (!InitializePrimitiveTestResources(services.renderer))
-    {
-        impl_.reset();
-        return false;
-    }
-
     return true;
 }
 

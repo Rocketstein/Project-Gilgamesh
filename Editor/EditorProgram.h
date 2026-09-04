@@ -20,6 +20,7 @@ public:
 private:
     bool InitializePrimitiveTestResources(Renderer& renderer);
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+    // TODO: Move ImGui dependency to a separate UI directory as UI grows
     void DrawEditorViewportPanel(RenderContext& context);
 #endif
     void DrawPrimitive(
