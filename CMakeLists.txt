@@ -60,10 +60,12 @@ target_sources (Gilgamesh
     main.cpp
     Application/Application.cpp
     Application/Application.h
+    Editor/Viewport/EditorViewport.cpp
+    Editor/Viewport/EditorViewport.h
     Editor/Camera/EditorCamera.cpp
     Editor/Camera/EditorCamera.h
-    "Editor/EditorProgram.cpp"
-    "Editor/EditorProgram.h"
+    Editor/EditorProgram.cpp
+    Editor/EditorProgram.h
 )
 
 get_target_property (GILGAMESH_APPLICATION_SOURCES Gilgamesh SOURCES)
