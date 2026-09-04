@@ -171,8 +171,8 @@ bool EditorViewport::CreateResources(Extent2D extent)
 
 	// Depth texture and depth stencil view
 	D3D11_TEXTURE2D_DESC depthDesc{};
-	depthDesc.Width = extent.width;
-	depthDesc.Height = extent.height;
+	depthDesc.Width = extent_.width;
+	depthDesc.Height = extent_.height;
 	depthDesc.MipLevels = 1;
 	depthDesc.ArraySize = 1;
 	depthDesc.SampleDesc.Count = 1;

@@ -18,6 +18,7 @@ public:
 
 private:
     bool InitializePrimitiveTestResources(Renderer& renderer);
+    void DrawEditorViewportPanel(RenderContext& context);
 
 private:
     struct Impl;

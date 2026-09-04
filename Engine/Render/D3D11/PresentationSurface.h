@@ -9,7 +9,7 @@
 class D3D11PresentationSurface
 {
 private:
-	HRESULT CreateBackBuffer(ID3D11Device* device, Extent2D extent);
+	HRESULT CreateOutputAttachments(ID3D11Device* device, Extent2D extent);
 
 public:
 	D3D11PresentationSurface() = default;
@@ -57,4 +57,8 @@ private:
 	D3D11_VIEWPORT viewport_ = {};
 	Extent2D extent_ = {};
 	bool vsync_ = true;
+
+	// Temporary. Move this to Viewport later
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture_;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView_;
 };

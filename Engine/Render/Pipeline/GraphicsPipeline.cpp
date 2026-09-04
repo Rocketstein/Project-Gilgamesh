@@ -35,6 +35,9 @@ HRESULT GraphicsPipeline::Initialize(
 	Microsoft::WRL::ComPtr<ID3D11InputLayout>
 		newInputLayout;
 
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState>
+		newDepthStencilState;
+
 	if (desc.pixelShader.has_value())
 	{
 		if (!desc.pixelShader->IsValid())
@@ -67,10 +70,32 @@ HRESULT GraphicsPipeline::Initialize(
 		}
 	}
 
+	D3D11_DEPTH_STENCIL_DESC depthStencilDescription{};
+	depthStencilDescription.DepthEnable =
+		desc.depthStencil.depthTestEnabled;
+	depthStencilDescription.DepthWriteMask =
+		desc.depthStencil.depthWriteEnabled
+			? D3D11_DEPTH_WRITE_MASK_ALL
+			: D3D11_DEPTH_WRITE_MASK_ZERO;
+	depthStencilDescription.DepthFunc =
+		desc.depthStencil.depthComparison;
+	depthStencilDescription.StencilEnable = FALSE;
+
+	const HRESULT depthStencilResult =
+		device->CreateDepthStencilState(
+			&depthStencilDescription,
+			newDepthStencilState.GetAddressOf());
+
+	if (FAILED(depthStencilResult))
+	{
+		return depthStencilResult;
+	}
+
 	// Commit only after every operation succeeds.
 	vertexShader_ = std::move(newVertexShader);
 	pixelShader_ = std::move(newPixelShader);
 	inputLayout_ = std::move(newInputLayout);
+	depthStencilState_ = std::move(newDepthStencilState);
 	topology_ = desc.topology;
 	isInitialized = true;
 
@@ -98,6 +123,10 @@ void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const noexcept
 	context->PSSetShader(
 		pixelShader_.Get(),
 		nullptr,
+		0);
+
+	context->OMSetDepthStencilState(
+		depthStencilState_.Get(),
 		0);
 }
 

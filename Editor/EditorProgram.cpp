@@ -1,6 +1,7 @@
 #include "EditorProgram.h"
 
 #include "Camera/EditorCamera.h"
+#include "Viewport/EditorViewport.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Render/Buffers/ConstantBuffers.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
@@ -14,6 +15,7 @@
 #include <iterator>
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+    #include <imgui.h>
     #include "DeveloperTools/Console/Commands/BuiltInCommands.h"
     #include "DeveloperTools/Console/ConsoleBuffer.h"
     #include "DeveloperTools/Console/ConsoleCommandOutput.h"
@@ -29,6 +31,9 @@ struct EditorProgram::Impl
     // Core
     Window* window = nullptr;
     Renderer* renderer = nullptr;
+
+    // Viewport
+    EditorViewport viewport;
 
 	// Developer Tools
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
@@ -97,6 +102,9 @@ bool EditorProgram::Initialize(EngineServices& services)
 
     // Construct panel and command objects.
 #endif 
+
+    // Initialize editor viewport
+    impl_->viewport.Initialize(services.renderer.GetDevice());
 
     if (!InitializePrimitiveTestResources(services.renderer))
     {
@@ -324,7 +332,12 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
         .pixelShader = psLoad.resource,
         .inputElements = inputElements,
         .topology =
-            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+        .depthStencil = {
+            .depthTestEnabled = true,
+            .depthWriteEnabled = true,
+            .depthComparison = D3D11_COMPARISON_LESS
+        }
     };
 
     const HRESULT result =
@@ -334,4 +347,69 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
             pipelineDesc);
 
     return SUCCEEDED(result);
+}
+
+void EditorProgram::DrawEditorViewportPanel(RenderContext& context)
+{
+    EditorViewport& viewport = impl_->viewport;
+
+    constexpr ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse;
+
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(0.0f, 0.0f));
+
+    const bool visible =
+        ImGui::Begin("Editor Viewport", nullptr, flags);
+
+    ImGui::PopStyleVar();
+
+    if (visible)
+    {
+        const ImVec2 availableSize =
+            ImGui::GetContentRegionAvail();
+
+        if (availableSize.x >= 1.0f &&
+            availableSize.y >= 1.0f)
+        {
+            const Extent2D requestedExtent{
+                static_cast<std::uint32_t>(availableSize.x),
+                static_cast<std::uint32_t>(availableSize.y)
+            };
+
+            viewport.RequestResize(requestedExtent);
+            viewport.ApplyPendingResize();
+
+            if (viewport.IsReady())
+            {
+                ID3D11DeviceContext* deviceContext =
+                    context.renderer.GetDeviceContext();
+
+                viewport.BindAndClear(deviceContext);
+
+                // Draw the cube here. Use viewport.GetExtent()
+                // when calculating the projection aspect ratio.
+                DrawPrimitive(deviceContext, viewport.GetExtent());
+
+                viewport.Unbind(deviceContext);
+
+                // Restore the swap-chain back buffer without clearing it.
+                context.renderer.BindOutput();
+
+                ID3D11ShaderResourceView* srv =
+                    viewport.GetShaderResourceView();
+
+                const ImTextureRef texture{
+                    static_cast<ImTextureID>(
+                        reinterpret_cast<std::uintptr_t>(srv))
+                };
+
+                ImGui::Image(texture, availableSize);
+            }
+        }
+    }
+
+    ImGui::End();
 }

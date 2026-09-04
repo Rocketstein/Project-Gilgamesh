@@ -40,6 +40,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D11InputLayout>
         inputLayout_;
 
+    Microsoft::WRL::ComPtr<ID3D11DepthStencilState>
+        depthStencilState_;
+
     D3D11_PRIMITIVE_TOPOLOGY topology_ =
         D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 

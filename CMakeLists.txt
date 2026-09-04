@@ -99,6 +99,7 @@ if (GILGAMESH_ENABLE_DEVELOPER_TOOLS)
   target_link_libraries (Gilgamesh
     PRIVATE
       GilgameshDeveloperTools
+      DearImGui
   )
 endif()
 

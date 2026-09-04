@@ -1,11 +1,19 @@
 #include "PresentationSurface.h"
 
+#include <utility>
 
-HRESULT D3D11PresentationSurface::CreateBackBuffer(ID3D11Device* device, Extent2D extent)
+// Rename back to CreateBackBuffer after migrating DSV to viewport
+HRESULT D3D11PresentationSurface::CreateOutputAttachments(
+	ID3D11Device* device,
+	Extent2D extent)
 {
-	if (!device) return E_POINTER;
+	if (device == nullptr) return E_POINTER;
+	if (extent.width == 0 || extent.height == 0) return E_INVALIDARG;
 
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> newBackBufferView;
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> newDepthTexture;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> newDepthStencilView;
 
 	HRESULT result = swapChain_->GetBuffer(
 		0,
@@ -17,10 +25,41 @@ HRESULT D3D11PresentationSurface::CreateBackBuffer(ID3D11Device* device, Extent2
 	result = device->CreateRenderTargetView(
 		backBuffer.Get(),
 		nullptr,
-		backBufferView_.ReleaseAndGetAddressOf());
+		newBackBufferView.GetAddressOf());
 
 	if (FAILED(result))
 		return result;
+
+	D3D11_TEXTURE2D_DESC depthDescription{};
+	depthDescription.Width = extent.width;
+	depthDescription.Height = extent.height;
+	depthDescription.MipLevels = 1;
+	depthDescription.ArraySize = 1;
+	depthDescription.Format = DXGI_FORMAT_D32_FLOAT;
+	depthDescription.SampleDesc.Count = 1;
+	depthDescription.Usage = D3D11_USAGE_DEFAULT;
+	depthDescription.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+
+	result = device->CreateTexture2D(
+		&depthDescription,
+		nullptr,
+		newDepthTexture.GetAddressOf());
+
+	if (FAILED(result))
+		return result;
+
+	result = device->CreateDepthStencilView(
+		newDepthTexture.Get(),
+		nullptr,
+		newDepthStencilView.GetAddressOf());
+
+	if (FAILED(result))
+		return result;
+
+	// Commit only after every output attachment has been created.
+	backBufferView_ = std::move(newBackBufferView);
+	depthTexture_ = std::move(newDepthTexture);
+	depthStencilView_ = std::move(newDepthStencilView);
 
 	viewport_ = {};
 	viewport_.TopLeftX = 0.0f;
@@ -102,7 +141,7 @@ HRESULT D3D11PresentationSurface::Initialize(
 		outputWindow,
 		DXGI_MWA_NO_ALT_ENTER);
 
-	result = CreateBackBuffer(device, extent);
+	result = CreateOutputAttachments(device, extent);
 
 	if (FAILED(result))
 	{
@@ -136,6 +175,8 @@ HRESULT D3D11PresentationSurface::Resize(
 	// ResizeBuffers fails while the old back buffer remains bound or referenced.
 	context->OMSetRenderTargets(0, nullptr, nullptr);
 	backBufferView_.Reset();
+	depthStencilView_.Reset();
+	depthTexture_.Reset();
 
 	HRESULT result = swapChain_->ResizeBuffers(
 		0,
@@ -146,7 +187,7 @@ HRESULT D3D11PresentationSurface::Resize(
 
 	if (FAILED(result)) return result;
 
-	return CreateBackBuffer(device, extent);
+	return CreateOutputAttachments(device, extent);
 }
 
 void D3D11PresentationSurface::BeginFrame(
@@ -160,13 +201,19 @@ void D3D11PresentationSurface::BeginFrame(
 	context->OMSetRenderTargets(
 		1,
 		renderTargets,
-		nullptr);
+		depthStencilView_.Get());
 
 	context->RSSetViewports(1, &viewport_);
 
 	context->ClearRenderTargetView(
 		backBufferView_.Get(),
 		clearColor.Data());
+
+	context->ClearDepthStencilView(
+		depthStencilView_.Get(),
+		D3D11_CLEAR_DEPTH,
+		1.0f,
+		0);
 }
 
 HRESULT D3D11PresentationSurface::Present()
@@ -190,5 +237,8 @@ HRESULT D3D11PresentationSurface::PresentTest() const
 
 bool D3D11PresentationSurface::IsInitialized() const noexcept
 {
-	return swapChain_ != nullptr && backBufferView_ != nullptr;
+	return swapChain_ != nullptr
+		&& backBufferView_ != nullptr
+		&& depthTexture_ != nullptr
+		&& depthStencilView_ != nullptr;
 }
