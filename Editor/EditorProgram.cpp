@@ -146,8 +146,6 @@ void EditorProgram::Render(RenderContext& context)
         impl_->pendingCommand = std::move(*command);
 
     impl_->imgui.Render();
-#else
-    DrawPrimitive(renderer, context.outputExtent);
 #endif
 }
 

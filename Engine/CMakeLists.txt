@@ -8,6 +8,7 @@ target_sources (GilgameshEngine
 		Core/Logging/Logger.cpp
 		Core/Logging/Logger.h
 		Core/Logging/LogTypes.h
+		Core/Math/Vector.h
 		Core/Text/Utf8.cpp
 		Core/Text/Utf8.h
 
@@ -45,7 +46,8 @@ target_sources (GilgameshEngine
 		Render/Pipeline/PipelineDesc.h
 
 		Time/FrameClock.cpp
-        Time/FrameClock.h)
+		Time/FrameClock.h
+)
 
 get_target_property (GILGAMESH_ENGINE_SOURCES GilgameshEngine SOURCES)
 source_group (TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${GILGAMESH_ENGINE_SOURCES})
