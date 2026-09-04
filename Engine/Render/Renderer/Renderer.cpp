@@ -66,6 +66,11 @@ bool Renderer::BeginFrame()
     return true;
 }
 
+void Renderer::BindOutput() noexcept
+{
+    surface_.Bind(device_.GetDeviceContext());
+}
+
 RenderResult Renderer::EndFrame()
 {
     const HRESULT result = surface_.Present();

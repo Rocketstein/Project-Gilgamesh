@@ -28,6 +28,7 @@ public:
 	bool Resize(Extent2D extent);
 
 	bool BeginFrame();
+	void BindOutput() noexcept;
 	// Render();
 	RenderResult EndFrame();
 

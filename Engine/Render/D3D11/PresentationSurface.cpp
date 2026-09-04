@@ -194,16 +194,7 @@ void D3D11PresentationSurface::BeginFrame(
 	ID3D11DeviceContext* context,
 	const Color4& clearColor) const
 {
-	ID3D11RenderTargetView* renderTargets[] = {
-		backBufferView_.Get()
-	};
-
-	context->OMSetRenderTargets(
-		1,
-		renderTargets,
-		depthStencilView_.Get());
-
-	context->RSSetViewports(1, &viewport_);
+	Bind(context);
 
 	context->ClearRenderTargetView(
 		backBufferView_.Get(),
@@ -214,6 +205,21 @@ void D3D11PresentationSurface::BeginFrame(
 		D3D11_CLEAR_DEPTH,
 		1.0f,
 		0);
+}
+
+void D3D11PresentationSurface::Bind(
+	ID3D11DeviceContext* context) const noexcept
+{
+	ID3D11RenderTargetView* renderTargets[] = {
+		backBufferView_.Get()
+	};
+
+	context->OMSetRenderTargets(
+		1,
+		renderTargets,
+		depthStencilView_.Get());
+
+	context->RSSetViewports(1, &viewport_);
 }
 
 HRESULT D3D11PresentationSurface::Present()

@@ -92,5 +92,9 @@ void DeveloperToolsWorkspace::BuildDefaultLayout(
         OutputLogPanel::WindowName,
         bottomNode);
 
+    ImGui::DockBuilderDockWindow(
+        "Editor Viewport",
+        centralNode);
+
     ImGui::DockBuilderFinish(dockspaceId);
 }

@@ -3,6 +3,8 @@
 #include "Engine/Core/Color.h"
 #include "Engine/Core/Logging/Logger.h"
 
+#include <utility>
+
 namespace {
 	Color4 clearColor = Color4{ 0.1f, 0.12f, 0.16f };
 } // Anonymous Namespace
@@ -121,6 +123,11 @@ bool EditorViewport::CreateResources(Extent2D extent)
 		GILGAMESH_LOG(Core, Error, "EditorViewport::CreateResources called with null device");
 		return false;
 	}
+	if (extent.width == 0 || extent.height == 0)
+	{
+		GILGAMESH_LOG(Core, Error, "EditorViewport::CreateResources called with an empty extent");
+		return false;
+	}
 
 	Microsoft::WRL::ComPtr<ID3D11Texture2D>
 		newColorTexture;
@@ -171,8 +178,8 @@ bool EditorViewport::CreateResources(Extent2D extent)
 
 	// Depth texture and depth stencil view
 	D3D11_TEXTURE2D_DESC depthDesc{};
-	depthDesc.Width = extent_.width;
-	depthDesc.Height = extent_.height;
+	depthDesc.Width = extent.width;
+	depthDesc.Height = extent.height;
 	depthDesc.MipLevels = 1;
 	depthDesc.ArraySize = 1;
 	depthDesc.SampleDesc.Count = 1;
@@ -213,9 +220,9 @@ bool EditorViewport::CreateResources(Extent2D extent)
 	viewport_.TopLeftX = 0.0f;
 	viewport_.TopLeftY = 0.0f;
 	viewport_.Width =
-		static_cast<float>(extent_.width);
+		static_cast<float>(extent.width);
 	viewport_.Height =
-		static_cast<float>(extent_.height);
+		static_cast<float>(extent.height);
 	viewport_.MinDepth = 0.0f;
 	viewport_.MaxDepth = 1.0f;
 
@@ -229,4 +236,8 @@ void EditorViewport::ReleaseResources() noexcept
 	shaderResourceView_.Reset();
 	depthTexture_.Reset();
 	depthStencilView_.Reset();
+	viewport_ = {};
+	extent_ = {};
+	pendingExtent_ = {};
+	resizePending_ = false;
 }

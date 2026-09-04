@@ -142,6 +142,25 @@ void EditorProgram::Update(const FrameContext& frame)
 void EditorProgram::Render(RenderContext& context)
 {
     Renderer& renderer = context.renderer;
+
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+    impl_->workspace.DrawDockSpace();
+
+    DrawEditorViewportPanel(context);
+
+    if (auto command = impl_->outputLogPanel->Draw())
+        impl_->pendingCommand = std::move(*command);
+
+    impl_->imgui.Render();
+#else
+    DrawPrimitive(renderer, context.outputExtent);
+#endif
+}
+
+void EditorProgram::DrawPrimitive(
+    Renderer& renderer,
+    Extent2D renderExtent)
+{
     ID3D11DeviceContext* deviceContext =
         renderer.GetDeviceContext();
 
@@ -167,10 +186,10 @@ void EditorProgram::Render(RenderContext& context)
     );
 
     const float aspectRatio =
-        static_cast<float>(context.outputExtent.width) /
+        static_cast<float>(renderExtent.width) /
         static_cast<float>(
-            context.outputExtent.height > 0
-                ? context.outputExtent.height
+            renderExtent.height > 0
+                ? renderExtent.height
                 : 1u);
 
     const DirectX::XMMATRIX model = DirectX::XMMatrixIdentity();
@@ -199,15 +218,6 @@ void EditorProgram::Render(RenderContext& context)
         &objectConstantBuffer);
 
     deviceContext->DrawIndexed(impl_->indexCount, 0, 0);
-
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
-    impl_->workspace.DrawDockSpace();
-
-    if (auto command = impl_->outputLogPanel->Draw())
-        impl_->pendingCommand = std::move(*command);
-
-    impl_->imgui.Render();
-#endif
 }
 
 void EditorProgram::Shutdown()
@@ -349,7 +359,9 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
     return SUCCEEDED(result);
 }
 
-void EditorProgram::DrawEditorViewportPanel(RenderContext& context)
+#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+void EditorProgram::DrawEditorViewportPanel(
+    RenderContext& context)
 {
     EditorViewport& viewport = impl_->viewport;
 
@@ -389,9 +401,7 @@ void EditorProgram::DrawEditorViewportPanel(RenderContext& context)
 
                 viewport.BindAndClear(deviceContext);
 
-                // Draw the cube here. Use viewport.GetExtent()
-                // when calculating the projection aspect ratio.
-                DrawPrimitive(deviceContext, viewport.GetExtent());
+                DrawPrimitive(context.renderer, viewport.GetExtent());
 
                 viewport.Unbind(deviceContext);
 
@@ -413,3 +423,4 @@ void EditorProgram::DrawEditorViewportPanel(RenderContext& context)
 
     ImGui::End();
 }
+#endif

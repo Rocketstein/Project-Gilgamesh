@@ -34,6 +34,9 @@ public:
 		ID3D11DeviceContext* context,
 		const Color4& clearColor) const;
 
+	void Bind(
+		ID3D11DeviceContext* context) const noexcept;
+
 	[[nodiscard]]
 	HRESULT Present();
 
