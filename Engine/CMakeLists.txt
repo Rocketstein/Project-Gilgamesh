@@ -8,6 +8,7 @@ target_sources (GilgameshEngine
 		Core/Logging/Logger.cpp
 		Core/Logging/Logger.h
 		Core/Logging/LogTypes.h
+		Core/Math/Matrix.h
 		Core/Math/Vector.h
 		Core/Text/Utf8.cpp
 		Core/Text/Utf8.h
