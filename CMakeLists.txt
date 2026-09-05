@@ -109,3 +109,9 @@ target_compile_definitions (Gilgamesh
     GILGAMESH_ENABLE_DEVELOPER_TOOLS=$<BOOL:${GILGAMESH_ENABLE_DEVELOPER_TOOLS}>
 )
 
+include(CTest)
+
+if (BUILD_TESTING)
+  add_subdirectory(Tests)
+endif()
+
