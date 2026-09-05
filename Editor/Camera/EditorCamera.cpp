@@ -16,30 +16,24 @@ void EditorCamera::Update()
 	}
 }
 
-DirectX::XMMATRIX EditorCamera::GetViewMatrix() const noexcept
+Matrix4 EditorCamera::GetViewMatrix() const noexcept
 {
-	using namespace DirectX;
-
 	// Gilgamesh uses a left-handed, Z-up coordinate system:
 	// +X forward, +Y right, +Z up.
 	const float cosPitch = std::cos(currentState_.pitchRadians_);
-	const XMVECTOR forward = XMVectorSet(
+	const Vector3 forward{
 		cosPitch * std::cos(currentState_.yawRadians_),
 		cosPitch * std::sin(currentState_.yawRadians_),
-		std::sin(currentState_.pitchRadians_),
-		0.0f);
+		std::sin(currentState_.pitchRadians_)
+	};
+	constexpr Vector3 worldUp{ 0.0f, 0.0f, 1.0f };
 
-	const XMVECTOR position = XMLoadFloat3(&currentState_.position_);
-	const XMVECTOR worldUp = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-
-	return XMMatrixLookToLH(position, forward, worldUp);
+	return LookToLH(currentState_.position_, forward, worldUp);
 }
 
-DirectX::XMMATRIX EditorCamera::GetProjectionMatrix(
+Matrix4 EditorCamera::GetProjectionMatrix(
 	float aspectRatio) const noexcept
 {
-	using namespace DirectX;
-
 	constexpr float nearPlane = 0.1f;
 	constexpr float farPlane = 1000.0f;
 	constexpr float orthographicHeight = 10.0f;
@@ -48,14 +42,14 @@ DirectX::XMMATRIX EditorCamera::GetProjectionMatrix(
 
 	if (currentState_.isOrthographic_)
 	{
-		return XMMatrixOrthographicLH(
+		return OrthographicLH(
 			orthographicHeight * safeAspectRatio,
 			orthographicHeight,
 			nearPlane,
 			farPlane);
 	}
 
-	return XMMatrixPerspectiveFovLH(
+	return PerspectiveFovLH(
 		currentState_.FOVRadians_,
 		safeAspectRatio,
 		nearPlane,

@@ -106,6 +106,12 @@ bool EditorProgram::Initialize(EngineServices& services)
     // Initialize editor viewport
     impl_->viewport.Initialize(services.renderer.GetDevice());
 
+    if (!InitializePrimitiveTestResources(services.renderer))
+    {
+        impl_.reset();
+        return false;
+    }
+
     return true;
 }
 
@@ -184,15 +190,15 @@ void EditorProgram::DrawPrimitive(
                 ? renderExtent.height
                 : 1u);
 
-    const DirectX::XMMATRIX model = DirectX::XMMatrixIdentity();
-    const DirectX::XMMATRIX view = impl_->camera.GetViewMatrix();
-    const DirectX::XMMATRIX projection =
+    const Matrix4 model = Matrix4::Identity();
+    const Matrix4 view = impl_->camera.GetViewMatrix();
+    const Matrix4 projection =
         impl_->camera.GetProjectionMatrix(aspectRatio);
 
     ObjectConstants constants{};
     DirectX::XMStoreFloat4x4(
         &constants.modelViewProjection,
-        DirectX::XMMatrixTranspose(model * view * projection));
+        ToDirectX(Transpose(model * view * projection)));
 
     deviceContext->UpdateSubresource(
         impl_->objectConstantBuffer.Get(),

@@ -430,6 +430,43 @@ static_assert(sizeof(Matrix4) == 16 * sizeof(float),
 	};
 }
 
+[[nodiscard]] inline Matrix4 LookToLH(
+	const Vector3& position,
+	const Vector3& direction,
+	const Vector3& up) noexcept
+{
+	return FromDirectX(DirectX::XMMatrixLookToLH(
+		DirectX::XMVectorSet(position.x, position.y, position.z, 1.0f),
+		DirectX::XMVectorSet(direction.x, direction.y, direction.z, 0.0f),
+		DirectX::XMVectorSet(up.x, up.y, up.z, 0.0f)));
+}
+
+[[nodiscard]] inline Matrix4 OrthographicLH(
+	float viewWidth,
+	float viewHeight,
+	float nearZ,
+	float farZ) noexcept
+{
+	return FromDirectX(DirectX::XMMatrixOrthographicLH(
+		viewWidth,
+		viewHeight,
+		nearZ,
+		farZ));
+}
+
+[[nodiscard]] inline Matrix4 PerspectiveFovLH(
+	float fieldOfViewRadians,
+	float aspectRatio,
+	float nearZ,
+	float farZ) noexcept
+{
+	return FromDirectX(DirectX::XMMatrixPerspectiveFovLH(
+		fieldOfViewRadians,
+		aspectRatio,
+		nearZ,
+		farZ));
+}
+
 inline Matrix4& Matrix4::operator+=(const Matrix4& rhs) noexcept
 {
 	return *this = FromDirectX(ToDirectX(*this) + ToDirectX(rhs));

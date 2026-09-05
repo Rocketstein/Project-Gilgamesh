@@ -1,15 +1,17 @@
 #pragma once
-#include <DirectXMath.h>
+#include "Engine/Core/Math/Matrix.h"
+
+#include <numbers>
 
 // Minimal snapshot of the camera's current state
 struct CameraState
 {
 	// Fixed World Position for now
-	DirectX::XMFLOAT3 position_ = { -3.0f, 0.0f, 0.0f };
+	Vector3 position_ = { -3.0f, 0.0f, 0.0f };
 
 	float yawRadians_   = 0.7f;
 	float pitchRadians_ = 0.10f;
-	float FOVRadians_   = DirectX::XMConvertToRadians(60.0f);
+	float FOVRadians_   = std::numbers::pi_v<float> / 3.0f;
 
 	bool isOrthographic_ = false;
 };
@@ -25,8 +27,8 @@ public:
 
 	// Accessors
 	[[nodiscard]]
-	const DirectX::XMFLOAT3& GetPosition() const noexcept { return currentState_.position_; }
-	void SetPosition(DirectX::XMFLOAT3 position) noexcept
+	const Vector3& GetPosition() const noexcept { return currentState_.position_; }
+	void SetPosition(Vector3 position) noexcept
 	{
 		pendingState_.position_ = position;
 		isDirty_ = true;
@@ -65,10 +67,10 @@ public:
 	}
 
 	[[nodiscard]]
-	DirectX::XMMATRIX GetViewMatrix() const noexcept;
+	Matrix4 GetViewMatrix() const noexcept;
 
 	[[nodiscard]]
-	DirectX::XMMATRIX GetProjectionMatrix(
+	Matrix4 GetProjectionMatrix(
 		float aspectRatio) const noexcept;
 
 private:
