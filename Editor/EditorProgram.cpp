@@ -1,7 +1,7 @@
 #include "EditorProgram.h"
 
-#include "Camera/EditorCamera.h"
-#include "Viewport/EditorViewport.h"
+#include "EditorCamera/EditorCamera.h"
+#include "EditorViewport/EditorViewport.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Render/Buffers/ConstantBuffers.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"

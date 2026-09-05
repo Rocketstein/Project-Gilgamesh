@@ -1,4 +1,4 @@
-#include "Editor/Camera/EditorCamera.h"
+#include "Editor/EditorCamera/EditorCamera.h"
 #include "Tests/TestFramework.h"
 
 #include <numbers>
