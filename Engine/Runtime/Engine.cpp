@@ -23,6 +23,9 @@ bool Engine::Initialize()
     if (!window_.Create()) return false;
     GILGAMESH_LOG(Core, Info, "Engine Window Initialized Successfully");
 
+    if (!inputBackend_.Initialize(window_, input_)) return false;
+    GILGAMESH_LOG(Core, Info, "Input System Initialized Successfully");
+
     // Temporary code. Move this to somewhere else
     RendererDesc rendererDesc{};
     rendererDesc.outputWindow = window_.GetNativeHandle();
@@ -38,6 +41,7 @@ bool Engine::Initialize()
 
 void Engine::Shutdown()
 {
+	inputBackend_.Shutdown();
     if (!isEngineAlive_) return;
     isEngineAlive_ = false;
 }
@@ -47,8 +51,13 @@ int Engine::Run(IProgram& program)
     if (!isEngineAlive_) return 1;
     clock_.Reset();
 
-    while (window_.PumpMessages())
+	while (true)
     {
+		input_.BeginFrame();
+		if (!window_.PumpMessages())
+			break;
+		input_.EndFrame();
+
         if (window_.IsMinimized())
         {
             WaitMessage();
@@ -91,8 +100,17 @@ bool Engine::HandlePresentResult(RenderResult result)
         break;
     }
     case (RenderResult::Occluded): {
-        while (window_.PumpMessages() && renderer_.IsOccluded())
+        while (renderer_.IsOccluded())
+        {
+            input_.BeginFrame();
+            const bool keepRunning = window_.PumpMessages();
+            input_.EndFrame();
+
+            if (!keepRunning)
+                break;
+
             Sleep(16);
+        }
         clock_.Reset();
         break;
     }
@@ -105,5 +123,5 @@ bool Engine::HandlePresentResult(RenderResult result)
 }
 
 EngineServices Engine::GetServices() {
-    return { window_, renderer_ };
+    return { window_, renderer_, input_ };
 }

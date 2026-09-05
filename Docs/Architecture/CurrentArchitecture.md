@@ -18,6 +18,8 @@ WinMain
   -> Application
       -> Engine
           -> Window
+          -> InputSystem
+          -> Win32InputBackend
           -> Renderer
           -> FrameClock
           -> Engine::Run(IProgram&)
@@ -38,7 +40,7 @@ The root CMake project currently produces these targets:
 | Target | Kind | Responsibility |
 | --- | --- | --- |
 | `Gilgamesh` | Win32 executable | Entry point, `Application`, and `EditorProgram` |
-| `GilgameshEngine` | Static library | Core, platform, renderer, engine loop, and frame clock |
+| `GilgameshEngine` | Static library | Core, platform, physical input, renderer, engine loop, and frame clock |
 | `GilgameshDeveloperTools` | Static library | Console, ImGui integration, and dockspace |
 | `DearImGui` | Static library | Vendored ImGui core and Win32/D3D11 backends |
 
@@ -71,6 +73,8 @@ application architecture.
 | Engine services exposed to a program | `Engine/Runtime/EngineServices.h` |
 | Frame and render callback data | `Engine/Runtime/FrameContext.h`, `RenderContext.h` |
 | Window, renderer, clock, and main loop | `Engine/Runtime/Engine.*` |
+| Platform-neutral input snapshots | `Engine/Input/` |
+| Win32 input translation | `Engine/Platform/Windows/Win32InputBackend.*` |
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
 | Editor implementation and primitive test | `Editor/EditorProgram.*` |
 | ImGui backend integration | `DeveloperTools/Runtime/ImGuiIntegration.*` |
@@ -96,13 +100,16 @@ engine.
 
 ```cpp
 Window window_;
+InputSystem input_;
+Win32InputBackend inputBackend_;
 Renderer renderer_;
 FrameClock clock_;
 ```
 
-The window consequently outlives the renderer during destruction. The engine
-provides borrowed references to its window and renderer through
-`EngineServices`; a program does not own either object.
+The window consequently outlives the Win32 input backend and renderer during
+destruction. The engine provides borrowed references to its window, renderer,
+and read-only input system through `EngineServices`; a program does not own any
+of these objects.
 
 `EditorProgram` owns its implementation through `std::unique_ptr<Impl>`. The
 private PImpl contains editor-only and D3D11 test state while keeping those
@@ -153,6 +160,7 @@ WinMain
       -> register DebugOutputSink in debug builds
       -> Engine::Initialize
           -> create Window
+          -> attach Win32InputBackend to Window
           -> initialize Renderer and shader manager
       -> create EditorProgram
       -> EditorProgram::Initialize
@@ -175,7 +183,9 @@ window and renderer perform their actual resource release through RAII when the
 `Engine::Run()` owns the invariant frame mechanics:
 
 ```text
-pump Win32 messages
+begin input collection
+  -> pump Win32 messages
+  -> freeze the current InputFrame
   -> if minimized: wait, reset FrameClock, skip frame
   -> consume pending resize and resize Renderer
   -> FrameClock::BeginFrame
@@ -187,8 +197,25 @@ pump Win32 messages
 ```
 
 When the presentation surface is occluded, the engine pumps messages and tests
-for visibility at a reduced rate. It resets the frame clock after the wait so
-the suspended interval does not become a large frame delta.
+for visibility at a reduced rate. Each occluded message pump still advances the
+physical input snapshot so focus changes and releases cannot leave stale held
+state. The engine resets the frame clock after the wait so the suspended
+interval does not become a large frame delta.
+
+### Physical input
+
+`Win32InputBackend` observes window messages without consuming them and
+translates supported keyboard and mouse messages into platform-neutral input
+submissions. The consuming window-message handler remains independently
+available to integrations such as ImGui, so UI handling cannot prevent the
+physical device state from observing releases.
+
+`InputSystem` accumulates submissions between `BeginFrame()` and `EndFrame()`.
+`EndFrame()` publishes an `InputFrame` containing held state, per-frame press
+and release transitions, absolute and relative mouse movement, wheel movement,
+and focus state. Programs receive read-only access through `EngineServices`.
+Action mapping, UI/editor routing, and gameplay meaning intentionally remain
+above this layer and are not implemented yet.
 
 ### Frame time
 
@@ -257,7 +284,7 @@ The following are not implemented by the current architecture:
 
 - Standalone game executable or functioning `GameProgram`
 - `GameSession`, worlds, strategic simulation, or Play-in-Editor
-- Input abstraction or event routing beyond ImGui's Win32 message adapter
+- Action mapping and editor/gameplay input routing
 - Reflection, serialization, object handles, or garbage collection
 - Asset/project management
 - Offscreen rendering or a dedicated editor viewport

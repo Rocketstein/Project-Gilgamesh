@@ -13,6 +13,7 @@ target_link_libraries(GilgameshTests
 )
 
 add_subdirectory(Core/Math)
+add_subdirectory(Engine/Input)
 add_subdirectory(Editor/Camera)
 
 add_test(

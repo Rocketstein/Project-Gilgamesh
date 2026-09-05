@@ -38,6 +38,16 @@ LRESULT CALLBACK Window::WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 
 LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	if (messageObserver_ != nullptr)
+	{
+		messageObserver_(
+			messageObserverUserData_,
+			hwnd,
+			uMsg,
+			wParam,
+			lParam);
+	}
+
 	// Let the registered integration observe every message first, but defer its
 	// return value until Window has handled the lifecycle messages it owns.
 	WindowMessageResult externalResult{};
@@ -207,4 +217,18 @@ void Window::ClearMessageHandler() noexcept
 	// Clear both values together so no stale owner can be called later.
 	messageHandler_ = nullptr;
 	messageHandlerUserData_ = nullptr;
+}
+
+void Window::SetMessageObserver(
+	WindowMessageObserver observer,
+	void* userData) noexcept
+{
+	messageObserver_ = observer;
+	messageObserverUserData_ = userData;
+}
+
+void Window::ClearMessageObserver() noexcept
+{
+	messageObserver_ = nullptr;
+	messageObserverUserData_ = nullptr;
 }
