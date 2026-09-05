@@ -1,6 +1,8 @@
 # Project Gilgamesh
 
-A Clausewitz-Jomini-Project Alice inspired game engine, specialized in grand strategy.
+~~A Clausewitz-Jomini-Project Alice inspired game engine, specialized in grand strategy.~~
+
+A general purpose ECS engine.
 
 ## Documentation
 

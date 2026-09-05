@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document records the intended evolution of Project Gilgamesh's renderer. The goal is not to build a general-purpose rendering framework in advance. Each abstraction should appear when a grand-strategy feature gives it a concrete job.
+This document records the intended evolution of Project Gilgamesh's renderer. The goal is not to build a general-purpose rendering framework in advance. Each abstraction should appear when a feature gives it a concrete job.
 
 The renderer is currently D3D11-specific. A cross-API rendering interface is deliberately out of scope until a second backend becomes a real requirement.
 
@@ -181,4 +181,4 @@ The following remain deferred until a measured or feature-driven need appears:
 
 ## Decision rule
 
-Prefer the smallest abstraction that completes the next visible grand-strategy feature. When a concept begins appearing in multiple call sites—pipeline creation, resource binding, pass setup, or draw submission—that repetition is evidence for the next abstraction.
+Prefer the smallest abstraction that completes the next visible feature. When a concept begins appearing in multiple call sites—pipeline creation, resource binding, pass setup, or draw submission—that repetition is evidence for the next abstraction.
