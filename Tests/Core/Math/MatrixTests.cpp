@@ -1,31 +1,13 @@
 #include "Engine/Core/Math/Matrix.h"
+#include "Tests/TestFramework.h"
 
 #include <DirectXMath.h>
 
 #include <cmath>
-#include <cstdio>
 #include <limits>
 #include <random>
-#include <string_view>
 
-namespace
-{
-int failures = 0;
-
-void Check(bool condition, std::string_view message)
-{
-    if (condition)
-        return;
-
-    std::fprintf(
-        stderr,
-        "FAILED: %.*s\n",
-        static_cast<int>(message.size()),
-        message.data());
-    ++failures;
-}
-
-void TestInteropAndTransforms()
+GILGAMESH_TEST("Core.Math.Matrix", "InteropAndTransforms")
 {
     const Matrix4 transform{
         2.0f, 0.0f, 0.0f, 0.0f,
@@ -34,25 +16,25 @@ void TestInteropAndTransforms()
         5.0f, 6.0f, 7.0f, 1.0f
     };
 
-    Check(FromDirectX(ToDirectX(transform)) == transform,
+    GILGAMESH_CHECK_MESSAGE(FromDirectX(ToDirectX(transform)) == transform,
         "DirectX conversion must preserve every component");
-    Check(NearlyEquals(
+    GILGAMESH_CHECK_MESSAGE(NearlyEquals(
         TransformPoint({ 1.0f, 2.0f, 3.0f }, transform),
         Vector3{ 7.0f, 12.0f, 19.0f }),
         "TransformPoint must apply scale and translation");
-    Check(NearlyEquals(
+    GILGAMESH_CHECK_MESSAGE(NearlyEquals(
         TransformDirection({ 1.0f, 2.0f, 3.0f }, transform),
         Vector3{ 2.0f, 6.0f, 12.0f }),
         "TransformDirection must ignore translation");
 
     const Vector4 homogeneous{ 1.0f, 2.0f, 3.0f, 1.0f };
-    Check(NearlyEquals(
+    GILGAMESH_CHECK_MESSAGE(NearlyEquals(
         homogeneous * transform,
         Vector4{ 7.0f, 12.0f, 19.0f, 1.0f }),
         "Vector4 multiplication must preserve the row-vector convention");
 }
 
-void TestCompositionAndTranspose()
+GILGAMESH_TEST("Core.Math.Matrix", "CompositionAndTranspose")
 {
     const Matrix4 translation{
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -68,20 +50,20 @@ void TestCompositionAndTranspose()
     };
 
     const Vector3 point{ 1.0f, 1.0f, 1.0f };
-    Check(NearlyEquals(
+    GILGAMESH_CHECK_MESSAGE(NearlyEquals(
         TransformPoint(point, translation * scale),
         TransformPoint(TransformPoint(point, translation), scale)),
         "A * B must apply A before B");
-    Check(Transpose(Transpose(translation)) == translation,
+    GILGAMESH_CHECK_MESSAGE(Transpose(Transpose(translation)) == translation,
         "double transpose must recover the input");
-    Check((2.0f * Matrix4::Identity()) - Matrix4::Identity()
+    GILGAMESH_CHECK_MESSAGE((2.0f * Matrix4::Identity()) - Matrix4::Identity()
             == Matrix4::Identity(),
         "scalar, addition, and subtraction operators must use every component");
-    Check(std::fabs(Determinant(scale) - 24.0f) <= 1e-5f,
+    GILGAMESH_CHECK_MESSAGE(std::fabs(Determinant(scale) - 24.0f) <= 1e-5f,
         "determinant must match the product of diagonal scale factors");
 }
 
-void TestInverseFailures()
+GILGAMESH_TEST("Core.Math.Matrix", "InverseFailures")
 {
     const Matrix4 sentinel{
         2.0f, 0.0f, 0.0f, 0.0f,
@@ -97,25 +79,25 @@ void TestInverseFailures()
     };
 
     Matrix4 output = sentinel;
-    Check(!TryInverse(singular, output),
+    GILGAMESH_CHECK_MESSAGE(!TryInverse(singular, output),
         "TryInverse must reject singular matrices");
-    Check(output == sentinel,
+    GILGAMESH_CHECK_MESSAGE(output == sentinel,
         "TryInverse must leave output untouched on failure");
-    Check(!Inverse(singular).has_value(),
+    GILGAMESH_CHECK_MESSAGE(!Inverse(singular).has_value(),
         "Inverse must expose singularity instead of returning identity");
 
     Matrix4 notFinite = Matrix4::Identity();
     notFinite(0, 0) = std::numeric_limits<float>::quiet_NaN();
     output = sentinel;
-    Check(!TryInverse(notFinite, output),
+    GILGAMESH_CHECK_MESSAGE(!TryInverse(notFinite, output),
         "TryInverse must reject non-finite input");
-    Check(output == sentinel,
+    GILGAMESH_CHECK_MESSAGE(output == sentinel,
         "non-finite failure must leave output untouched");
-    Check(!NearlyEquals(notFinite, Matrix4::Identity()),
+    GILGAMESH_CHECK_MESSAGE(!NearlyEquals(notFinite, Matrix4::Identity()),
         "NearlyEquals must reject NaN components");
-    Check(!NearlyEquals(Matrix4::Identity(), Matrix4::Identity(), -1.0f),
+    GILGAMESH_CHECK_MESSAGE(!NearlyEquals(Matrix4::Identity(), Matrix4::Identity(), -1.0f),
         "NearlyEquals must reject negative tolerances");
-    Check(!NearlyEquals(
+    GILGAMESH_CHECK_MESSAGE(!NearlyEquals(
         Matrix4::Identity(),
         Matrix4::Identity(),
         std::numeric_limits<float>::infinity()),
@@ -124,13 +106,13 @@ void TestInverseFailures()
     Matrix2 singular2{ 1.0f, 2.0f, 2.0f, 4.0f };
     Matrix2 output2{ 2.0f, 0.0f, 0.0f, 2.0f };
     const Matrix2 sentinel2 = output2;
-    Check(!TryInverse(singular2, output2) && output2 == sentinel2,
+    GILGAMESH_CHECK_MESSAGE(!TryInverse(singular2, output2) && output2 == sentinel2,
         "Matrix2 inverse failure must be observable and non-mutating");
-    Check(!Inverse(singular2).has_value(),
+    GILGAMESH_CHECK_MESSAGE(!Inverse(singular2).has_value(),
         "Matrix2 Inverse must expose singularity");
     Matrix2 notFinite2 = Matrix2::Identity();
     notFinite2(0, 0) = std::numeric_limits<float>::quiet_NaN();
-    Check(!NearlyEquals(notFinite2, Matrix2::Identity()),
+    GILGAMESH_CHECK_MESSAGE(!NearlyEquals(notFinite2, Matrix2::Identity()),
         "Matrix2 NearlyEquals must reject NaN components");
 
     Matrix singular3{
@@ -144,17 +126,17 @@ void TestInverseFailures()
         0.0f, 0.0f, 2.0f
     };
     const Matrix sentinel3 = output3;
-    Check(!TryInverse(singular3, output3) && output3 == sentinel3,
+    GILGAMESH_CHECK_MESSAGE(!TryInverse(singular3, output3) && output3 == sentinel3,
         "Matrix3 inverse failure must be observable and non-mutating");
-    Check(!Inverse(singular3).has_value(),
+    GILGAMESH_CHECK_MESSAGE(!Inverse(singular3).has_value(),
         "Matrix3 Inverse must expose singularity");
     Matrix notFinite3 = Matrix::Identity();
     notFinite3(0, 0) = std::numeric_limits<float>::quiet_NaN();
-    Check(!NearlyEquals(notFinite3, Matrix::Identity()),
+    GILGAMESH_CHECK_MESSAGE(!NearlyEquals(notFinite3, Matrix::Identity()),
         "Matrix3 NearlyEquals must reject NaN components");
 }
 
-void TestRandomInverses()
+GILGAMESH_TEST("Core.Math.Matrix", "RandomInverses")
 {
     std::mt19937 random(0x47494c47u);
     std::uniform_real_distribution<float> value(-4.0f, 4.0f);
@@ -173,24 +155,11 @@ void TestRandomInverses()
         if (!inverse)
             continue;
 
-        Check(NearlyEquals(matrix * *inverse, Matrix4::Identity(), 5e-3f),
+        GILGAMESH_CHECK_MESSAGE(NearlyEquals(matrix * *inverse, Matrix4::Identity(), 5e-3f),
             "matrix multiplied by its inverse must be identity");
         ++tested;
     }
 
-    Check(tested > 1900, "random inverse test must exercise enough matrices");
-}
-}
-
-int main()
-{
-    TestInteropAndTransforms();
-    TestCompositionAndTranspose();
-    TestInverseFailures();
-    TestRandomInverses();
-
-    if (failures != 0)
-        std::fprintf(stderr, "%d matrix test(s) failed\n", failures);
-
-    return failures == 0 ? 0 : 1;
+    GILGAMESH_CHECK_MESSAGE(tested > 1900,
+        "random inverse test must exercise enough matrices");
 }
