@@ -14,6 +14,9 @@ EditorCameraIntent EditorController::Update(const InputFrame& frame)
 
 Vector3 EditorController::GetMovementIntent(const InputFrame& frame)
 {
+	if (!frame.IsDown(MouseButton::Right))
+		return Vector3{};
+
 	Vector3 movement{};
 	if (frame.IsDown(Key::W))
 		movement.z += 1.0f;
@@ -32,7 +35,11 @@ Vector3 EditorController::GetMovementIntent(const InputFrame& frame)
 
 Vector2 EditorController::GetLookIntent(const InputFrame& frame)
 {
-	return frame.GetMouseDelta() * RotateSpeed;
+	if (!frame.IsDown(MouseButton::Right))
+		return Vector2{};
+
+	Vector2 lookDelta{ frame.GetMouseDelta().x, -frame.GetMouseDelta().y };
+	return lookDelta * RotateSpeed;
 }
 
 float EditorController::GetZoomIntent(const InputFrame& frame)
