@@ -60,8 +60,7 @@ to the numeric C++ definition `0` or `1`. Developer-tool code therefore uses
 `#if GILGAMESH_ENABLE_DEVELOPER_TOOLS`, not `#ifdef`.
 
 No standalone game target is implemented. `Game/GameProgram.h` is only a
-placeholder, and the legacy `Client/` directory is not part of the active
-application architecture.
+placeholder.
 
 ## Source map
 
