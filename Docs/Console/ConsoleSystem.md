@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document describes the current developer-console implementation: how engine logs and command output reach the UI, how filtering works, how commands execute, and how the Output Log participates in the developer-tools dockspace.
+This document describes the current editor-console implementation: how engine logs and command output reach the UI, how filtering works, how commands execute, and how the Output Log participates in the editor workspace.
 
-The console is compiled only when `GILGAMESH_ENABLE_DEVELOPER_TOOLS` is enabled. The engine logging system itself remains independent of ImGui and the developer-tools library.
+The console is compiled only when `GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS` is enabled. The editor viewport and workspace remain available when diagnostics are disabled, and the engine logging system remains independent of ImGui and editor UI.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ Engine and application threads
   -> GILGAMESH_LOG
   -> Logger
       -> DebugOutputSink (_DEBUG only)
-      -> ConsoleLogSink (developer tools only)
+      -> ConsoleLogSink (editor diagnostics only)
           -> ConsoleBuffer
 
 Console command input
@@ -38,14 +38,14 @@ The important ownership boundary is that producers write entries into `ConsoleBu
 | Core logging types and levels | `Engine/Core/Logging/LogTypes.h` |
 | Logger fan-out and sink registration | `Engine/Core/Logging/Logger.h`, `Logger.cpp` |
 | Visual Studio debugger output | `Engine/Platform/Windows/Logging/DebugOutputSink.*` |
-| Console entry types and bounded history | `DeveloperTools/Console/ConsoleBuffer.*` |
-| Adapter from engine logs to console entries | `DeveloperTools/Console/ConsoleLogSink.*` |
-| Shared console settings | `DeveloperTools/Console/ConsoleConfiguration.*` |
-| Output Log UI, filtering, and command input | `DeveloperTools/Console/OutputLogPanel.*` |
-| Command tokenization and dispatch | `DeveloperTools/Console/Commands/CommandLineTokenizer.*`, `CommandRegistry.*` |
-| Built-in command definitions | `DeveloperTools/Console/Commands/BuiltInCommands.*` |
-| Adapter from command responses to console entries | `DeveloperTools/Console/ConsoleCommandOutput.*` |
-| Dockspace and initial layout | `DeveloperTools/Workspace/DeveloperToolsWorkspace.*` |
+| Console entry types and bounded history | `Editor/Console/ConsoleBuffer.*` |
+| Adapter from engine logs to console entries | `Editor/Console/ConsoleLogSink.*` |
+| Shared console settings | `Editor/Console/ConsoleConfiguration.*` |
+| Output Log UI, filtering, and command input | `Editor/EditorUI/Panels/OutputLogPanel.*` |
+| Command tokenization and dispatch | `Editor/Console/Commands/CommandLineTokenizer.*`, `CommandRegistry.*` |
+| Built-in command definitions | `Editor/Console/Commands/BuiltInCommands.*` |
+| Adapter from command responses to console entries | `Editor/Console/ConsoleCommandOutput.*` |
+| Dockspace and initial layout | `Editor/EditorUI/Workspace/EditorWorkspace.*` |
 | Construction and per-frame orchestration | `Editor/EditorProgram.cpp` |
 
 ## Entry model and buffer
@@ -77,7 +77,7 @@ The panel removes locally cached entries that the bounded buffer has discarded, 
 
 `GILGAMESH_LOG(Category, Level, ...)` first calls `Logger::ShouldLog()`. If no sinks are registered, formatting and dispatch are skipped. Otherwise, `Logger` constructs one `LogEntry` and synchronously sends it to every registered sink.
 
-With developer tools enabled, `ConsoleLogSink` converts each `LogEntry` into a `ConsoleEntry` while preserving its category, level, timestamp, message, and source location.
+With editor diagnostics enabled, `ConsoleLogSink` converts each `LogEntry` into a `ConsoleEntry` while preserving its category, level, timestamp, message, and source location.
 
 Debug builds also register `DebugOutputSink`. It independently writes a formatted copy to `OutputDebugStringA`, making logs visible in the Visual Studio Output window or DebugView. Removing that sink would not disable the in-process console, but it would remove the external diagnostic path for startup failures and crashes.
 
@@ -191,9 +191,9 @@ New entries scroll to the bottom only when the view was already at the bottom. S
 
 ## Docking workspace
 
-`DeveloperToolsWorkspace` submits a viewport-sized dockspace before any developer-tool windows are drawn. The central node is transparent, allowing the renderer output to remain visible wherever no tool is docked.
+`EditorWorkspace` submits a viewport-sized dockspace before editor windows are drawn. The central node is transparent, allowing the renderer output to remain visible wherever no tool is docked.
 
-On the first run, `BuildDefaultLayout()` creates a bottom node occupying 30 percent of the viewport and docks Output Log there. This default is applied only when the dockspace node does not already exist. Afterward, normal ImGui docking allows the window to be:
+When editor diagnostics are enabled, the first run of `BuildDefaultLayout()` creates a bottom node occupying 30 percent of the viewport and docks Output Log there. With diagnostics disabled, the editor viewport receives the full dockspace. The default is applied only when the dockspace node does not already exist. Afterward, normal ImGui docking allows the window to be:
 
 - Docked at the top, bottom, left, or right
 - Tabbed with another tool by dropping it on the center target
@@ -201,7 +201,7 @@ On the first run, `BuildDefaultLayout()` creates a bottom node occupying 30 perc
 - Floated outside the dockspace
 - Resized through dock-node splitters
 
-DockBuilder is currently an internal ImGui API. Its use is isolated to `DeveloperToolsWorkspace.cpp`; individual panels should use only ordinary `ImGui::Begin()` windows.
+DockBuilder is currently an internal ImGui API. Its use is isolated to `EditorWorkspace.cpp`; individual panels should use only ordinary `ImGui::Begin()` windows.
 
 ImGui persists docking nodes, split ratios, tabs, and window positions in `imgui.ini`. The default filename is relative to the process working directory. A stable application-data location has not yet been configured.
 
@@ -210,8 +210,8 @@ ImGui persists docking nodes, split ratios, tabs, and window positions in `imgui
 To add a tool such as Content Browser:
 
 1. Give it a stable name such as `Content Browser###ContentBrowser`.
-2. Draw its ordinary ImGui window after `DeveloperToolsWorkspace::DrawDockSpace()`.
-3. Add its sources to `DeveloperTools/CMakeLists.txt`.
+2. Draw its ordinary ImGui window after `EditorWorkspace::DrawDockSpace()`.
+3. Add its sources to `Editor/CMakeLists.txt`.
 4. Optionally add its exact stable name to `BuildDefaultLayout()`.
 
 Docking two window names into the same default node makes them tabs automatically:

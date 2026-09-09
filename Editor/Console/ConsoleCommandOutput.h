@@ -3,9 +3,9 @@
 #include <memory>
 #include <string_view>
 
-#include "DeveloperTools/Console/Commands/CommandInvocation.h"
-#include "DeveloperTools/Console/Commands/CommandTypes.h"
-#include "DeveloperTools/Console/ConsoleBuffer.h"
+#include "Editor/Console/Commands/CommandInvocation.h"
+#include "Editor/Console/Commands/CommandTypes.h"
+#include "Editor/Console/ConsoleBuffer.h"
 
 // Writes command traffic directly to the console without routing through the
 // engine logger or its other sinks.

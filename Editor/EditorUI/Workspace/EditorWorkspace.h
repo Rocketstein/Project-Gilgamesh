@@ -1,6 +1,6 @@
 #pragma once
 
-class DeveloperToolsWorkspace
+class EditorWorkspace
 {
 public:
     void DrawDockSpace();

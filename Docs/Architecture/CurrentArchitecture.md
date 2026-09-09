@@ -9,7 +9,8 @@ separate evolution document.
 
 The current executable is an editor prototype. It opens one Win32 window,
 initializes the D3D11 renderer, runs one `EditorProgram`, draws the primitive
-triangle test, and optionally hosts the ImGui developer console and dockspace.
+cube into an offscreen editor viewport, and hosts an ImGui editor workspace.
+The developer console and Output Log are optional editor diagnostics.
 
 ## System overview
 
@@ -25,9 +26,9 @@ WinMain
           -> Engine::Run(IProgram&)
       -> EditorProgram : IProgram
           -> primitive graphics test
-          -> ImGui integration (optional)
-          -> developer console (optional)
-          -> developer-tools workspace (optional)
+          -> editor viewport and viewport client
+          -> ImGui integration and editor workspace
+          -> developer console and Output Log (optional diagnostics)
 ```
 
 There is one concrete `Engine`. Editor behavior is supplied through the
@@ -39,9 +40,9 @@ The root CMake project currently produces these targets:
 
 | Target | Kind | Responsibility |
 | --- | --- | --- |
-| `Gilgamesh` | Win32 executable | Entry point, `Application`, and `EditorProgram` |
+| `Gilgamesh` | Win32 executable | Entry point and process-level `Application` composition |
 | `GilgameshEngine` | Static library | Core, platform, physical input, renderer, engine loop, and frame clock |
-| `GilgameshDeveloperTools` | Static library | Console, ImGui integration, and dockspace |
+| `GilgameshEditor` | Static library | Editor program, camera, input, viewport, UI, and optional diagnostics |
 | `DearImGui` | Static library | Vendored ImGui core and Win32/D3D11 backends |
 
 The target dependency direction is:
@@ -49,15 +50,16 @@ The target dependency direction is:
 ```text
 Gilgamesh executable
   -> GilgameshEngine
-  -> GilgameshDeveloperTools (when enabled)
+  -> GilgameshEditor
        -> GilgameshEngine
        -> DearImGui
 ```
 
 `GILGAMESH_BUILD_EDITOR=1` currently identifies the executable as the editor
-build. `GILGAMESH_ENABLE_DEVELOPER_TOOLS` is a CMake option and is translated
-to the numeric C++ definition `0` or `1`. Developer-tool code therefore uses
-`#if GILGAMESH_ENABLE_DEVELOPER_TOOLS`, not `#ifdef`.
+build. The editor workspace, viewport panel, and ImGui integration are always
+part of that product. `GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS` controls only the
+console, commands, log sink, and Output Log panel and is translated to the
+numeric C++ definition `0` or `1`.
 
 No standalone game target is implemented. `Game/GameProgram.h` is only a
 placeholder.
@@ -76,9 +78,11 @@ placeholder.
 | Win32 input translation | `Engine/Platform/Windows/Win32InputBackend.*` |
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
 | Editor implementation and primitive test | `Editor/EditorProgram.*` |
-| ImGui backend integration | `DeveloperTools/Runtime/ImGuiIntegration.*` |
-| Console implementation | `DeveloperTools/Console/` |
-| Dockspace and default layout | `DeveloperTools/Workspace/DeveloperToolsWorkspace.*` |
+| Editor viewport presentation | `Editor/EditorUI/Panels/EditorViewportPanel.*` |
+| ImGui backend integration | `Editor/EditorUI/Runtime/ImGuiIntegration.*` |
+| Console implementation | `Editor/Console/` |
+| Output Log panel | `Editor/EditorUI/Panels/OutputLogPanel.*` |
+| Dockspace and default layout | `Editor/EditorUI/Workspace/EditorWorkspace.*` |
 
 ## Ownership and lifetime
 
@@ -117,10 +121,10 @@ defined in `EditorProgram.cpp`, where `Impl` is complete.
 
 The implementation owns:
 
-- The primitive graphics pipeline and vertex buffer
-- ImGui integration and the dockspace when developer tools are enabled
-- The console buffer, sink registration, configuration, panel, commands, and
-  pending command state when developer tools are enabled
+- The editor viewport client and primitive graphics resources
+- ImGui integration, the editor workspace, and the viewport panel
+- The console buffer, sink registration, configuration, Output Log panel,
+  commands, and pending command state when editor diagnostics are enabled
 
 `EditorProgram::Shutdown()` resets the implementation while the engine window
 and renderer are still alive. This lets ImGui disconnect its window-message
@@ -163,9 +167,9 @@ WinMain
           -> initialize Renderer and shader manager
       -> create EditorProgram
       -> EditorProgram::Initialize
-          -> create console state and register ConsoleLogSink
+          -> optionally create console state and register ConsoleLogSink
           -> initialize ImGui against the engine window and D3D11 device
-          -> create Output Log and command state
+          -> initialize the editor viewport
           -> load Primitive shaders
           -> create the test vertex buffer and graphics pipeline
       -> Engine::Run(EditorProgram)
@@ -213,8 +217,9 @@ physical device state from observing releases.
 `EndFrame()` publishes an `InputFrame` containing held state, per-frame press
 and release transitions, absolute and relative mouse movement, wheel movement,
 and focus state. Programs receive read-only access through `EngineServices`.
-Action mapping, UI/editor routing, and gameplay meaning intentionally remain
-above this layer and are not implemented yet.
+A hard-coded editor controller currently maps that physical state to camera
+intent above the engine layer. Configurable action mapping, UI-aware editor
+input routing, and gameplay meaning are not implemented yet.
 
 ### Frame time
 
@@ -229,12 +234,14 @@ exists.
 
 ### Editor update and rendering
 
-`EditorProgram::Update()` executes a console command submitted by the previous
-frame, then begins the new ImGui frame.
+`EditorProgram::Update()` updates the viewport client, optionally executes a
+console command submitted by the previous frame, and begins the new ImGui
+frame.
 
-`EditorProgram::Render()` binds the primitive pipeline, draws the triangle,
-submits the dockspace and Output Log, records any newly submitted command, and
-renders ImGui. The engine surrounds this work with renderer begin/end calls.
+`EditorProgram::Render()` submits the editor workspace and viewport panel,
+renders the primitive cube into the viewport's offscreen target, restores the
+swap-chain output, optionally submits the Output Log, and finally renders
+ImGui. The engine surrounds this work with renderer begin/end calls.
 
 Deferring console execution until the next update prevents command handlers
 from mutating the console buffer while the previous frame's widgets are being
@@ -246,7 +253,7 @@ built.
 GILGAMESH_LOG
   -> Logger
       -> DebugOutputSink (_DEBUG)
-      -> ConsoleLogSink (developer tools enabled)
+      -> ConsoleLogSink (editor diagnostics enabled)
           -> ConsoleBuffer
               -> OutputLogPanel
 ```
@@ -270,12 +277,13 @@ OutputLogPanel::Draw
 ## Rendering boundary
 
 The renderer currently owns the D3D11 device, presentation surface, and shader
-manager. The editor owns the temporary primitive pipeline and vertex buffer and
-issues the draw call directly through the D3D11 device context.
+manager. The editor owns the offscreen viewport target, temporary primitive
+pipeline, and vertex buffer and issues the draw call directly through the
+D3D11 device context. `EditorViewportPanel` measures and presents the viewport
+texture but does not own scene rendering.
 
 This is intentional prototype code, not a general scene renderer. There is no
-render graph, offscreen editor viewport, resource manager, world renderer, or
-API-independent RHI.
+render graph, resource manager, world renderer, or API-independent RHI.
 
 ## Current boundaries and non-features
 
@@ -283,12 +291,10 @@ The following are not implemented by the current architecture:
 
 - Standalone game executable or functioning `GameProgram`
 - `GameSession`, worlds, strategic simulation, or Play-in-Editor
-- Action mapping and editor/gameplay input routing
+- Configurable action mapping and UI-aware editor/gameplay input routing
 - Reflection, serialization, object handles, or garbage collection
 - Asset/project management
-- Offscreen rendering or a dedicated editor viewport
 - Runtime engine restart after `Engine::Shutdown()`
-- Automated tests
 
 These omissions should not be inferred as architectural decisions. They mark
 the boundary of the present baseplate and are subjects for the evolution

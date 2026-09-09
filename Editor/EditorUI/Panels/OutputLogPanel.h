@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "DeveloperTools/Console/ConsoleBuffer.h"
+#include "Editor/Console/ConsoleBuffer.h"
 
 class ConsoleConfiguration;
 

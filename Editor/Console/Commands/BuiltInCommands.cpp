@@ -6,7 +6,7 @@
 #include <string_view>
 
 #include "CommandInvocation.h"
-#include "DeveloperTools/Console/ConsoleConfiguration.h"
+#include "Editor/Console/ConsoleConfiguration.h"
 
 namespace
 {

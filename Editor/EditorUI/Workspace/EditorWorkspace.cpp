@@ -1,10 +1,13 @@
-#include "DeveloperToolsWorkspace.h"
+#include "EditorWorkspace.h"
 
-#include "DeveloperTools/Console/OutputLogPanel.h"
+#include "Editor/EditorUI/Panels/EditorViewportPanel.h"
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
+#include "Editor/EditorUI/Panels/OutputLogPanel.h"
+#endif
 #include "imgui.h"
 #include "imgui_internal.h"
 
-void DeveloperToolsWorkspace::DrawDockSpace()
+void EditorWorkspace::DrawDockSpace()
 {
     const ImGuiViewport* viewport =
         ImGui::GetMainViewport();
@@ -62,7 +65,7 @@ void DeveloperToolsWorkspace::DrawDockSpace()
     ImGui::End();
 }
 
-void DeveloperToolsWorkspace::BuildDefaultLayout(
+void EditorWorkspace::BuildDefaultLayout(
     unsigned int dockspaceId,
     float width,
     float height)
@@ -79,6 +82,8 @@ void DeveloperToolsWorkspace::BuildDefaultLayout(
         ImVec2(width, height));
 
     ImGuiID centralNode = dockspaceId;
+
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     ImGuiID bottomNode = 0;
 
     ImGui::DockBuilderSplitNode(
@@ -91,9 +96,10 @@ void DeveloperToolsWorkspace::BuildDefaultLayout(
     ImGui::DockBuilderDockWindow(
         OutputLogPanel::WindowName,
         bottomNode);
+#endif
 
     ImGui::DockBuilderDockWindow(
-        "Editor Viewport",
+        EditorViewportPanel::WindowName,
         centralNode);
 
     ImGui::DockBuilderFinish(dockspaceId);

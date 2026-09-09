@@ -15,38 +15,36 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(
-  GILGAMESH_ENABLE_DEVELOPER_TOOLS
-  "Build ImGui-based in-process developer tools"
+  GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
+  "Build optional editor diagnostics such as the console and Output Log"
   ON
 )
 
-if (GILGAMESH_ENABLE_DEVELOPER_TOOLS)
-  # Dear ImGui is vendored from the docking branch. Build only the core
-  # sources and the platform/renderer backends used by Gilgamesh tools.
-  set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/imgui")
+# Dear ImGui is vendored from the docking branch. Build only the core
+# sources and the platform/renderer backends used by the editor.
+set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/imgui")
 
-  add_library(DearImGui STATIC
-    "${IMGUI_DIR}/imgui.cpp"
-    "${IMGUI_DIR}/imgui_draw.cpp"
-    "${IMGUI_DIR}/imgui_tables.cpp"
-    "${IMGUI_DIR}/imgui_widgets.cpp"
-    "${IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
-    "${IMGUI_DIR}/backends/imgui_impl_win32.cpp"
-  )
+add_library(DearImGui STATIC
+  "${IMGUI_DIR}/imgui.cpp"
+  "${IMGUI_DIR}/imgui_draw.cpp"
+  "${IMGUI_DIR}/imgui_tables.cpp"
+  "${IMGUI_DIR}/imgui_widgets.cpp"
+  "${IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
+  "${IMGUI_DIR}/backends/imgui_impl_win32.cpp"
+)
 
-  target_include_directories(DearImGui
-    PUBLIC
-      "${IMGUI_DIR}"
-      "${IMGUI_DIR}/backends"
-  )
+target_include_directories(DearImGui
+  PUBLIC
+    "${IMGUI_DIR}"
+    "${IMGUI_DIR}/backends"
+)
 
-  target_link_libraries(DearImGui
-    PRIVATE
-      d3d11
-  )
+target_link_libraries(DearImGui
+  PRIVATE
+    d3d11
+)
 
-  set_target_properties(DearImGui PROPERTIES FOLDER "ThirdParty")
-endif()
+set_target_properties(DearImGui PROPERTIES FOLDER "ThirdParty")
 
 # CMake 모듈 경로를 추가하고 HLSL 컴파일러를 포함합니다.
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -60,17 +58,6 @@ target_sources (Gilgamesh
     main.cpp
     Application/Application.cpp
     Application/Application.h
-    Editor/EditorViewport/EditorViewportClient.cpp
-    Editor/EditorViewport/EditorViewportClient.h
-    Editor/EditorViewport/EditorViewport.cpp
-    Editor/EditorViewport/EditorViewport.h
-    Editor/EditorInput/EditorController.cpp
-    Editor/EditorInput/EditorController.h
-    Editor/EditorInput/EditorCameraIntent.h
-    Editor/EditorCamera/EditorCamera.cpp
-    Editor/EditorCamera/EditorCamera.h
-    Editor/EditorProgram.cpp
-    Editor/EditorProgram.h
 )
 
 get_target_property (GILGAMESH_APPLICATION_SOURCES Gilgamesh SOURCES)
@@ -91,27 +78,18 @@ register_shader (Primitive)
 # Engine Library
 add_subdirectory ("Engine")
 
+# Editor Library
+add_subdirectory ("Editor")
+
 target_link_libraries (Gilgamesh
 	PRIVATE
 		GilgameshEngine
+		GilgameshEditor
 )
-
-if (GILGAMESH_ENABLE_DEVELOPER_TOOLS)
-  # In-process diagnostics depend on the engine, while the engine remains
-  # independent from Dear ImGui and developer-facing panels.
-  add_subdirectory ("DeveloperTools")
-
-  target_link_libraries (Gilgamesh
-    PRIVATE
-      GilgameshDeveloperTools
-      DearImGui
-  )
-endif()
 
 target_compile_definitions (Gilgamesh
   PRIVATE
     GILGAMESH_BUILD_EDITOR=1
-    GILGAMESH_ENABLE_DEVELOPER_TOOLS=$<BOOL:${GILGAMESH_ENABLE_DEVELOPER_TOOLS}>
 )
 
 include(CTest)

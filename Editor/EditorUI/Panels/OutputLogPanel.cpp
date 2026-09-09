@@ -5,7 +5,7 @@
 #include <string_view>
 #include <utility>
 
-#include "DeveloperTools/Console/ConsoleConfiguration.h"
+#include "Editor/Console/ConsoleConfiguration.h"
 #include "imgui.h"
 
 namespace

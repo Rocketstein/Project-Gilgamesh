@@ -1,7 +1,9 @@
 #include "EditorProgram.h"
 
 #include "EditorCamera/EditorCamera.h"
-#include "EditorInput/EditorController.h"
+#include "EditorUI/Panels/EditorViewportPanel.h"
+#include "EditorUI/Runtime/ImGuiIntegration.h"
+#include "EditorUI/Workspace/EditorWorkspace.h"
 #include "EditorViewport/EditorViewport.h"
 #include "EditorViewport/EditorViewportClient.h"
 #include "Engine/Core/Logging/Logger.h"
@@ -17,17 +19,17 @@
 
 #include <cstdint>
 #include <iterator>
+#include <optional>
+#include <string>
+#include <utility>
 
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
-    #include <imgui.h>
-    #include "DeveloperTools/Console/Commands/BuiltInCommands.h"
-    #include "DeveloperTools/Console/ConsoleBuffer.h"
-    #include "DeveloperTools/Console/ConsoleCommandOutput.h"
-    #include "DeveloperTools/Console/ConsoleConfiguration.h"
-    #include "DeveloperTools/Console/ConsoleLogSink.h"
-    #include "DeveloperTools/Console/OutputLogPanel.h"
-    #include "DeveloperTools/Runtime/ImGuiIntegration.h"
-    #include "DeveloperTools/Workspace/DeveloperToolsWorkspace.h"
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
+    #include "Editor/Console/Commands/BuiltInCommands.h"
+    #include "Editor/Console/ConsoleBuffer.h"
+    #include "Editor/Console/ConsoleCommandOutput.h"
+    #include "Editor/Console/ConsoleConfiguration.h"
+    #include "Editor/Console/ConsoleLogSink.h"
+    #include "Editor/EditorUI/Panels/OutputLogPanel.h"
 #endif
 
 struct EditorProgram::Impl
@@ -39,11 +41,12 @@ struct EditorProgram::Impl
     // Viewport
     EditorViewportClient viewportClient;
 
-	// Developer Tools
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+    // Editor UI
     ImGuiIntegration imgui;
-    DeveloperToolsWorkspace workspace;
+    EditorWorkspace workspace;
+    EditorViewportPanel viewportPanel;
 
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     // Console
     std::shared_ptr<ConsoleBuffer> consoleBuffer;
     std::shared_ptr<ConsoleLogSink> consoleSink;
@@ -79,7 +82,7 @@ bool EditorProgram::Initialize(EngineServices& services)
 	impl_->window = &services.mainWindow;
     impl_->renderer = &services.renderer;
 
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
 	impl_->consoleBuffer = std::make_shared<ConsoleBuffer>(1024);
 	impl_->consoleSink = std::make_shared<ConsoleLogSink>(impl_->consoleBuffer);
 	impl_->consoleRegistration = Logger::AddSink(impl_->consoleSink); 
@@ -96,6 +99,7 @@ bool EditorProgram::Initialize(EngineServices& services)
     impl_->commandRegistry =
         CreateBuiltInCommandRegistry(
             impl_->consoleConfiguration);
+#endif
 
     if (!impl_->imgui.Initialize(
         services.mainWindow,
@@ -105,9 +109,6 @@ bool EditorProgram::Initialize(EngineServices& services)
         impl_.reset();
         return false;
     }
-
-    // Construct panel and command objects.
-#endif 
 
     // Initialize editor viewport
     impl_->viewportClient.Initialize(services.renderer.GetDevice());
@@ -129,7 +130,7 @@ void EditorProgram::Update(const FrameContext& frame)
     const InputFrame& inputFrame = impl_->inputSystem->GetFrame();
 	impl_->viewportClient.Update(inputFrame, frame.realDeltaTime);
 
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
 	// Process any pending console command from the previous frame before
     if (impl_->pendingCommand)
     {
@@ -144,25 +145,47 @@ void EditorProgram::Update(const FrameContext& frame)
         impl_->commandOutput->WriteResult(result);
         impl_->pendingCommand.reset();
     }
+#endif
 
     impl_->imgui.BeginFrame();
-#endif
 }
 
 void EditorProgram::Render(RenderContext& context)
 {
     Renderer& renderer = context.renderer;
 
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
     impl_->workspace.DrawDockSpace();
 
-    DrawEditorViewportPanel(context);
+    EditorViewport& viewport =
+        impl_->viewportClient.GetEditorViewport();
 
+    const EditorViewportPanelFrame viewportFrame =
+        impl_->viewportPanel.Draw(viewport);
+
+    if (viewportFrame.shouldRender)
+    {
+        ID3D11DeviceContext* deviceContext =
+            renderer.GetDeviceContext();
+
+        viewport.BindAndClear(deviceContext);
+
+        DrawPrimitive(
+            renderer,
+            viewportFrame.renderExtent);
+
+        viewport.Unbind(deviceContext);
+
+        // Restore the swap-chain back buffer without clearing it so the
+        // queued ImGui draw data is submitted to the presentation output.
+        renderer.BindOutput();
+    }
+
+#if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     if (auto command = impl_->outputLogPanel->Draw())
         impl_->pendingCommand = std::move(*command);
+#endif
 
     impl_->imgui.Render();
-#endif
 }
 
 void EditorProgram::DrawPrimitive(
@@ -367,69 +390,3 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
 
     return SUCCEEDED(result);
 }
-
-#if GILGAMESH_ENABLE_DEVELOPER_TOOLS
-void EditorProgram::DrawEditorViewportPanel(
-    RenderContext& context)
-{
-    EditorViewport& viewport = impl_->viewportClient.GetEditorViewport();
-
-    constexpr ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoScrollWithMouse;
-
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_WindowPadding,
-        ImVec2(0.0f, 0.0f));
-
-    const bool visible =
-        ImGui::Begin("Editor Viewport", nullptr, flags);
-
-    ImGui::PopStyleVar();
-
-    if (visible)
-    {
-        const ImVec2 availableSize =
-            ImGui::GetContentRegionAvail();
-
-        if (availableSize.x >= 1.0f &&
-            availableSize.y >= 1.0f)
-        {
-            const Extent2D requestedExtent{
-                static_cast<std::uint32_t>(availableSize.x),
-                static_cast<std::uint32_t>(availableSize.y)
-            };
-
-            viewport.RequestResize(requestedExtent);
-            viewport.ApplyPendingResize();
-
-            if (viewport.IsReady())
-            {
-                ID3D11DeviceContext* deviceContext =
-                    context.renderer.GetDeviceContext();
-
-                viewport.BindAndClear(deviceContext);
-
-                DrawPrimitive(context.renderer, viewport.GetExtent());
-
-                viewport.Unbind(deviceContext);
-
-                // Restore the swap-chain back buffer without clearing it.
-                context.renderer.BindOutput();
-
-                ID3D11ShaderResourceView* srv =
-                    viewport.GetShaderResourceView();
-
-                const ImTextureRef texture{
-                    static_cast<ImTextureID>(
-                        reinterpret_cast<std::uintptr_t>(srv))
-                };
-
-                ImGui::Image(texture, availableSize);
-            }
-        }
-    }
-
-    ImGui::End();
-}
-#endif
