@@ -13,5 +13,6 @@ void EditorViewportClient::Shutdown() noexcept
 
 void EditorViewportClient::Update(const InputFrame& frame, float DeltaTime)
 {
-	controller_.Update(frame);
+	const EditorCameraIntent intent = controller_.Update(frame);
+	camera_.ApplyCameraIntent(intent, DeltaTime);
 }

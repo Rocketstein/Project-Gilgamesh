@@ -71,14 +71,16 @@ void EditorCamera::ApplyCameraIntent(const EditorCameraIntent& intent, float del
 	ApplyLookIntent(intent.lookDelta);
 	ApplyZoomIntent(intent.zoomDelta);
 	ApplyToggleOrthographicIntent(intent.toggleOrthographic);
+	if (isDirty_)
+	{
+		Update();
+	}
 }
 
 void EditorCamera::ApplyMovementIntent(const Vector3& localMovement, float deltaTime)
 {
 	if (localMovement == Vector3{})
 		return;
-
-	GILGAMESH_LOG(Core, Trace, "Applying movement intent: localMovement");
 
 	const float cosPitch = std::cos(currentState_.pitchRadians_);
 	const Vector3 forward{
@@ -87,11 +89,16 @@ void EditorCamera::ApplyMovementIntent(const Vector3& localMovement, float delta
 		std::sin(currentState_.pitchRadians_)
 	};
 
-	const Vector3 right = Cross(worldUp, forward);
-	Vector3 movementWorldSpace =
-		forward * localMovement.z +
-		right * localMovement.y +
-		worldUp * localMovement.x;
+	const Vector3 right{
+		-std::sin(currentState_.yawRadians_),
+		 std::cos(currentState_.yawRadians_),
+		 0.0f
+	};
+
+	const Vector3 movementWorldSpace =
+		right * localMovement.x +
+		worldUp * localMovement.y +
+		forward * localMovement.z;
 
 	pendingState_.position_ += movementWorldSpace * deltaTime;
 	isDirty_ = true;
@@ -117,7 +124,7 @@ void EditorCamera::ApplyLookIntent(const Vector2& lookDelta)
 
 void EditorCamera::ApplyZoomIntent(float zoomDelta)
 {
-	if (zoomDelta < 0.0001f)
+	if (abs(zoomDelta) < 0.0001f)
 		return;
 	constexpr float zoomSensitivity = 0.1f;
 	pendingState_.FOVRadians_ -= zoomDelta * zoomSensitivity;
