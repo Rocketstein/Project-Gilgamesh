@@ -38,11 +38,11 @@ target_sources (GilgameshEngine
 		Render/D3D11/Shader/D3D11ShaderManager.h
 		Render/D3D11/Shader/ShaderTypes.h
 
+		Render/Pipeline/PipelineDesc.h
 		Render/Pipeline/GraphicsPipeline.h
 		Render/Pipeline/GraphicsPipeline.cpp
 		Render/Renderer/Renderer.cpp
 		Render/Renderer/Renderer.h
-
 		Render/VertexTypes/VertexTypes.h
 
 		Runtime/Engine.cpp
@@ -52,7 +52,7 @@ target_sources (GilgameshEngine
 		Runtime/Program.h
 		Runtime/RenderContext.h
 
-		Render/Pipeline/PipelineDesc.h
+		Viewport/ViewportClient.h
 
 		Time/FrameClock.cpp
 		Time/FrameClock.h

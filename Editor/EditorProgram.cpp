@@ -1,7 +1,9 @@
 #include "EditorProgram.h"
 
 #include "EditorCamera/EditorCamera.h"
+#include "EditorInput/EditorController.h"
 #include "EditorViewport/EditorViewport.h"
+#include "EditorViewport/EditorViewportClient.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Render/Buffers/ConstantBuffers.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
@@ -33,7 +35,7 @@ struct EditorProgram::Impl
     Renderer* renderer = nullptr;
 
     // Viewport
-    EditorViewport viewport;
+    EditorViewportClient viewportClient;
 
 	// Developer Tools
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
@@ -55,6 +57,10 @@ struct EditorProgram::Impl
 
 	// Graphics Pipeline
     GraphicsPipeline primitivePipeline;
+
+    // Editor Inputs
+    const InputSystem* inputSystem = nullptr;
+    EditorController editorController;
 
     // Temporary stuffs
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
@@ -104,13 +110,16 @@ bool EditorProgram::Initialize(EngineServices& services)
 #endif 
 
     // Initialize editor viewport
-    impl_->viewport.Initialize(services.renderer.GetDevice());
+    impl_->viewportClient.Initialize(services.renderer.GetDevice());
 
     if (!InitializePrimitiveTestResources(services.renderer))
     {
         impl_.reset();
         return false;
     }
+
+    // Receive input system reference from EngineServices
+	impl_->inputSystem = &services.input;
 
     return true;
 }
@@ -361,7 +370,7 @@ bool EditorProgram::InitializePrimitiveTestResources(Renderer& renderer)
 void EditorProgram::DrawEditorViewportPanel(
     RenderContext& context)
 {
-    EditorViewport& viewport = impl_->viewport;
+    EditorViewport& viewport = impl_->viewportClient.GetEditorViewport();
 
     constexpr ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoScrollbar |

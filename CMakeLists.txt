@@ -60,8 +60,12 @@ target_sources (Gilgamesh
     main.cpp
     Application/Application.cpp
     Application/Application.h
+    Editor/EditorViewport/EditorViewportClient.cpp
+    Editor/EditorViewport/EditorViewportClient.h
     Editor/EditorViewport/EditorViewport.cpp
     Editor/EditorViewport/EditorViewport.h
+    Editor/EditorInput/EditorController.cpp
+    Editor/EditorInput/EditorController.h
     Editor/EditorCamera/EditorCamera.cpp
     Editor/EditorCamera/EditorCamera.h
     Editor/EditorProgram.cpp

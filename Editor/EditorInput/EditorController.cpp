@@ -1,6 +1,8 @@
+#include "EditorController.h"
 
+#include "Engine/Input/InputFrame.h"
 
-class EditorController 
+void EditorController::Update(const InputFrame& frame)
 {
-	
-};
+
+}

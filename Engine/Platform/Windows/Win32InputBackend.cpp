@@ -52,24 +52,24 @@ std::optional<Key> TranslateKey(WPARAM wParam, LPARAM lParam) noexcept
     case VK_RCONTROL: return Key::RightControl;
     case VK_LMENU: return Key::LeftAlt;
     case VK_RMENU: return Key::RightAlt;
-    case VK_SHIFT:
-    {
-        const UINT scanCode =
-            static_cast<UINT>((lParam >> 16) & 0xFF);
-        const UINT translated =
-            MapVirtualKeyW(scanCode, MAPVK_VSC_TO_VK_EX);
-        return translated == VK_RSHIFT
-            ? Key::RightShift
-            : Key::LeftShift;
-    }
-    case VK_CONTROL:
-        return (lParam & (1 << 24)) != 0
-            ? Key::RightControl
-            : Key::LeftControl;
-    case VK_MENU:
-        return (lParam & (1 << 24)) != 0
-            ? Key::RightAlt
-            : Key::LeftAlt;
+    //case VK_SHIFT:
+    //{
+    //    const UINT scanCode =
+    //        static_cast<UINT>((lParam >> 16) & 0xFF);
+    //    const UINT translated =
+    //        MapVirtualKeyW(scanCode, MAPVK_VSC_TO_VK_EX);
+    //    return translated == VK_RSHIFT
+    //        ? Key::RightShift
+    //        : Key::LeftShift;
+    //}
+    //case VK_CONTROL:
+    //    return (lParam & (1 << 24)) != 0
+    //        ? Key::RightControl
+    //        : Key::LeftControl;
+    //case VK_MENU:
+    //    return (lParam & (1 << 24)) != 0
+    //        ? Key::RightAlt
+    //        : Key::LeftAlt;
     default:
         return std::nullopt;
     }
