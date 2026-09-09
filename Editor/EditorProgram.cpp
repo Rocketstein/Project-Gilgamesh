@@ -5,6 +5,8 @@
 #include "EditorViewport/EditorViewport.h"
 #include "EditorViewport/EditorViewportClient.h"
 #include "Engine/Core/Logging/Logger.h"
+#include "Engine/Input/InputFrame.h"
+#include "Engine/Input/InputSystem.h"
 #include "Engine/Render/Buffers/ConstantBuffers.h"
 #include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/Renderer.h"
@@ -60,14 +62,12 @@ struct EditorProgram::Impl
 
     // Editor Inputs
     const InputSystem* inputSystem = nullptr;
-    EditorController editorController;
 
     // Temporary stuffs
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
     Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
     UINT indexCount = 0;
     Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer;
-    EditorCamera camera; // Move this to a viewport later
 };
 
 EditorProgram::EditorProgram() = default;
@@ -126,7 +126,8 @@ bool EditorProgram::Initialize(EngineServices& services)
 
 void EditorProgram::Update(const FrameContext& frame)
 {
-	impl_->camera.Update();
+    const InputFrame& inputFrame = impl_->inputSystem->GetFrame();
+	impl_->viewportClient.Update(inputFrame, frame.realDeltaTime);
 
 #if GILGAMESH_ENABLE_DEVELOPER_TOOLS
 	// Process any pending console command from the previous frame before
@@ -200,9 +201,10 @@ void EditorProgram::DrawPrimitive(
                 : 1u);
 
     const Matrix4 model = Matrix4::Identity();
-    const Matrix4 view = impl_->camera.GetViewMatrix();
+	auto camera = impl_->viewportClient.GetEditorCamera();
+    const Matrix4 view = camera.GetViewMatrix();
     const Matrix4 projection =
-        impl_->camera.GetProjectionMatrix(aspectRatio);
+        camera.GetProjectionMatrix(aspectRatio);
 
     ObjectConstants constants{};
     DirectX::XMStoreFloat4x4(

@@ -1,6 +1,16 @@
 #include "EditorCamera.h"
 
+#include "Engine/Core/Logging/Logger.h"
+
 #include <cmath>
+
+namespace
+{
+	constexpr Vector3 worldUp{ 0.0f, 0.0f, 1.0f };
+	constexpr Vector3 worldForward{ 1.0f, 0.0f, 0.0f };
+	constexpr Vector3 worldRight{ 0.0f, 1.0f, 0.0f };
+
+} // Anonymous Namespace
 
 EditorCamera::EditorCamera()
 {	
@@ -26,7 +36,6 @@ Matrix4 EditorCamera::GetViewMatrix() const noexcept
 		cosPitch * std::sin(currentState_.yawRadians_),
 		std::sin(currentState_.pitchRadians_)
 	};
-	constexpr Vector3 worldUp{ 0.0f, 0.0f, 1.0f };
 
 	return LookToLH(currentState_.position_, forward, worldUp);
 }
@@ -56,3 +65,79 @@ Matrix4 EditorCamera::GetProjectionMatrix(
 		farPlane);
 }
 
+void EditorCamera::ApplyCameraIntent(const EditorCameraIntent& intent, float deltaTime)
+{
+	ApplyMovementIntent(intent.localMovement, deltaTime);
+	ApplyLookIntent(intent.lookDelta);
+	ApplyZoomIntent(intent.zoomDelta);
+	ApplyToggleOrthographicIntent(intent.toggleOrthographic);
+}
+
+void EditorCamera::ApplyMovementIntent(const Vector3& localMovement, float deltaTime)
+{
+	if (localMovement == Vector3{})
+		return;
+
+	GILGAMESH_LOG(Core, Trace, "Applying movement intent: localMovement");
+
+	const float cosPitch = std::cos(currentState_.pitchRadians_);
+	const Vector3 forward{
+		cosPitch * std::cos(currentState_.yawRadians_),
+		cosPitch * std::sin(currentState_.yawRadians_),
+		std::sin(currentState_.pitchRadians_)
+	};
+
+	const Vector3 right = Cross(worldUp, forward);
+	Vector3 movementWorldSpace =
+		forward * localMovement.z +
+		right * localMovement.y +
+		worldUp * localMovement.x;
+
+	pendingState_.position_ += movementWorldSpace * deltaTime;
+	isDirty_ = true;
+}
+
+void EditorCamera::ApplyLookIntent(const Vector2& lookDelta)
+{
+	if (lookDelta == Vector2{})
+		return;
+
+	constexpr float sensitivity = 0.002f;
+	pendingState_.yawRadians_ += lookDelta.x * sensitivity;
+	pendingState_.pitchRadians_ += lookDelta.y * sensitivity;
+
+	// Clamp pitch to avoid gimbal lock
+	constexpr float maxPitch = std::numbers::pi_v<float> / 2.0f - 0.01f;
+	if (pendingState_.pitchRadians_ > maxPitch)
+		pendingState_.pitchRadians_ = maxPitch;
+	else if (pendingState_.pitchRadians_ < -maxPitch)
+		pendingState_.pitchRadians_ = -maxPitch;
+	isDirty_ = true;
+}
+
+void EditorCamera::ApplyZoomIntent(float zoomDelta)
+{
+	if (zoomDelta < 0.0001f)
+		return;
+	constexpr float zoomSensitivity = 0.1f;
+	pendingState_.FOVRadians_ -= zoomDelta * zoomSensitivity;
+
+	// Clamp FOV to reasonable values
+	constexpr float minFOV = std::numbers::pi_v<float> / 12.0f; // 15 degrees
+	constexpr float maxFOV = std::numbers::pi_v<float> / 2.0f; // 90 degrees
+
+	if (pendingState_.FOVRadians_ < minFOV)
+		pendingState_.FOVRadians_ = minFOV;
+	else if (pendingState_.FOVRadians_ > maxFOV)
+		pendingState_.FOVRadians_ = maxFOV;
+	isDirty_ = true;
+}
+
+void EditorCamera::ApplyToggleOrthographicIntent(bool toggle)
+{
+	if (toggle)
+	{
+		pendingState_.isOrthographic_ = !pendingState_.isOrthographic_;
+		isDirty_ = true;
+	}
+}

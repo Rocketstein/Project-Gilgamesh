@@ -1,4 +1,6 @@
 #pragma once
+
+#include "Editor/EditorInput/EditorCameraIntent.h"
 #include "Engine/Core/Math/Matrix.h"
 
 #include <numbers>
@@ -24,6 +26,9 @@ public:
 
 	// Update current state from pending state if dirty
 	void Update();
+
+	// Apply camera intent to pending state
+	void ApplyCameraIntent(const EditorCameraIntent& intent, float deltaTime);
 
 	// Accessors
 	[[nodiscard]]
@@ -72,6 +77,12 @@ public:
 	[[nodiscard]]
 	Matrix4 GetProjectionMatrix(
 		float aspectRatio) const noexcept;
+
+private:
+	void ApplyMovementIntent(const Vector3& localMovement, float deltaTime);
+	void ApplyLookIntent(const Vector2& lookDelta);
+	void ApplyZoomIntent(float zoomDelta);
+	void ApplyToggleOrthographicIntent(bool toggleOrthographic);
 
 private:
 	CameraState currentState_;

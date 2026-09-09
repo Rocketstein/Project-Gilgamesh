@@ -66,6 +66,7 @@ target_sources (Gilgamesh
     Editor/EditorViewport/EditorViewport.h
     Editor/EditorInput/EditorController.cpp
     Editor/EditorInput/EditorController.h
+    Editor/EditorInput/EditorCameraIntent.h
     Editor/EditorCamera/EditorCamera.cpp
     Editor/EditorCamera/EditorCamera.h
     Editor/EditorProgram.cpp
