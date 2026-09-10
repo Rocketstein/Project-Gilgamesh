@@ -11,8 +11,8 @@ struct CameraState
 	// Fixed World Position for now
 	Vector3 position_ = { -3.0f, 0.0f, 0.0f };
 
-	float yawRadians_   = 0.7f;
-	float pitchRadians_ = 0.10f;
+	float yawRadians_   = 0.f;
+	float pitchRadians_ = 0.f;
 	float FOVRadians_   = std::numbers::pi_v<float> / 3.0f;
 
 	bool isOrthographic_ = false;
