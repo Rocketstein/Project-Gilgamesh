@@ -4,7 +4,8 @@
 #include "Engine/Runtime/Program.h"
 
 class Renderer;
-struct Extent2D;
+struct RenderView;
+struct StaticMeshDrawItem;
 
 class EditorProgram : public IProgram
 {
@@ -19,9 +20,10 @@ public:
 
 private:
     bool InitializeCubeResources(Renderer& renderer);
-    void DrawCube(
+    void DrawStaticMesh(
         Renderer& renderer,
-        Extent2D renderExtent);
+        const RenderView& renderView,
+        const StaticMeshDrawItem& drawItem);
 
 private:
     struct Impl;
