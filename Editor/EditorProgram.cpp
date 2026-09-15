@@ -1,6 +1,7 @@
 #include "EditorProgram.h"
 
 #include "EditorCamera/EditorCamera.h"
+#include "EditorScene/EditorPreviewScene.h"
 #include "EditorUI/Panels/EditorViewportPanel.h"
 #include "EditorUI/Runtime/ImGuiIntegration.h"
 #include "EditorUI/Workspace/EditorWorkspace.h"
@@ -9,7 +10,6 @@
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Input/InputFrame.h"
 #include "Engine/Input/InputSystem.h"
-#include "Engine/Render/Mesh/PrimitiveMeshes.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
@@ -17,10 +17,10 @@
 #include "Engine/Runtime/FrameContext.h"
 #include "Engine/Runtime/RenderContext.h"
 
-#include <array>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     #include "Editor/Console/Commands/BuiltInCommands.h"
@@ -39,6 +39,9 @@ struct EditorProgram::Impl
 
     // Viewport
     EditorViewportClient viewportClient;
+
+    // Preview content
+    EditorPreviewScene previewScene;
 
     // Editor UI
     ImGuiIntegration imgui;
@@ -61,9 +64,6 @@ struct EditorProgram::Impl
 
     // Editor Inputs
     const InputSystem* inputSystem = nullptr;
-
-    // Temporary cube resource
-    MeshHandle cubeMesh;
 };
 
 EditorProgram::EditorProgram() = default;
@@ -106,8 +106,11 @@ bool EditorProgram::Initialize(EngineServices& services)
     // Initialize editor viewport
     impl_->viewportClient.Initialize(services.renderer.GetDevice());
 
-    if (!InitializeCubeMesh(services.renderer))
+    if (!impl_->previewScene.Initialize(
+        services.renderer.GetMeshManager()))
     {
+        GILGAMESH_LOG(Core, Error,
+            "Failed to initialize editor preview scene");
         impl_.reset();
         return false;
     }
@@ -175,12 +178,10 @@ void EditorProgram::Render(RenderContext& context)
             .projection = camera.GetProjectionMatrix(aspectRatio)
         };
 
-        const std::array drawItems{
-            StaticMeshDrawItem{
-                .mesh = renderer.GetMeshManager().TryGet(impl_->cubeMesh),
-                .localToWorld = Matrix4::Identity()
-            }
-        };
+        std::vector<StaticMeshDrawItem> drawItems;
+        impl_->previewScene.GatherDrawItems(
+            renderer.GetMeshManager(),
+            drawItems);
 
         renderer.GetSimpleMeshRenderer().Draw(
             deviceContext,
@@ -206,23 +207,9 @@ void EditorProgram::Shutdown()
 {
     if (impl_ && impl_->renderer)
     {
-        (void)impl_->renderer->GetMeshManager().RemoveMesh(
-            impl_->cubeMesh);
+        impl_->previewScene.Shutdown(
+            impl_->renderer->GetMeshManager());
     }
 
     impl_.reset();
-}
-
-bool EditorProgram::InitializeCubeMesh(Renderer& renderer)
-{
-    MeshManager& meshes = renderer.GetMeshManager();
-    impl_->cubeMesh = meshes.CreateMesh(
-        PrimitiveMeshes::MakeUnitCubeMeshData());
-    if (!meshes.IsValid(impl_->cubeMesh))
-    {
-        GILGAMESH_LOG(Core, Error, "Failed to create cube static mesh");
-        return false;
-    }
-
-    return true;
 }

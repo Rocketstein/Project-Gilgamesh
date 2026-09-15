@@ -3,8 +3,6 @@
 
 #include "Engine/Runtime/Program.h"
 
-class Renderer;
-
 class EditorProgram : public IProgram
 {
 public:
@@ -15,9 +13,6 @@ public:
     void Update(const FrameContext&) override;
     void Render(RenderContext&) override;
     void Shutdown() override;
-
-private:
-    bool InitializeCubeMesh(Renderer& renderer);
 
 private:
     struct Impl;

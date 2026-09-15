@@ -5,6 +5,9 @@ target_sources (GilgameshEditor
     EditorProgram.cpp
     EditorProgram.h
 
+    EditorScene/EditorPreviewScene.cpp
+    EditorScene/EditorPreviewScene.h
+
     EditorCamera/EditorCamera.cpp
     EditorCamera/EditorCamera.h
     EditorCamera/EditorCameraConfig.h

@@ -201,12 +201,15 @@ implementation establishes these working pieces:
 - Frame-local `RenderView` and `StaticMeshDrawItem` submission data
 - `SimpleMeshRenderer` ownership of the fixed shaders, `GraphicsPipeline`,
   model-view-projection constant buffer, and indexed draw loop
+- An editor-only `EditorPreviewScene` that owns temporary mesh handles and
+  instance transforms
 
-`EditorProgram` now owns only the temporary cube handle and editor viewport. It
-creates the `RenderView` and draw item for the current frame, while mesh upload,
-pipeline state, constants, binding, and `DrawIndexed()` stay on the renderer
-side. General scene extraction is still absent, so this one hard-coded draw item
-remains the next prototype seam to replace.
+`EditorProgram` owns the editor viewport and preview scene. It creates the
+`RenderView`, asks the preview scene to gather draw items, and invokes the
+renderer-owned technique. Cube creation, handle lifetime, and instance state
+stay in `EditorPreviewScene`; mesh upload, pipeline state, constants, binding,
+and `DrawIndexed()` stay on the renderer side. This is deliberately not yet a
+general scene graph or ECS extraction layer.
 
 ## Milestones
 
@@ -254,14 +257,14 @@ geometry use case should determine whether one is valuable.
 Normal transforms, lighting, tint, and explicit rasterizer/culling policy are
 deferred until those systems have a concrete use case.
 
-`EditorProgram` remains responsible for editor viewport orchestration and for
-owning the temporary demo meshes and instances. It should stop owning raw mesh
-buffers, primitive shaders, the primitive pipeline, and primitive constant
-buffers. Completing this milestone removes `DrawPrimitive()` and
-`InitializePrimitiveTestResources()`.
+`EditorProgram` remains responsible for editor viewport orchestration.
+`EditorPreviewScene` owns temporary demo handles and transforms, while
+`SimpleMeshRenderer` consumes the gathered draw items. The editor program no
+longer owns raw mesh buffers, primitive shaders, the primitive pipeline,
+primitive constants, or cube-specific lifecycle code.
 
-This milestone deliberately does not require an ECS, resource manager, asset
-importer, general material system, or generic rendering API.
+This milestone deliberately does not require an ECS, asset importer, general
+material system, or generic rendering API.
 
 ### Milestone 2: stable scene submission
 
