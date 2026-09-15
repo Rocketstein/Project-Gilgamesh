@@ -4,8 +4,6 @@
 #include "Engine/Runtime/Program.h"
 
 class Renderer;
-struct RenderView;
-struct StaticMeshDrawItem;
 
 class EditorProgram : public IProgram
 {
@@ -19,11 +17,7 @@ public:
     void Shutdown() override;
 
 private:
-    bool InitializeCubeResources(Renderer& renderer);
-    void DrawStaticMesh(
-        Renderer& renderer,
-        const RenderView& renderView,
-        const StaticMeshDrawItem& drawItem);
+    bool InitializeCubeMesh(Renderer& renderer);
 
 private:
     struct Impl;

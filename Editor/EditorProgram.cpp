@@ -10,21 +10,16 @@
 #include "Engine/Input/InputFrame.h"
 #include "Engine/Input/InputSystem.h"
 #include "Engine/Render/Mesh/PrimitiveMeshes.h"
-#include "Engine/Render/Mesh/StaticMesh.h"
-#include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
-#include "Engine/Render/Types/Vertex.h"
-#include "Engine/Render/Types/Buffers/ConstantBuffer.h"
 #include "Engine/Runtime/EngineServices.h"
 #include "Engine/Runtime/FrameContext.h"
 #include "Engine/Runtime/RenderContext.h"
 
-#include <cstddef>
+#include <array>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
 
 #if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
@@ -35,12 +30,6 @@
     #include "Editor/Console/ConsoleLogSink.h"
     #include "Editor/EditorUI/Panels/OutputLogPanel.h"
 #endif
-
-namespace
-{
-    static_assert(std::is_standard_layout_v<NormalVertex>,
-        "NormalVertex must support explicit input-layout offsets");
-}
 
 struct EditorProgram::Impl
 {
@@ -70,15 +59,11 @@ struct EditorProgram::Impl
     std::optional<std::string> pendingCommand;
 #endif
 
-    // Graphics Pipeline
-    GraphicsPipeline primitivePipeline;
-
     // Editor Inputs
     const InputSystem* inputSystem = nullptr;
 
-    // Temporary cube draw resources
+    // Temporary cube resource
     MeshHandle cubeMesh;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer;
 };
 
 EditorProgram::EditorProgram() = default;
@@ -121,7 +106,7 @@ bool EditorProgram::Initialize(EngineServices& services)
     // Initialize editor viewport
     impl_->viewportClient.Initialize(services.renderer.GetDevice());
 
-    if (!InitializeCubeResources(services.renderer))
+    if (!InitializeCubeMesh(services.renderer))
     {
         impl_.reset();
         return false;
@@ -190,15 +175,17 @@ void EditorProgram::Render(RenderContext& context)
             .projection = camera.GetProjectionMatrix(aspectRatio)
         };
 
-        const StaticMeshDrawItem cubeDrawItem{
-            .mesh = renderer.GetMeshManager().TryGet(impl_->cubeMesh),
-            .localToWorld = Matrix4::Identity()
+        const std::array drawItems{
+            StaticMeshDrawItem{
+                .mesh = renderer.GetMeshManager().TryGet(impl_->cubeMesh),
+                .localToWorld = Matrix4::Identity()
+            }
         };
 
-        DrawStaticMesh(
-            renderer,
+        renderer.GetSimpleMeshRenderer().Draw(
+            deviceContext,
             renderView,
-            cubeDrawItem);
+            drawItems);
 
         viewport.Unbind(deviceContext);
 
@@ -215,48 +202,6 @@ void EditorProgram::Render(RenderContext& context)
     impl_->imgui.Render();
 }
 
-void EditorProgram::DrawStaticMesh(
-    Renderer& renderer,
-    const RenderView& renderView,
-    const StaticMeshDrawItem& drawItem)
-{
-    if (!drawItem.mesh) return;
-
-    ID3D11DeviceContext* deviceContext =
-        renderer.GetDeviceContext();
-
-    impl_->primitivePipeline.Bind(deviceContext);
-    drawItem.mesh->Bind(deviceContext);
-
-    ObjectConstants constants{};
-    DirectX::XMStoreFloat4x4(
-        &constants.modelViewProjection,
-        ToDirectX(Transpose(
-            drawItem.localToWorld *
-            renderView.view *
-            renderView.projection)));
-
-    deviceContext->UpdateSubresource(
-        impl_->objectConstantBuffer.Get(),
-        0,
-        nullptr,
-        &constants,
-        0,
-        0);
-
-    ID3D11Buffer* objectConstantBuffer =
-        impl_->objectConstantBuffer.Get();
-    deviceContext->VSSetConstantBuffers(
-        0,
-        1,
-        &objectConstantBuffer);
-
-    deviceContext->DrawIndexed(
-        drawItem.mesh->GetIndexCount(),
-        0,
-        0);
-}
-
 void EditorProgram::Shutdown()
 {
     if (impl_ && impl_->renderer)
@@ -268,75 +213,8 @@ void EditorProgram::Shutdown()
     impl_.reset();
 }
 
-bool EditorProgram::InitializeCubeResources(Renderer& renderer)
+bool EditorProgram::InitializeCubeMesh(Renderer& renderer)
 {
-    D3D11_BUFFER_DESC constantBufferDesc{};
-    constantBufferDesc.ByteWidth = sizeof(ObjectConstants);
-    constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-
-    HRESULT hr = renderer.GetDevice()->CreateBuffer(
-        &constantBufferDesc,
-        nullptr,
-        impl_->objectConstantBuffer.GetAddressOf());
-    if (FAILED(hr))
-    {
-        GILGAMESH_LOG(Core, Error, "Failed to create object constant buffer: HRESULT=0x{:X}", hr);
-        return false;
-    }
-
-	// Initialize the primitive graphics pipeline.
-    // Shader Manager test. Move this to graphics pipeline later on.
-    ShaderManager& shaders = renderer.GetShaderManager();
-    const auto vsLoad = shaders.LoadVertex(L"Primitive");
-    if (!vsLoad) return false;
-
-    const auto psLoad = shaders.LoadPixel(L"Primitive");
-    if (!psLoad) return false;
-
-    const D3D11_INPUT_ELEMENT_DESC inputElements[] =
-    {
-        {
-            "POSITION",
-            0,
-            DXGI_FORMAT_R32G32B32_FLOAT,
-            0,
-            static_cast<UINT>(offsetof(NormalVertex, position)),
-            D3D11_INPUT_PER_VERTEX_DATA,
-            0
-        },
-        {
-            "COLOR",
-            0,
-            DXGI_FORMAT_R32G32B32_FLOAT,
-            0,
-            static_cast<UINT>(offsetof(NormalVertex, color)),
-            D3D11_INPUT_PER_VERTEX_DATA,
-            0
-        }
-    };
-
-    GraphicsPipelineDesc pipelineDesc{
-        .vertexShader = vsLoad.resource,
-        .pixelShader = psLoad.resource,
-        .inputElements = inputElements,
-        .topology =
-            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-        .depthStencil = {
-            .depthTestEnabled = true,
-            .depthWriteEnabled = true,
-            .depthComparison = D3D11_COMPARISON_LESS
-        }
-    };
-
-    const HRESULT pipelineResult =
-        impl_->primitivePipeline.Initialize(
-            renderer.GetDevice(),
-            shaders,
-            pipelineDesc);
-
-    if (FAILED(pipelineResult)) return false;
-
     MeshManager& meshes = renderer.GetMeshManager();
     impl_->cubeMesh = meshes.CreateMesh(
         PrimitiveMeshes::MakeUnitCubeMeshData());

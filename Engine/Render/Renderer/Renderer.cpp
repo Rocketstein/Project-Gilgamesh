@@ -37,6 +37,14 @@ bool Renderer::Initialize(RendererDesc desc)
 	// Initialize renderer-owned mesh resources after the D3D11 device.
 	if (!meshManager_.Initialize(device_.GetDevice())) return false;
 
+	// Initialize the fixed static-mesh technique after its shaders and device.
+	if (!simpleMeshRenderer_.Initialize(
+		device_.GetDevice(),
+		shaderManager_))
+	{
+		return false;
+	}
+
     rendererDesc_ = desc;
 
 	return true;

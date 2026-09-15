@@ -25,7 +25,7 @@ WinMain
           -> FrameClock
           -> Engine::Run(IProgram&)
       -> EditorProgram : IProgram
-          -> primitive graphics test
+          -> temporary cube handle and static-mesh submission
           -> editor viewport and viewport client
           -> ImGui integration and editor workspace
           -> developer console and Output Log (optional diagnostics)
@@ -77,7 +77,9 @@ placeholder.
 | Platform-neutral input snapshots | `Engine/Input/` |
 | Win32 input translation | `Engine/Platform/Windows/Win32InputBackend.*` |
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
-| Editor implementation and primitive test | `Editor/EditorProgram.*` |
+| Renderer-facing mesh resource management | `Engine/Render/Mesh/MeshManager.*` |
+| Fixed vertex-color mesh technique | `Engine/Render/Techniques/SimpleMeshRenderer.*` |
+| Editor implementation and mesh submission | `Editor/EditorProgram.*` |
 | Editor viewport presentation | `Editor/EditorUI/Panels/EditorViewportPanel.*` |
 | ImGui backend integration | `Editor/EditorUI/Runtime/ImGuiIntegration.*` |
 | Console implementation | `Editor/Console/` |
@@ -115,20 +117,21 @@ and read-only input system through `EngineServices`; a program does not own any
 of these objects.
 
 `EditorProgram` owns its implementation through `std::unique_ptr<Impl>`. The
-private PImpl contains editor-only and D3D11 test state while keeping those
-dependencies out of `EditorProgram.h`. Its constructor and destructor are
-defined in `EditorProgram.cpp`, where `Impl` is complete.
+private PImpl contains editor-only state and a temporary cube handle while
+keeping those dependencies out of `EditorProgram.h`. Its constructor and
+destructor are defined in `EditorProgram.cpp`, where `Impl` is complete.
 
 The implementation owns:
 
-- The editor viewport client and primitive graphics resources
+- The editor viewport client and temporary cube mesh handle
 - ImGui integration, the editor workspace, and the viewport panel
 - The console buffer, sink registration, configuration, Output Log panel,
   commands, and pending command state when editor diagnostics are enabled
 
-`EditorProgram::Shutdown()` resets the implementation while the engine window
-and renderer are still alive. This lets ImGui disconnect its window-message
-handler and releases program-owned GPU resources before engine destruction.
+`EditorProgram::Shutdown()` removes the temporary cube through `MeshManager`,
+then resets the implementation while the engine window and renderer are still
+alive. This also lets ImGui disconnect its window-message handler and releases
+program-owned viewport resources before engine destruction.
 
 ## Program boundary
 
@@ -164,14 +167,16 @@ WinMain
       -> Engine::Initialize
           -> create Window
           -> attach Win32InputBackend to Window
-          -> initialize Renderer and shader manager
+          -> initialize Renderer
+              -> create the D3D11 device and presentation surface
+              -> initialize ShaderManager and MeshManager
+              -> initialize SimpleMeshRenderer
       -> create EditorProgram
       -> EditorProgram::Initialize
           -> optionally create console state and register ConsoleLogSink
           -> initialize ImGui against the engine window and D3D11 device
           -> initialize the editor viewport
-          -> load Primitive shaders
-          -> create the test vertex buffer and graphics pipeline
+          -> create cube data and upload it through MeshManager
       -> Engine::Run(EditorProgram)
 ```
 
@@ -238,9 +243,11 @@ console command submitted by the previous frame, and begins the new ImGui
 frame.
 
 `EditorProgram::Render()` submits the editor workspace and viewport panel,
-renders the primitive cube into the viewport's offscreen target, restores the
-swap-chain output, optionally submits the Output Log, and finally renders
-ImGui. The engine surrounds this work with renderer begin/end calls.
+builds a `RenderView` and one `StaticMeshDrawItem`, and asks
+`SimpleMeshRenderer` to draw the cube into the viewport's offscreen target. It
+then restores the swap-chain output, optionally submits the Output Log, and
+finally renders ImGui. The engine surrounds this work with renderer begin/end
+calls.
 
 Deferring console execution until the next update prevents command handlers
 from mutating the console buffer while the previous frame's widgets are being
@@ -275,14 +282,20 @@ OutputLogPanel::Draw
 
 ## Rendering boundary
 
-The renderer currently owns the D3D11 device, presentation surface, and shader
-manager. The editor owns the offscreen viewport target, temporary primitive
-pipeline, and vertex buffer and issues the draw call directly through the
-D3D11 device context. `EditorViewportPanel` measures and presents the viewport
-texture but does not own scene rendering.
+The renderer currently owns the D3D11 device, presentation surface, shader
+manager, `MeshManager`, and `SimpleMeshRenderer`. `MeshManager` owns uploaded
+static meshes behind generation-checked handles. `SimpleMeshRenderer` owns the
+fixed vertex-color pipeline and object constant buffer and issues indexed
+draws from a `RenderView` and a span of `StaticMeshDrawItem` values.
+
+The editor owns the offscreen viewport target and the temporary cube handle. It
+selects the target, constructs frame-local submission data, and invokes the
+renderer-owned technique. `EditorViewportPanel` measures and presents the
+viewport texture but does not own scene rendering.
 
 This is intentional prototype code, not a general scene renderer. There is no
-render graph, resource manager, world renderer, or API-independent RHI.
+render graph, asset manager, material system, world renderer, or API-independent
+RHI.
 
 ## Current boundaries and non-features
 

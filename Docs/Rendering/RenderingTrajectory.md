@@ -195,40 +195,40 @@ implementation establishes these working pieces:
 - The D3D11 device, context, swap chain, and back-buffer lifecycle
 - An offscreen editor viewport with color and depth targets
 - Typed shader loading through `ShaderManager`
-- `GraphicsPipeline` ownership of shaders, input layout, topology, and
-  depth-stencil state
-- A model-view-projection constant buffer
-- Indexed rendering through `DrawIndexed()`
+- API-independent `StaticMeshData` and a procedural unit-cube factory
+- Renderer-owned static meshes addressed by generation-checked `MeshHandle`
+  values through `MeshManager`
+- Frame-local `RenderView` and `StaticMeshDrawItem` submission data
+- `SimpleMeshRenderer` ownership of the fixed shaders, `GraphicsPipeline`,
+  model-view-projection constant buffer, and indexed draw loop
 
-The separation is still incomplete. `EditorProgram` creates the cube's raw
-vertex and index buffers, loads its shaders, owns the primitive pipeline and
-constant buffer, and issues the draw. `DrawPrimitive()` and
-`InitializePrimitiveTestResources()` are prototype code to be replaced by the
-next milestone.
+`EditorProgram` now owns only the temporary cube handle and editor viewport. It
+creates the `RenderView` and draw item for the current frame, while mesh upload,
+pipeline state, constants, binding, and `DrawIndexed()` stay on the renderer
+side. General scene extraction is still absent, so this one hard-coded draw item
+remains the next prototype seam to replace.
 
 ## Milestones
 
-### Milestone 1: static-mesh vertical slice — next
+### Milestone 1: static-mesh vertical slice — in progress
 
 Replace the prototype cube path with a small but real static-mesh path.
 
 #### CPU mesh data and procedural primitives
 
-- Define a `StaticMeshVertex` with position and normal data.
-- Define API-independent `StaticMeshData` with vertices, 32-bit indices, and
-  computed local bounds.
-- Generate a unit cube centered at the origin with 24 vertices and 36 indices,
-  allowing one flat normal per face.
-- Generate a configurable UV sphere centered at the origin.
+- Retain `NormalVertex` for now, using its position and color fields while its
+  tangent, normal, and UV fields remain zero.
+- Define API-independent `StaticMeshData` with vertices and 32-bit indices.
+- Generate a unit cube centered at the origin with 8 shared vertices and 36
+  indices.
 - Follow the engine convention of left-handed, Z-up world space (`+X`
   forward, `+Y` right, `+Z` up) and document the triangle winding.
-- Reject invalid generator settings, out-of-range indices, non-finite values,
-  and degenerate triangles where the generator contract promises none.
-- Unit-test counts, index validity, bounds, normals, radius, winding, and
-  invalid inputs without requiring D3D11.
+- Reject empty geometry and out-of-range indices before GPU upload.
+- Unit-test cube counts, corners, deferred attributes, and index validity
+  without requiring D3D11.
 
-Texture coordinates and tangents should wait until a textured or normal-mapped
-material needs them.
+Bounds are a separate pass. Normals should arrive with lighting, and texture
+coordinates and tangents should wait until materials require them.
 
 #### GPU mesh resource
 
@@ -248,12 +248,11 @@ geometry use case should determine whether one is valuable.
   `GraphicsPipeline`, and constant-buffer updates.
 - Accept a `RenderView` and a span of `StaticMeshDrawItem` values.
 - Use local-to-world and view/projection data to compute per-draw transforms.
-- Transform normals correctly for non-uniform scale and apply a simple tint and
-  directional-light response so cube and sphere shape are readable.
 - Bind the pipeline and mesh and issue `DrawIndexed()` without owning the view
   target or clearing it.
-- Extend `GraphicsPipeline` with rasterizer state and set the mesh
-  rasterizer/culling convention explicitly.
+
+Normal transforms, lighting, tint, and explicit rasterizer/culling policy are
+deferred until those systems have a concrete use case.
 
 `EditorProgram` remains responsible for editor viewport orchestration and for
 owning the temporary demo meshes and instances. It should stop owning raw mesh
