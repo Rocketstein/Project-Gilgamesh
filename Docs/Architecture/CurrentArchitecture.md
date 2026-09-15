@@ -4,8 +4,8 @@
 
 This document records the architecture implemented by Project Gilgamesh after
 the application-loop refactor. It describes the code as it exists now. Future
-module, game-session, world, reflection, and Play-in-Editor design belongs in a
-separate evolution document.
+module, ECS world, runtime simulation, reflection, and Play-in-Editor design
+belongs in separate evolution documents.
 
 The current executable is an editor prototype. It opens one Win32 window,
 initializes the D3D11 renderer, runs one `EditorProgram`, draws the primitive
@@ -228,9 +228,8 @@ input routing, and gameplay meaning are not implemented yet.
 - `realDeltaTime`, clamped to a maximum of 0.25 seconds
 - A monotonically increasing `frameNumber`
 
-This is wall-clock frame time. It has no pause or game-speed semantics and is
-not a frame limiter. No fixed-update or strategic simulation clock currently
-exists.
+This is wall-clock frame time. It has no pause or simulation-speed semantics
+and is not a frame limiter. No fixed-step simulation clock currently exists.
 
 ### Editor update and rendering
 
@@ -290,7 +289,7 @@ render graph, resource manager, world renderer, or API-independent RHI.
 The following are not implemented by the current architecture:
 
 - Standalone game executable or functioning `GameProgram`
-- `GameSession`, worlds, strategic simulation, or Play-in-Editor
+- ECS world integration, runtime simulation, or Play-in-Editor
 - Configurable action mapping and UI-aware editor/gameplay input routing
 - Reflection, serialization, object handles, or garbage collection
 - Asset/project management

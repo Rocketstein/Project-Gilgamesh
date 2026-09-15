@@ -1,7 +1,9 @@
 #pragma once
 
+#include "EditorCameraConfig.h"
 #include "Editor/EditorInput/EditorCameraIntent.h"
 #include "Engine/Core/Math/Matrix.h"
+#include "Engine/Core/Math/Rotator.h"
 
 #include <numbers>
 
@@ -10,9 +12,8 @@ struct CameraState
 {
 	// Fixed World Position for now
 	Vector3 position_ = { -3.0f, 0.0f, 0.0f };
+	Rotator rotation_ = { 0.0f, 0.0f, 0.0f };
 
-	float yawRadians_   = 0.f;
-	float pitchRadians_ = 0.f;
 	float FOVRadians_   = std::numbers::pi_v<float> / 3.0f;
 
 	bool isOrthographic_ = false;
@@ -40,6 +41,14 @@ public:
 	}
 
 	[[nodiscard]]
+	const Rotator& GetRotation() const noexcept { return currentState_.rotation_; }
+	void SetRotation(Rotator rotation) noexcept
+	{
+		pendingState_.rotation_ = rotation;
+		isDirty_ = true;
+	}
+
+	[[nodiscard]]
 	float GetFOV() const noexcept { return currentState_.FOVRadians_; }
 	void SetFOV(float fovRadians) noexcept
 	{
@@ -56,27 +65,15 @@ public:
 	}
 
 	[[nodiscard]]
-	float GetYaw() const noexcept { return currentState_.yawRadians_; }
-	void SetYaw(float yawRadians) noexcept
-	{
-		pendingState_.yawRadians_ = yawRadians;
-		isDirty_ = true;
-	}
-
-	[[nodiscard]]
-	float GetPitch() const noexcept { return currentState_.pitchRadians_; }
-	void SetPitch(float pitchRadians) noexcept
-	{
-		pendingState_.pitchRadians_ = pitchRadians;
-		isDirty_ = true;
-	}
-
-	[[nodiscard]]
 	Matrix4 GetViewMatrix() const noexcept;
 
 	[[nodiscard]]
 	Matrix4 GetProjectionMatrix(
 		float aspectRatio) const noexcept;
+
+	[[nodiscard]]
+	const EditorCameraConfigurations& GetEditorCameraConfigurations() const { return configs_; }
+	void SetEditorCameraConfigurations(EditorCameraConfigurations configs) { configs_ = configs; }
 
 private:
 	void ApplyMovementIntent(const Vector3& localMovement, float deltaTime);
@@ -87,6 +84,7 @@ private:
 private:
 	CameraState currentState_;
 	CameraState pendingState_;
+	EditorCameraConfigurations configs_;
 
 	bool isDirty_ = true;
 

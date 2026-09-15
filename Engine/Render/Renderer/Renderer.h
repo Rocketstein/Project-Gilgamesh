@@ -3,6 +3,7 @@
 #include "Engine/Render/D3D11/D3D11Device.h"
 #include "Engine/Render/D3D11/PresentationSurface.h"
 #include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
+#include "Engine/Render/Mesh/MeshManager.h"
 
 struct RendererDesc
 {
@@ -53,6 +54,17 @@ public:
 		return shaderManager_;
 	}
 
+	[[nodiscard]]
+	MeshManager& GetMeshManager() noexcept
+	{
+		return meshManager_;
+	}
+
+	[[nodiscard]]
+	const MeshManager& GetMeshManager() const noexcept
+	{
+		return meshManager_;
+	}
 
 private:
 	RendererDesc rendererDesc_;
@@ -61,4 +73,5 @@ private:
 	D3D11Device device_;
 	D3D11PresentationSurface surface_;
 	ShaderManager shaderManager_;
+	MeshManager meshManager_;
 };

@@ -9,7 +9,9 @@ namespace
 	constexpr Vector3 worldUp{ 0.0f, 0.0f, 1.0f };
 	constexpr Vector3 worldForward{ 1.0f, 0.0f, 0.0f };
 	constexpr Vector3 worldRight{ 0.0f, 1.0f, 0.0f };
+	constexpr float maxPitch = 89.9f;
 
+	constexpr float DegToRad = std::numbers::pi_v<float> / 180.f;
 } // Anonymous Namespace
 
 EditorCamera::EditorCamera()
@@ -30,11 +32,12 @@ Matrix4 EditorCamera::GetViewMatrix() const noexcept
 {
 	// Gilgamesh uses a left-handed, Z-up coordinate system:
 	// +X forward, +Y right, +Z up.
-	const float cosPitch = std::cos(currentState_.pitchRadians_);
+	Vector3 rotationRadians = currentState_.rotation_.InRadians();
+	const float cosPitch = std::cos(rotationRadians.x);
 	const Vector3 forward{
-		cosPitch * std::cos(currentState_.yawRadians_),
-		cosPitch * std::sin(currentState_.yawRadians_),
-		std::sin(currentState_.pitchRadians_)
+		cosPitch * std::cos(rotationRadians.y),
+		cosPitch * std::sin(rotationRadians.y),
+		std::sin(rotationRadians.x)
 	};
 
 	return LookToLH(currentState_.position_, forward, worldUp);
@@ -82,16 +85,17 @@ void EditorCamera::ApplyMovementIntent(const Vector3& localMovement, float delta
 	if (localMovement == Vector3{})
 		return;
 
-	const float cosPitch = std::cos(currentState_.pitchRadians_);
+	Vector3 rotationRadians = currentState_.rotation_.InRadians();
+	const float cosPitch = std::cos(rotationRadians.x);
 	const Vector3 forward{
-		cosPitch * std::cos(currentState_.yawRadians_),
-		cosPitch * std::sin(currentState_.yawRadians_),
-		std::sin(currentState_.pitchRadians_)
+		cosPitch * std::cos(rotationRadians.y),
+		cosPitch * std::sin(rotationRadians.y),
+		std::sin(rotationRadians.x)
 	};
 
 	const Vector3 right{
-		-std::sin(currentState_.yawRadians_),
-		 std::cos(currentState_.yawRadians_),
+		-std::sin(rotationRadians.y),
+		 std::cos(rotationRadians.y),
 		 0.0f
 	};
 
@@ -109,16 +113,15 @@ void EditorCamera::ApplyLookIntent(const Vector2& lookDelta)
 	if (lookDelta == Vector2{})
 		return;
 
-	constexpr float sensitivity = 0.002f;
-	pendingState_.yawRadians_ += lookDelta.x * sensitivity;
-	pendingState_.pitchRadians_ += lookDelta.y * sensitivity;
+	Rotator& cameraRotation = pendingState_.rotation_;
 
-	// Clamp pitch to avoid gimbal lock
-	constexpr float maxPitch = std::numbers::pi_v<float> / 2.0f - 0.01f;
-	if (pendingState_.pitchRadians_ > maxPitch)
-		pendingState_.pitchRadians_ = maxPitch;
-	else if (pendingState_.pitchRadians_ < -maxPitch)
-		pendingState_.pitchRadians_ = -maxPitch;
+	cameraRotation.yawDegrees_   += lookDelta.x * configs_.lookSensitivity;
+	cameraRotation.pitchDegrees_ += lookDelta.y * configs_.lookSensitivity;
+
+	if (cameraRotation.pitchDegrees_ > maxPitch)
+		cameraRotation.pitchDegrees_ = maxPitch;
+	else if (cameraRotation.pitchDegrees_ < -maxPitch)
+		cameraRotation.pitchDegrees_ = -maxPitch;
 	isDirty_ = true;
 }
 
@@ -126,17 +129,13 @@ void EditorCamera::ApplyZoomIntent(float zoomDelta)
 {
 	if (abs(zoomDelta) < 0.0001f)
 		return;
-	constexpr float zoomSensitivity = 0.1f;
-	pendingState_.FOVRadians_ -= zoomDelta * zoomSensitivity;
 
-	// Clamp FOV to reasonable values
-	constexpr float minFOV = std::numbers::pi_v<float> / 12.0f; // 15 degrees
-	constexpr float maxFOV = std::numbers::pi_v<float> / 2.0f; // 90 degrees
+	pendingState_.FOVRadians_ -= zoomDelta * configs_.zoomSensitivity;
 
-	if (pendingState_.FOVRadians_ < minFOV)
-		pendingState_.FOVRadians_ = minFOV;
-	else if (pendingState_.FOVRadians_ > maxFOV)
-		pendingState_.FOVRadians_ = maxFOV;
+	if (pendingState_.FOVRadians_ < configs_.minFOV * DegToRad)
+		pendingState_.FOVRadians_ = configs_.minFOV * DegToRad;
+	else if (pendingState_.FOVRadians_ > configs_.maxFOV * DegToRad)
+		pendingState_.FOVRadians_ = configs_.maxFOV * DegToRad;
 	isDirty_ = true;
 }
 

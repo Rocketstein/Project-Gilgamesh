@@ -7,6 +7,7 @@ target_sources (GilgameshEditor
 
     EditorCamera/EditorCamera.cpp
     EditorCamera/EditorCamera.h
+    EditorCamera/EditorCameraConfig.h
 
     EditorInput/EditorCameraIntent.h
     EditorInput/EditorController.cpp

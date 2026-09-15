@@ -10,11 +10,12 @@ target_sources(GilgameshTests
 target_link_libraries(GilgameshTests
   PRIVATE
     GilgameshEngine
+    d3d11
 )
 
 add_subdirectory(Core/Math)
 add_subdirectory(Engine/Input)
-add_subdirectory(Editor/Camera)
+add_subdirectory(Engine/Render/Mesh)
 
 add_test(
   NAME Gilgamesh.Tests

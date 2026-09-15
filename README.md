@@ -1,11 +1,10 @@
 # Project Gilgamesh
 
-~~A Clausewitz-Jomini-Project Alice inspired game engine, specialized in grand strategy.~~
-
-A general purpose ECS engine.
+An in-progress general-purpose engine evolving toward a generic ECS
+architecture.
 
 ## Documentation
 
 - [Current prototype architecture](Docs/Architecture/CurrentArchitecture.md)
 - [Developer console system](Docs/Console/ConsoleSystem.md)
-- [Rendering trajectory](Docs/Rendering/RenderingTrajectory.md)
+- [Rendering architecture roadmap](Docs/Rendering/RenderingTrajectory.md)

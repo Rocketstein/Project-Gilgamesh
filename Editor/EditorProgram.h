@@ -18,8 +18,8 @@ public:
     void Shutdown() override;
 
 private:
-    bool InitializePrimitiveTestResources(Renderer& renderer);
-    void DrawPrimitive(
+    bool InitializeCubeResources(Renderer& renderer);
+    void DrawCube(
         Renderer& renderer,
         Extent2D renderExtent);
 

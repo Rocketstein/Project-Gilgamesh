@@ -34,6 +34,9 @@ bool Renderer::Initialize(RendererDesc desc)
     // Initialize Shaders
     if (!shaderManager_.Initialize(device_.GetDevice(), desc.shaderDirectory)) return false;
 
+	// Initialize renderer-owned mesh resources after the D3D11 device.
+	if (!meshManager_.Initialize(device_.GetDevice())) return false;
+
     rendererDesc_ = desc;
 
 	return true;
