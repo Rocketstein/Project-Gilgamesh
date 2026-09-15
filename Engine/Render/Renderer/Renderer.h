@@ -4,6 +4,7 @@
 #include "Engine/Render/D3D11/PresentationSurface.h"
 #include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
 #include "Engine/Render/Mesh/MeshManager.h"
+#include "Engine/Render/Techniques/SimpleMeshRenderer.h"
 
 struct RendererDesc
 {
@@ -66,6 +67,12 @@ public:
 		return meshManager_;
 	}
 
+	[[nodiscard]]
+	const SimpleMeshRenderer& GetSimpleMeshRenderer() const noexcept
+	{
+		return simpleMeshRenderer_;
+	}
+
 private:
 	RendererDesc rendererDesc_;
 
@@ -74,4 +81,5 @@ private:
 	D3D11PresentationSurface surface_;
 	ShaderManager shaderManager_;
 	MeshManager meshManager_;
+	SimpleMeshRenderer simpleMeshRenderer_;
 };

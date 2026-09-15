@@ -1,6 +1,7 @@
 #include "EditorProgram.h"
 
 #include "EditorCamera/EditorCamera.h"
+#include "EditorScene/EditorPreviewScene.h"
 #include "EditorUI/Panels/EditorViewportPanel.h"
 #include "EditorUI/Runtime/ImGuiIntegration.h"
 #include "EditorUI/Workspace/EditorWorkspace.h"
@@ -9,21 +10,17 @@
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Input/InputFrame.h"
 #include "Engine/Input/InputSystem.h"
-#include "Engine/Render/Mesh/StaticMesh.h"
-#include "Engine/Render/Mesh/StaticMeshData.h"
-#include "Engine/Render/Pipeline/GraphicsPipeline.h"
+#include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/Renderer.h"
-#include "Engine/Render/Types/Vertex.h"
-#include "Engine/Render/Types/Buffers/ConstantBuffer.h"
+#include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 #include "Engine/Runtime/EngineServices.h"
 #include "Engine/Runtime/FrameContext.h"
 #include "Engine/Runtime/RenderContext.h"
 
-#include <cstddef>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
+#include <vector>
 
 #if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     #include "Editor/Console/Commands/BuiltInCommands.h"
@@ -34,52 +31,6 @@
     #include "Editor/EditorUI/Panels/OutputLogPanel.h"
 #endif
 
-namespace
-{
-    static_assert(std::is_standard_layout_v<NormalVertex>,
-        "NormalVertex must support explicit input-layout offsets");
-
-    NormalVertex MakeCubeVertex(
-        Vector3 position,
-        Vector4 color) noexcept
-    {
-        // Value initialization leaves deferred tangent, normal, and UV data at zero.
-        NormalVertex vertex{};
-        vertex.position = position;
-        vertex.color = color;
-        return vertex;
-    }
-
-    StaticMeshData MakeCubeMeshData()
-    {
-        // Eight shared corners in Gilgamesh's left-handed, Z-up world space.
-        constexpr float halfExtent = 0.5f;
-
-        StaticMeshData data;
-        data.vertices_ = {
-            MakeCubeVertex({ -halfExtent, -halfExtent, -halfExtent }, { 1, 0, 0, 1 }),
-            MakeCubeVertex({ -halfExtent,  halfExtent, -halfExtent }, { 0, 1, 0, 1 }),
-            MakeCubeVertex({ -halfExtent,  halfExtent,  halfExtent }, { 0, 0, 1, 1 }),
-            MakeCubeVertex({ -halfExtent, -halfExtent,  halfExtent }, { 1, 1, 0, 1 }),
-            MakeCubeVertex({  halfExtent, -halfExtent, -halfExtent }, { 1, 0, 1, 1 }),
-            MakeCubeVertex({  halfExtent,  halfExtent, -halfExtent }, { 0, 1, 1, 1 }),
-            MakeCubeVertex({  halfExtent,  halfExtent,  halfExtent }, { 1, 1, 1, 1 }),
-            MakeCubeVertex({  halfExtent, -halfExtent,  halfExtent }, { 1, 0.5f, 0, 1 }),
-        };
-
-        data.indices_ = {
-            0, 2, 3,  0, 1, 2, // -X
-            4, 6, 5,  4, 7, 6, // +X
-            0, 7, 4,  0, 3, 7, // -Y
-            1, 6, 2,  1, 5, 6, // +Y
-            0, 5, 1,  0, 4, 5, // -Z
-            3, 6, 7,  3, 2, 6, // +Z
-        };
-
-        return data;
-    }
-}
-
 struct EditorProgram::Impl
 {
     // Core
@@ -88,6 +39,9 @@ struct EditorProgram::Impl
 
     // Viewport
     EditorViewportClient viewportClient;
+
+    // Preview content
+    EditorPreviewScene previewScene;
 
     // Editor UI
     ImGuiIntegration imgui;
@@ -108,15 +62,8 @@ struct EditorProgram::Impl
     std::optional<std::string> pendingCommand;
 #endif
 
-    // Graphics Pipeline
-    GraphicsPipeline primitivePipeline;
-
     // Editor Inputs
     const InputSystem* inputSystem = nullptr;
-
-    // Temporary cube draw resources
-    MeshHandle cubeMesh;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer;
 };
 
 EditorProgram::EditorProgram() = default;
@@ -159,8 +106,11 @@ bool EditorProgram::Initialize(EngineServices& services)
     // Initialize editor viewport
     impl_->viewportClient.Initialize(services.renderer.GetDevice());
 
-    if (!InitializeCubeResources(services.renderer))
+    if (!impl_->previewScene.Initialize(
+        services.renderer.GetMeshManager()))
     {
+        GILGAMESH_LOG(Core, Error,
+            "Failed to initialize editor preview scene");
         impl_.reset();
         return false;
     }
@@ -215,9 +165,28 @@ void EditorProgram::Render(RenderContext& context)
 
         viewport.BindAndClear(deviceContext);
 
-        DrawCube(
-            renderer,
-            viewportFrame.renderExtent);
+        const float aspectRatio =
+            static_cast<float>(viewportFrame.renderExtent.width) /
+            static_cast<float>(
+                viewportFrame.renderExtent.height > 0
+                    ? viewportFrame.renderExtent.height
+                    : 1u);
+
+        const auto camera = impl_->viewportClient.GetEditorCamera();
+        const RenderView renderView{
+            .view = camera.GetViewMatrix(),
+            .projection = camera.GetProjectionMatrix(aspectRatio)
+        };
+
+        std::vector<StaticMeshDrawItem> drawItems;
+        impl_->previewScene.GatherDrawItems(
+            renderer.GetMeshManager(),
+            drawItems);
+
+        renderer.GetSimpleMeshRenderer().Draw(
+            deviceContext,
+            renderView,
+            drawItems);
 
         viewport.Unbind(deviceContext);
 
@@ -234,143 +203,13 @@ void EditorProgram::Render(RenderContext& context)
     impl_->imgui.Render();
 }
 
-void EditorProgram::DrawCube(
-    Renderer& renderer,
-    Extent2D renderExtent)
-{
-    ID3D11DeviceContext* deviceContext =
-        renderer.GetDeviceContext();
-
-    const StaticMesh* mesh =
-        renderer.GetMeshManager().TryGet(impl_->cubeMesh);
-    if (!mesh) return;
-
-    impl_->primitivePipeline.Bind(deviceContext);
-    mesh->Bind(deviceContext);
-
-    const float aspectRatio =
-        static_cast<float>(renderExtent.width) /
-        static_cast<float>(
-            renderExtent.height > 0
-                ? renderExtent.height
-                : 1u);
-
-    const Matrix4 model = Matrix4::Identity();
-	auto camera = impl_->viewportClient.GetEditorCamera();
-    const Matrix4 view = camera.GetViewMatrix();
-    const Matrix4 projection =
-        camera.GetProjectionMatrix(aspectRatio);
-
-    ObjectConstants constants{};
-    DirectX::XMStoreFloat4x4(
-        &constants.modelViewProjection,
-        ToDirectX(Transpose(model * view * projection)));
-
-    deviceContext->UpdateSubresource(
-        impl_->objectConstantBuffer.Get(),
-        0,
-        nullptr,
-        &constants,
-        0,
-        0);
-
-    ID3D11Buffer* objectConstantBuffer =
-        impl_->objectConstantBuffer.Get();
-    deviceContext->VSSetConstantBuffers(
-        0,
-        1,
-        &objectConstantBuffer);
-
-    deviceContext->DrawIndexed(mesh->GetIndexCount(), 0, 0);
-}
-
 void EditorProgram::Shutdown()
 {
     if (impl_ && impl_->renderer)
     {
-        (void)impl_->renderer->GetMeshManager().RemoveMesh(
-            impl_->cubeMesh);
+        impl_->previewScene.Shutdown(
+            impl_->renderer->GetMeshManager());
     }
 
     impl_.reset();
-}
-
-bool EditorProgram::InitializeCubeResources(Renderer& renderer)
-{
-    D3D11_BUFFER_DESC constantBufferDesc{};
-    constantBufferDesc.ByteWidth = sizeof(ObjectConstants);
-    constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-
-    HRESULT hr = renderer.GetDevice()->CreateBuffer(
-        &constantBufferDesc,
-        nullptr,
-        impl_->objectConstantBuffer.GetAddressOf());
-    if (FAILED(hr))
-    {
-        GILGAMESH_LOG(Core, Error, "Failed to create object constant buffer: HRESULT=0x{:X}", hr);
-        return false;
-    }
-
-	// Initialize the primitive graphics pipeline.
-    // Shader Manager test. Move this to graphics pipeline later on.
-    ShaderManager& shaders = renderer.GetShaderManager();
-    const auto vsLoad = shaders.LoadVertex(L"Primitive");
-    if (!vsLoad) return false;
-
-    const auto psLoad = shaders.LoadPixel(L"Primitive");
-    if (!psLoad) return false;
-
-    const D3D11_INPUT_ELEMENT_DESC inputElements[] =
-    {
-        {
-            "POSITION",
-            0,
-            DXGI_FORMAT_R32G32B32_FLOAT,
-            0,
-            static_cast<UINT>(offsetof(NormalVertex, position)),
-            D3D11_INPUT_PER_VERTEX_DATA,
-            0
-        },
-        {
-            "COLOR",
-            0,
-            DXGI_FORMAT_R32G32B32_FLOAT,
-            0,
-            static_cast<UINT>(offsetof(NormalVertex, color)),
-            D3D11_INPUT_PER_VERTEX_DATA,
-            0
-        }
-    };
-
-    GraphicsPipelineDesc pipelineDesc{
-        .vertexShader = vsLoad.resource,
-        .pixelShader = psLoad.resource,
-        .inputElements = inputElements,
-        .topology =
-            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-        .depthStencil = {
-            .depthTestEnabled = true,
-            .depthWriteEnabled = true,
-            .depthComparison = D3D11_COMPARISON_LESS
-        }
-    };
-
-    const HRESULT pipelineResult =
-        impl_->primitivePipeline.Initialize(
-            renderer.GetDevice(),
-            shaders,
-            pipelineDesc);
-
-    if (FAILED(pipelineResult)) return false;
-
-    MeshManager& meshes = renderer.GetMeshManager();
-    impl_->cubeMesh = meshes.CreateMesh(MakeCubeMeshData());
-    if (!meshes.IsValid(impl_->cubeMesh))
-    {
-        GILGAMESH_LOG(Core, Error, "Failed to create cube static mesh");
-        return false;
-    }
-
-    return true;
 }

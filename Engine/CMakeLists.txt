@@ -42,8 +42,13 @@ target_sources (GilgameshEngine
 		Render/Pipeline/GraphicsPipeline.h
 		Render/Pipeline/GraphicsPipeline.cpp
 
+		Render/Techniques/SimpleMeshRenderer.cpp
+		Render/Techniques/SimpleMeshRenderer.h
+
 		Render/Renderer/Renderer.cpp
 		Render/Renderer/Renderer.h
+		Render/Renderer/RenderView.h
+		Render/Renderer/StaticMeshDrawItem.h
 
 		Render/Types/Vertex.h
 		Render/Types/Buffers/BufferUsage.h
@@ -55,6 +60,8 @@ target_sources (GilgameshEngine
 		Render/Types/Buffers/VertexBuffer.cpp
 
 		Render/Mesh/StaticMeshData.h
+		Render/Mesh/PrimitiveMeshes.cpp
+		Render/Mesh/PrimitiveMeshes.h
 		Render/Mesh/StaticMesh.cpp
 		Render/Mesh/StaticMesh.h
 		Render/Mesh/MeshHandle.h

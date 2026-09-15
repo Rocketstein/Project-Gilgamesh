@@ -3,9 +3,6 @@
 
 #include "Engine/Runtime/Program.h"
 
-class Renderer;
-struct Extent2D;
-
 class EditorProgram : public IProgram
 {
 public:
@@ -16,12 +13,6 @@ public:
     void Update(const FrameContext&) override;
     void Render(RenderContext&) override;
     void Shutdown() override;
-
-private:
-    bool InitializeCubeResources(Renderer& renderer);
-    void DrawCube(
-        Renderer& renderer,
-        Extent2D renderExtent);
 
 private:
     struct Impl;
