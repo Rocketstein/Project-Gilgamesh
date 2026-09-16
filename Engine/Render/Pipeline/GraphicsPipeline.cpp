@@ -38,6 +38,12 @@ HRESULT GraphicsPipeline::Initialize(
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState>
 		newDepthStencilState;
 
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState>
+		newRasterizerState;
+
+	Microsoft::WRL::ComPtr<ID3D11BlendState>
+		newBlendState;
+
 	if (desc.pixelShader.has_value())
 	{
 		if (!desc.pixelShader->IsValid())
@@ -70,6 +76,20 @@ HRESULT GraphicsPipeline::Initialize(
 		}
 	}
 
+	// Configure Rasterizer State
+	D3D11_RASTERIZER_DESC rasterizerDescription{};
+	rasterizerDescription.CullMode = D3D11_CULL_BACK;
+	rasterizerDescription.FillMode = D3D11_FILL_SOLID;
+	rasterizerDescription.DepthClipEnable = TRUE;
+
+	HRESULT hr =
+		device->CreateRasterizerState(
+			&rasterizerDescription,
+			newRasterizerState.GetAddressOf());
+	if (FAILED(hr))
+		return hr;
+
+	// Configure Depth Stencil State
 	D3D11_DEPTH_STENCIL_DESC depthStencilDescription{};
 	depthStencilDescription.DepthEnable =
 		desc.depthStencil.depthTestEnabled;
@@ -81,21 +101,42 @@ HRESULT GraphicsPipeline::Initialize(
 		desc.depthStencil.depthComparison;
 	depthStencilDescription.StencilEnable = FALSE;
 
-	const HRESULT depthStencilResult =
+	hr =
 		device->CreateDepthStencilState(
 			&depthStencilDescription,
 			newDepthStencilState.GetAddressOf());
+	if (FAILED(hr))
+		return hr;
 
-	if (FAILED(depthStencilResult))
-	{
-		return depthStencilResult;
-	}
+	// Configure Blend State
+	D3D11_BLEND_DESC blendDescription{};
+	blendDescription.AlphaToCoverageEnable = FALSE;
+	blendDescription.IndependentBlendEnable = FALSE;
+
+	D3D11_RENDER_TARGET_BLEND_DESC& rtBlendDescription = blendDescription.RenderTarget[0];
+	rtBlendDescription.BlendEnable = TRUE;
+	rtBlendDescription.BlendOp = D3D11_BLEND_OP_ADD;
+	rtBlendDescription.SrcBlend = D3D11_BLEND_SRC_ALPHA;
+	rtBlendDescription.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+	rtBlendDescription.SrcBlendAlpha = D3D11_BLEND_ONE;
+	rtBlendDescription.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+	rtBlendDescription.BlendOpAlpha = D3D11_BLEND_OP_ADD;
+	rtBlendDescription.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+	
+	hr =
+		device->CreateBlendState(
+			&blendDescription,
+			newBlendState.GetAddressOf());
+	if (FAILED(hr))
+		return hr;
 
 	// Commit only after every operation succeeds.
 	vertexShader_ = std::move(newVertexShader);
 	pixelShader_ = std::move(newPixelShader);
 	inputLayout_ = std::move(newInputLayout);
 	depthStencilState_ = std::move(newDepthStencilState);
+	rasterizerState_ = std::move(newRasterizerState);
+	blendState_ = std::move(newBlendState);
 	topology_ = desc.topology;
 	isInitialized = true;
 
@@ -128,6 +169,8 @@ void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const noexcept
 	context->OMSetDepthStencilState(
 		depthStencilState_.Get(),
 		0);
+
+	context->RSSetState(rasterizerState_.Get());
 }
 
 bool GraphicsPipeline::IsInitialized() const noexcept

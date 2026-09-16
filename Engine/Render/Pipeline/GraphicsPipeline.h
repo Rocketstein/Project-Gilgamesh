@@ -43,6 +43,12 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState>
         depthStencilState_;
 
+    Microsoft::WRL::ComPtr<ID3D11RasterizerState>
+        rasterizerState_;
+
+    Microsoft::WRL::ComPtr<ID3D11BlendState>
+        blendState_;
+
     D3D11_PRIMITIVE_TOPOLOGY topology_ =
         D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
