@@ -5,10 +5,9 @@
 class IRenderPass
 {
 public:
-    virtual bool Initialize(
-        ID3D11Device* device,
-        ShaderManager& shaders) = 0;
-
-protected:
+    virtual ~IRenderPass() = default;
+    virtual void Execute(
+        RenderPassContext& context,
+        const RenderFrameData& frame) = 0;
 
 };
