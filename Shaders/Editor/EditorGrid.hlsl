@@ -22,8 +22,8 @@ PSOutput PSMain(float4 pos : SV_POSITION)
     float2 NDC = float2(UV.x * 2 - 1.0f,
                         1.0f - UV.y * 2);
     
-    float3 nearPoint = Unproject(NDC, 0.0f);
-    float3 farPoint  = Unproject(NDC, 1.0f);
+    float3 nearPoint = Unproject(inverseViewProj, NDC, 0.0f);
+    float3 farPoint = Unproject(inverseViewProj, NDC, 1.0f);
     
     // Ray intersection with the grid plane
     float deltaZ = farPoint.z - nearPoint.z;
@@ -45,7 +45,7 @@ PSOutput PSMain(float4 pos : SV_POSITION)
     float alpha = gridColor.a * lineAlpha * distanceAlpha;
 
     // Keep fwidth above these per-pixel rejection branches.
-    if (abs(deltaD) < 1e-6f || t < 0.0f || t > 1.0f)
+    if (abs(deltaZ) < 1e-6f || t < 0.0f || t > 1.0f)
         discard;
     clip(alpha - 1e-3f);
 
