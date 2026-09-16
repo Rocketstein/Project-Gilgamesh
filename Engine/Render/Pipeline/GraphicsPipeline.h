@@ -51,6 +51,4 @@ private:
 
     D3D11_PRIMITIVE_TOPOLOGY topology_ =
         D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-
-    bool isInitialized = false;
 };

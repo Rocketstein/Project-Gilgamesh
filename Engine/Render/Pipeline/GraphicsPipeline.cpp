@@ -78,8 +78,8 @@ HRESULT GraphicsPipeline::Initialize(
 
 	// Configure Rasterizer State
 	D3D11_RASTERIZER_DESC rasterizerDescription{};
-	rasterizerDescription.CullMode = D3D11_CULL_BACK;
-	rasterizerDescription.FillMode = D3D11_FILL_SOLID;
+	rasterizerDescription.CullMode = desc.rasterizer.cullMode;
+	rasterizerDescription.FillMode = desc.rasterizer.fillMode;
 	rasterizerDescription.DepthClipEnable = TRUE;
 
 	HRESULT hr =
@@ -114,7 +114,7 @@ HRESULT GraphicsPipeline::Initialize(
 	blendDescription.IndependentBlendEnable = FALSE;
 
 	D3D11_RENDER_TARGET_BLEND_DESC& rtBlendDescription = blendDescription.RenderTarget[0];
-	rtBlendDescription.BlendEnable = TRUE;
+	rtBlendDescription.BlendEnable = desc.blend.enabled;
 	rtBlendDescription.BlendOp = D3D11_BLEND_OP_ADD;
 	rtBlendDescription.SrcBlend = D3D11_BLEND_SRC_ALPHA;
 	rtBlendDescription.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
@@ -122,7 +122,7 @@ HRESULT GraphicsPipeline::Initialize(
 	rtBlendDescription.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
 	rtBlendDescription.BlendOpAlpha = D3D11_BLEND_OP_ADD;
 	rtBlendDescription.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-	
+
 	hr =
 		device->CreateBlendState(
 			&blendDescription,
@@ -138,7 +138,6 @@ HRESULT GraphicsPipeline::Initialize(
 	rasterizerState_ = std::move(newRasterizerState);
 	blendState_ = std::move(newBlendState);
 	topology_ = desc.topology;
-	isInitialized = true;
 
 	return S_OK;
 }
@@ -171,9 +170,18 @@ void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const noexcept
 		0);
 
 	context->RSSetState(rasterizerState_.Get());
+
+	context->OMSetBlendState(
+		blendState_.Get(),
+		nullptr,
+		0xFFFFFFFFu);
 }
 
 bool GraphicsPipeline::IsInitialized() const noexcept
 {
-	return isInitialized;
+	return vertexShader_ != nullptr
+		&& depthStencilState_ != nullptr
+		&& rasterizerState_ != nullptr
+		&& blendState_ != nullptr
+		&& topology_ != D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
 }

@@ -5,6 +5,17 @@
 
 #include "Engine/Render/D3D11/Shader/ShaderTypes.h"
 
+struct RasterizerPipelineDesc
+{
+    D3D11_CULL_MODE cullMode = D3D11_CULL_BACK;
+    D3D11_FILL_MODE fillMode = D3D11_FILL_SOLID;
+};
+
+struct BlendPipelineDesc
+{
+    bool enabled = false;
+};
+
 struct DepthStencilPipelineDesc
 {
     bool depthTestEnabled = false;
@@ -25,4 +36,6 @@ struct GraphicsPipelineDesc
         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
     DepthStencilPipelineDesc depthStencil;
+    RasterizerPipelineDesc rasterizer;
+    BlendPipelineDesc blend;
 };

@@ -1,6 +1,7 @@
 #include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Mesh/PrimitiveMeshes.h"
+#include "Engine/Render/Pipeline/GraphicsPipeline.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 #include "Engine/Render/Techniques/SimpleMeshRenderer.h"
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string_view>
+#include <utility>
 
 #include <Windows.h>
 #include <d3d11.h>
@@ -64,6 +66,113 @@ namespace
 			std::wstring_view{ executablePath.data(), length }
 		}.parent_path() / L"Shaders";
 	}
+}
+
+GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSafely")
+{
+	const TestDevice& testDevice = GetTestDevice();
+	GILGAMESH_CHECK_MESSAGE(
+		testDevice.device != nullptr && testDevice.context != nullptr,
+		"the WARP test device must be available");
+	if (!testDevice.device || !testDevice.context) return;
+
+	ShaderManager shaders;
+	GILGAMESH_CHECK_MESSAGE(
+		shaders.Initialize(testDevice.device.Get(), GetShaderDirectory()),
+		"the shader manager must initialize against the test shader directory");
+	if (!shaders.IsInitialized()) return;
+
+	const auto vertexShader = shaders.LoadVertex(L"Primitive");
+	GILGAMESH_CHECK_MESSAGE(vertexShader,
+		"the graphics pipeline test must load its vertex shader");
+	if (!vertexShader) return;
+
+	const GraphicsPipelineDesc pipelineDesc{
+		.vertexShader = vertexShader.resource,
+		.topology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
+		.rasterizer = {
+			.cullMode = D3D11_CULL_NONE,
+			.fillMode = D3D11_FILL_WIREFRAME
+		},
+		.blend = {
+			.enabled = true
+		}
+	};
+
+	GraphicsPipeline source;
+	const HRESULT initializeResult = source.Initialize(
+		testDevice.device.Get(),
+		shaders,
+		pipelineDesc);
+	GILGAMESH_CHECK_MESSAGE(SUCCEEDED(initializeResult),
+		"the graphics pipeline must initialize with non-default state");
+	if (FAILED(initializeResult)) return;
+
+	GraphicsPipeline moved{ std::move(source) };
+	GILGAMESH_CHECK_MESSAGE(
+		!source.IsInitialized() && moved.IsInitialized(),
+		"move construction must transfer initialized pipeline state");
+
+	GraphicsPipeline assigned;
+	assigned = std::move(moved);
+	GILGAMESH_CHECK_MESSAGE(
+		!moved.IsInitialized() && assigned.IsInitialized(),
+		"move assignment must transfer initialized pipeline state");
+	if (!assigned.IsInitialized()) return;
+
+	assigned.Bind(testDevice.context.Get());
+
+	D3D11_PRIMITIVE_TOPOLOGY topology =
+		D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+	testDevice.context->IAGetPrimitiveTopology(&topology);
+
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
+	testDevice.context->RSGetState(rasterizerState.GetAddressOf());
+
+	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
+	FLOAT blendFactor[4]{};
+	UINT sampleMask = 0;
+	testDevice.context->OMGetBlendState(
+		blendState.GetAddressOf(),
+		blendFactor,
+		&sampleMask);
+
+	GILGAMESH_CHECK_MESSAGE(
+		topology == D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
+		"the pipeline must bind its configured topology");
+	GILGAMESH_CHECK_MESSAGE(rasterizerState != nullptr,
+		"the pipeline must bind its configured rasterizer state");
+	GILGAMESH_CHECK_MESSAGE(blendState != nullptr,
+		"the pipeline must bind its configured blend state");
+
+	if (rasterizerState)
+	{
+		D3D11_RASTERIZER_DESC rasterizerDesc{};
+		rasterizerState->GetDesc(&rasterizerDesc);
+		GILGAMESH_CHECK_MESSAGE(
+			rasterizerDesc.FillMode == D3D11_FILL_WIREFRAME &&
+			rasterizerDesc.CullMode == D3D11_CULL_NONE &&
+			rasterizerDesc.DepthClipEnable == TRUE,
+			"the pipeline must preserve non-default rasterizer choices");
+	}
+
+	if (blendState)
+	{
+		D3D11_BLEND_DESC blendDesc{};
+		blendState->GetDesc(&blendDesc);
+		const D3D11_RENDER_TARGET_BLEND_DESC& target =
+			blendDesc.RenderTarget[0];
+		GILGAMESH_CHECK_MESSAGE(
+			target.BlendEnable == TRUE &&
+			target.SrcBlend == D3D11_BLEND_SRC_ALPHA &&
+			target.DestBlend == D3D11_BLEND_INV_SRC_ALPHA &&
+			target.BlendOp == D3D11_BLEND_OP_ADD &&
+			target.RenderTargetWriteMask == D3D11_COLOR_WRITE_ENABLE_ALL &&
+			sampleMask == 0xFFFFFFFFu,
+			"the pipeline must bind conventional straight-alpha blending");
+	}
+
+	testDevice.context->ClearState();
 }
 
 GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "RejectsInvalidInitialization")
@@ -143,6 +252,9 @@ GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "BindsAndDrawsStaticMesh")
 		}
 	};
 
+	testDevice.context->RSSetState(nullptr);
+	testDevice.context->OMSetBlendState(nullptr, nullptr, 0u);
+
 	renderer.Draw(testDevice.context.Get(), renderView, drawItems);
 
 	D3D11_PRIMITIVE_TOPOLOGY topology =
@@ -170,6 +282,17 @@ GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "BindsAndDrawsStaticMesh")
 		depthStencilState.GetAddressOf(),
 		&stencilReference);
 
+	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizerState;
+	testDevice.context->RSGetState(rasterizerState.GetAddressOf());
+
+	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
+	FLOAT blendFactor[4]{};
+	UINT sampleMask = 0;
+	testDevice.context->OMGetBlendState(
+		blendState.GetAddressOf(),
+		blendFactor,
+		&sampleMask);
+
 	GILGAMESH_CHECK_MESSAGE(
 		topology == D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
 		"the renderer must bind triangle-list topology");
@@ -179,6 +302,10 @@ GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "BindsAndDrawsStaticMesh")
 		"the renderer must bind both fixed shaders");
 	GILGAMESH_CHECK_MESSAGE(depthStencilState != nullptr,
 		"the renderer must bind its depth-stencil state");
+	GILGAMESH_CHECK_MESSAGE(rasterizerState != nullptr,
+		"the renderer must bind its rasterizer state");
+	GILGAMESH_CHECK_MESSAGE(blendState != nullptr,
+		"the renderer must bind its blend state");
 
 	if (depthStencilState)
 	{
@@ -189,6 +316,32 @@ GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "BindsAndDrawsStaticMesh")
 			depthDesc.DepthWriteMask == D3D11_DEPTH_WRITE_MASK_ALL &&
 			depthDesc.DepthFunc == D3D11_COMPARISON_LESS,
 			"the renderer must enable depth testing and writes with LESS comparison");
+	}
+
+	if (rasterizerState)
+	{
+		D3D11_RASTERIZER_DESC rasterizerDesc{};
+		rasterizerState->GetDesc(&rasterizerDesc);
+		GILGAMESH_CHECK_MESSAGE(
+			rasterizerDesc.FillMode == D3D11_FILL_SOLID &&
+			rasterizerDesc.CullMode == D3D11_CULL_BACK &&
+			rasterizerDesc.DepthClipEnable == TRUE &&
+			rasterizerDesc.FrontCounterClockwise == FALSE,
+			"the renderer must restore solid back-face culling with depth clipping");
+	}
+
+	if (blendState)
+	{
+		D3D11_BLEND_DESC blendDesc{};
+		blendState->GetDesc(&blendDesc);
+		GILGAMESH_CHECK_MESSAGE(
+			blendDesc.AlphaToCoverageEnable == FALSE &&
+			blendDesc.IndependentBlendEnable == FALSE &&
+			blendDesc.RenderTarget[0].BlendEnable == FALSE &&
+			blendDesc.RenderTarget[0].RenderTargetWriteMask ==
+				D3D11_COLOR_WRITE_ENABLE_ALL &&
+			sampleMask == 0xFFFFFFFFu,
+			"the renderer must restore opaque blending and a full sample mask");
 	}
 
 	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;

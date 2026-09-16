@@ -52,12 +52,14 @@ The current pipeline contains:
 - An optional pixel shader, allowing depth-only draws
 - An optional input layout, allowing `SV_VertexID` full-screen draws
 - Primitive topology
+- Rasterizer state
 - Depth-stencil state
+- Blend state
 
-The static-mesh milestone is the concrete reason to add rasterizer state to
-the pipeline: it must make its front-face and culling convention explicit so
-its result cannot depend on state left behind by another rendering path.
-Blend state should join when a concrete feature requires non-default blending.
+The static-mesh path made rasterizer state explicit, while the editor-grid
+requirement made blend state configurable. Safe defaults remain solid,
+back-face-culled, and opaque; techniques opt into different behavior through
+the pipeline description so their result cannot depend on earlier draw state.
 
 The shader manager owns logical shader resources. A graphics pipeline resolves
 typed shader handles during initialization and retains shared COM references
