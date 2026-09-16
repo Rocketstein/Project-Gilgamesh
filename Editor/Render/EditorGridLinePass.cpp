@@ -1,7 +1,7 @@
 #include "EditorGridLinePass.h"
 
-void EditorGridLinePass::Execute(RenderPassContext&, const RenderFrameData&)
+void EditorGridLinePass::Execute(RenderPassContext& context, const RenderFrameData& frame)
 {
-    // The grid draw is added when its renderer and frame payload exist.
+    
 }
 

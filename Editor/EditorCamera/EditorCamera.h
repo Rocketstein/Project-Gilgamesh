@@ -11,7 +11,7 @@
 struct CameraState
 {
 	// Fixed World Position for now
-	Vector3 position_ = { -3.0f, 0.0f, 0.0f };
+	Vector3 position_ = { -3.0f, 0.0f, 3.0f };
 	Rotator rotation_ = { 0.0f, 0.0f, 0.0f };
 
 	float FOVRadians_   = std::numbers::pi_v<float> / 3.0f;
