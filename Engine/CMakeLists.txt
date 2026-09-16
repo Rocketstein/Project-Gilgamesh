@@ -42,6 +42,10 @@ target_sources (GilgameshEngine
 		Render/Pipeline/GraphicsPipeline.h
 		Render/Pipeline/GraphicsPipeline.cpp
 
+		Render/Pass/IRenderPass.h
+		Render/Pass/RenderPassContext.h
+		Render/Pass/RenderFrameData.h
+
 		Render/Techniques/SimpleMeshRenderer.cpp
 		Render/Techniques/SimpleMeshRenderer.h
 

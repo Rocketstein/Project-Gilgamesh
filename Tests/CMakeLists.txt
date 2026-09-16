@@ -21,6 +21,7 @@ add_subdirectory(Core/Math)
 add_subdirectory(Editor/EditorScene)
 add_subdirectory(Engine/Input)
 add_subdirectory(Engine/Render/Mesh)
+add_subdirectory(Engine/Render/Pass)
 add_subdirectory(Engine/Render/Techniques)
 
 add_test(
