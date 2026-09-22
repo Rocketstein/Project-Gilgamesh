@@ -1,12 +1,12 @@
-#include "D3D11DrawSetup.h"
+#include "DrawSetup.h"
 
 #include <cassert>
 #include <utility>
 
-HRESULT D3D11DrawSetup::Initialize(
+HRESULT DrawSetup::Initialize(
 	ID3D11Device* device,
 	const ShaderManager& shaders,
-	const D3D11DrawSetupDesc& desc)
+	const DrawSetupDesc& desc)
 {
 	if (device == nullptr
 		|| !desc.vertexShader.IsValid()
@@ -142,7 +142,7 @@ HRESULT D3D11DrawSetup::Initialize(
 	return S_OK;
 }
 
-void D3D11DrawSetup::Apply(ID3D11DeviceContext* context) const noexcept
+void DrawSetup::Apply(ID3D11DeviceContext* context) const noexcept
 {
 	assert(context != nullptr);
 	assert(IsInitialized());
@@ -177,7 +177,7 @@ void D3D11DrawSetup::Apply(ID3D11DeviceContext* context) const noexcept
 		0xFFFFFFFFu);
 }
 
-bool D3D11DrawSetup::IsInitialized() const noexcept
+bool DrawSetup::IsInitialized() const noexcept
 {
 	return vertexShader_ != nullptr
 		&& depthStencilState_ != nullptr

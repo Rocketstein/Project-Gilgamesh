@@ -1,7 +1,7 @@
-#include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
+#include "Engine/Render/Shader/ShaderManager.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Mesh/PrimitiveMeshes.h"
-#include "Engine/Render/Pipeline/D3D11DrawSetup.h"
+#include "Engine/Render/DrawSetup/DrawSetup.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 #include "Engine/Render/Techniques/SimpleMeshRenderer.h"
@@ -68,7 +68,7 @@ namespace
 	}
 }
 
-GILGAMESH_TEST("Engine.Render.D3D11DrawSetup", "AppliesConfiguredStateAndMovesSafely")
+GILGAMESH_TEST("Engine.Render.DrawSetup", "AppliesConfiguredStateAndMovesSafely")
 {
 	const TestDevice& testDevice = GetTestDevice();
 	GILGAMESH_CHECK_MESSAGE(
@@ -87,7 +87,7 @@ GILGAMESH_TEST("Engine.Render.D3D11DrawSetup", "AppliesConfiguredStateAndMovesSa
 		"the draw setup test must load its vertex shader");
 	if (!vertexShader) return;
 
-	const D3D11DrawSetupDesc drawSetupDesc{
+	const DrawSetupDesc drawSetupDesc{
 		.vertexShader = vertexShader.resource,
 		.drawState = {
 			.topology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
@@ -97,7 +97,7 @@ GILGAMESH_TEST("Engine.Render.D3D11DrawSetup", "AppliesConfiguredStateAndMovesSa
 		}
 	};
 
-	D3D11DrawSetup source;
+	DrawSetup source;
 	const HRESULT initializeResult = source.Initialize(
 		testDevice.device.Get(),
 		shaders,
@@ -106,12 +106,12 @@ GILGAMESH_TEST("Engine.Render.D3D11DrawSetup", "AppliesConfiguredStateAndMovesSa
 		"the draw setup must initialize with non-default state");
 	if (FAILED(initializeResult)) return;
 
-	D3D11DrawSetup moved{ std::move(source) };
+	DrawSetup moved{ std::move(source) };
 	GILGAMESH_CHECK_MESSAGE(
 		!source.IsInitialized() && moved.IsInitialized(),
 		"move construction must transfer the initialized draw setup");
 
-	D3D11DrawSetup assigned;
+	DrawSetup assigned;
 	assigned = std::move(moved);
 	GILGAMESH_CHECK_MESSAGE(
 		!moved.IsInitialized() && assigned.IsInitialized(),

@@ -32,15 +32,15 @@ target_sources (GilgameshEngine
 		Render/D3D11/D3D11Device.h
 		Render/D3D11/PresentationSurface.cpp
 		Render/D3D11/PresentationSurface.h
-		Render/D3D11/Shader/D3D11Shader.cpp
-		Render/D3D11/Shader/D3D11Shader.h
-		Render/D3D11/Shader/D3D11ShaderManager.cpp
-		Render/D3D11/Shader/D3D11ShaderManager.h
-		Render/D3D11/Shader/ShaderTypes.h
+		Render/Shader/Shader.cpp
+		Render/Shader/Shader.h
+		Render/Shader/ShaderManager.cpp
+		Render/Shader/ShaderManager.h
+		Render/Shader/ShaderTypes.h
 
-		Render/Pipeline/PipelineDesc.h
-		Render/Pipeline/D3D11DrawSetup.h
-		Render/Pipeline/D3D11DrawSetup.cpp
+		Render/DrawSetup/DrawSetupDesc.h
+		Render/DrawSetup/DrawSetup.h
+		Render/DrawSetup/DrawSetup.cpp
 
 		Render/Pass/IRenderPass.h
 		Render/Pass/PassDescriptor.h

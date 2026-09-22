@@ -1,4 +1,4 @@
-#include "D3D11Shader.h"
+#include "Shader.h"
 
 HRESULT VertexShader::Initialize(ID3D11Device* device, std::vector<std::byte> bytecode)
 {

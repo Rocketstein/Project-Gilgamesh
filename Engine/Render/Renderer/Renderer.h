@@ -2,7 +2,7 @@
 
 #include "Engine/Render/D3D11/D3D11Device.h"
 #include "Engine/Render/D3D11/PresentationSurface.h"
-#include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
+#include "Engine/Render/Shader/ShaderManager.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Techniques/SimpleMeshRenderer.h"
 

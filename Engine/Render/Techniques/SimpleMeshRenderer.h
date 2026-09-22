@@ -5,7 +5,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
-#include "Engine/Render/Pipeline/D3D11DrawSetup.h"
+#include "Engine/Render/DrawSetup/DrawSetup.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 
@@ -35,6 +35,6 @@ public:
 	bool IsInitialized() const noexcept;
 
 private:
-	D3D11DrawSetup drawSetup_;
+	DrawSetup drawSetup_;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer_;
 };

@@ -25,7 +25,7 @@ ECS world
   -> transform update, visibility, and render extraction
   -> frame-local RenderView + StaticMeshDrawItem[]
   -> rendering techniques and pass orchestration
-  -> D3D11DrawSetup + D3D11 resources
+  -> DrawSetup + D3D11 resources
   -> GPU submission
 ```
 
@@ -66,7 +66,7 @@ typed shader handles during initialization and retains shared COM references
 to the native shaders it requires. This keeps binding self-contained and gives
 an initialized draw setup a clear lifetime guarantee.
 
-`D3D11DrawSetup` is intentionally not called a pipeline. In this project, a
+`DrawSetup` is intentionally not called a pipeline. In this project, a
 future `RenderPipeline` will mean the coordinator that orders and executes
 render passes.
 
@@ -205,7 +205,7 @@ implementation establishes these working pieces:
 - Renderer-owned static meshes addressed by generation-checked `MeshHandle`
   values through `MeshManager`
 - Frame-local `RenderView` and `StaticMeshDrawItem` submission data
-- `SimpleMeshRenderer` ownership of the fixed shaders, `D3D11DrawSetup`,
+- `SimpleMeshRenderer` ownership of the fixed shaders, `DrawSetup`,
   model-view-projection constant buffer, and indexed draw loop
 - An editor-only `EditorPreviewScene` that owns temporary mesh handles and
   instance transforms
@@ -254,7 +254,7 @@ geometry use case should determine whether one is valuable.
 #### Simple mesh rendering technique
 
 - Add a `SimpleMeshRenderer` that owns the fixed mesh shaders,
-  `D3D11DrawSetup`, and constant-buffer updates.
+  `DrawSetup`, and constant-buffer updates.
 - Accept a `RenderView` and a span of `StaticMeshDrawItem` values.
 - Use local-to-world and view/projection data to compute per-draw transforms.
 - Apply the draw setup, bind the mesh, and issue `DrawIndexed()` without owning
@@ -327,7 +327,7 @@ storage, and queries, add an extraction system that:
 
 The extraction system is an integration layer; it may depend on the ECS and
 renderer-facing data definitions. The low-level renderer, `StaticMesh`, and
-`D3D11DrawSetup` must not depend on the ECS. The ECS storage model should
+`DrawSetup` must not depend on the ECS. The ECS storage model should
 likewise be chosen for general component workloads rather than around renderer
 submission details.
 
@@ -369,7 +369,7 @@ Use the following rule when deciding where new state belongs:
 | Shared imported or procedural asset | Resource system |
 | Frame-local visible instance data | Render extraction output |
 | GPU geometry lifetime | `StaticMesh` |
-| Shader and fixed draw behavior | Rendering technique and `D3D11DrawSetup` |
+| Shader and fixed draw behavior | Rendering technique and `DrawSetup` |
 | Output target, clears, and ordering | Render pass or current explicit orchestration |
 | Window, swap chain, and D3D11 device | `Renderer` |
 

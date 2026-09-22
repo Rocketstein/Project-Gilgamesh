@@ -56,7 +56,7 @@ bool SimpleMeshRenderer::Initialize(
 		}
 	};
 
-	const D3D11DrawSetupDesc drawSetupDesc{
+	const DrawSetupDesc drawSetupDesc{
 		.vertexShader = vertexShader.resource,
 		.pixelShader = pixelShader.resource,
 		.inputElements = inputElements,
@@ -68,7 +68,7 @@ bool SimpleMeshRenderer::Initialize(
 		}
 	};
 
-	D3D11DrawSetup newDrawSetup;
+	DrawSetup newDrawSetup;
 	const HRESULT drawSetupResult = newDrawSetup.Initialize(
 		device,
 		shaders,

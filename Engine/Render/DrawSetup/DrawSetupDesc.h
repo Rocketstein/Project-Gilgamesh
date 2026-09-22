@@ -3,7 +3,7 @@
 #include <optional>
 #include <span>
 
-#include "Engine/Render/D3D11/Shader/ShaderTypes.h"
+#include "Engine/Render/Shader/ShaderTypes.h"
 
 // Describes fixed draw state independently of how shaders are identified.
 struct DrawStateDesc
@@ -22,7 +22,7 @@ struct DrawStateDesc
     bool blendEnabled = false;
 };
 
-struct D3D11DrawSetupDesc
+struct DrawSetupDesc
 {
     VertexShaderHandle vertexShader;
     std::optional<PixelShaderHandle> pixelShader;

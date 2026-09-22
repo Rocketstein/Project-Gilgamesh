@@ -3,26 +3,26 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
-#include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
-#include "PipelineDesc.h"
+#include "Engine/Render/Shader/ShaderManager.h"
+#include "DrawSetupDesc.h"
 
-class D3D11DrawSetup final
+class DrawSetup final
 {
 public:
-    D3D11DrawSetup() = default;
-    ~D3D11DrawSetup() = default;
+    DrawSetup() = default;
+    ~DrawSetup() = default;
 
-    D3D11DrawSetup(const D3D11DrawSetup&) = delete;
-    D3D11DrawSetup& operator=(const D3D11DrawSetup&) = delete;
+    DrawSetup(const DrawSetup&) = delete;
+    DrawSetup& operator=(const DrawSetup&) = delete;
 
-    D3D11DrawSetup(D3D11DrawSetup&&) noexcept = default;
-    D3D11DrawSetup& operator=(D3D11DrawSetup&&) noexcept = default;
+    DrawSetup(DrawSetup&&) noexcept = default;
+    DrawSetup& operator=(DrawSetup&&) noexcept = default;
 
     [[nodiscard]]
     HRESULT Initialize(
         ID3D11Device* device,
         const ShaderManager& shaders,
-        const D3D11DrawSetupDesc& desc);
+        const DrawSetupDesc& desc);
 
     void Apply(
         ID3D11DeviceContext* context) const noexcept;

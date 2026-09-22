@@ -42,7 +42,7 @@ private:
 };
 
 using VertexShaderHandle =
-ShaderHandle<ShaderStage::Vertex>;
+	ShaderHandle<ShaderStage::Vertex>;
 
 using PixelShaderHandle =
 ShaderHandle<ShaderStage::Pixel>;

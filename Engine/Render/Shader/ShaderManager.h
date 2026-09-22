@@ -4,7 +4,7 @@
 #include <fstream>
 #include <unordered_map>
 
-#include "D3D11Shader.h"
+#include "Shader.h"
 #include "ShaderTypes.h"
 
 enum class ShaderLoadError
