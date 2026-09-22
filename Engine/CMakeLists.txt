@@ -39,8 +39,8 @@ target_sources (GilgameshEngine
 		Render/D3D11/Shader/ShaderTypes.h
 
 		Render/Pipeline/PipelineDesc.h
-		Render/Pipeline/GraphicsPipeline.h
-		Render/Pipeline/GraphicsPipeline.cpp
+		Render/Pipeline/D3D11DrawSetup.h
+		Render/Pipeline/D3D11DrawSetup.cpp
 
 		Render/Pass/IRenderPass.h
 		Render/Pass/PassDescriptor.h

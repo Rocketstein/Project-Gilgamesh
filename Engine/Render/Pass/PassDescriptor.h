@@ -6,7 +6,7 @@
 
 #include "Engine/Render/Pipeline/PipelineDesc.h"
 
-// Declares a pass's logical shader names and fixed pipeline state.
+// Declares a pass's logical shader names and fixed draw state.
 // Registration stores this metadata; GPU resources are prepared later.
 struct PassDescriptor
 {

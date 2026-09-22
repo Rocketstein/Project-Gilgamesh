@@ -1,7 +1,7 @@
 #include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Mesh/PrimitiveMeshes.h"
-#include "Engine/Render/Pipeline/GraphicsPipeline.h"
+#include "Engine/Render/Pipeline/D3D11DrawSetup.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 #include "Engine/Render/Techniques/SimpleMeshRenderer.h"
@@ -68,7 +68,7 @@ namespace
 	}
 }
 
-GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSafely")
+GILGAMESH_TEST("Engine.Render.D3D11DrawSetup", "AppliesConfiguredStateAndMovesSafely")
 {
 	const TestDevice& testDevice = GetTestDevice();
 	GILGAMESH_CHECK_MESSAGE(
@@ -84,10 +84,10 @@ GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSa
 
 	const auto vertexShader = shaders.LoadVertex(L"Primitive");
 	GILGAMESH_CHECK_MESSAGE(vertexShader,
-		"the graphics pipeline test must load its vertex shader");
+		"the draw setup test must load its vertex shader");
 	if (!vertexShader) return;
 
-	const GraphicsPipelineDesc pipelineDesc{
+	const D3D11DrawSetupDesc drawSetupDesc{
 		.vertexShader = vertexShader.resource,
 		.drawState = {
 			.topology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
@@ -97,28 +97,28 @@ GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSa
 		}
 	};
 
-	GraphicsPipeline source;
+	D3D11DrawSetup source;
 	const HRESULT initializeResult = source.Initialize(
 		testDevice.device.Get(),
 		shaders,
-		pipelineDesc);
+		drawSetupDesc);
 	GILGAMESH_CHECK_MESSAGE(SUCCEEDED(initializeResult),
-		"the graphics pipeline must initialize with non-default state");
+		"the draw setup must initialize with non-default state");
 	if (FAILED(initializeResult)) return;
 
-	GraphicsPipeline moved{ std::move(source) };
+	D3D11DrawSetup moved{ std::move(source) };
 	GILGAMESH_CHECK_MESSAGE(
 		!source.IsInitialized() && moved.IsInitialized(),
-		"move construction must transfer initialized pipeline state");
+		"move construction must transfer the initialized draw setup");
 
-	GraphicsPipeline assigned;
+	D3D11DrawSetup assigned;
 	assigned = std::move(moved);
 	GILGAMESH_CHECK_MESSAGE(
 		!moved.IsInitialized() && assigned.IsInitialized(),
-		"move assignment must transfer initialized pipeline state");
+		"move assignment must transfer the initialized draw setup");
 	if (!assigned.IsInitialized()) return;
 
-	assigned.Bind(testDevice.context.Get());
+	assigned.Apply(testDevice.context.Get());
 
 	D3D11_PRIMITIVE_TOPOLOGY topology =
 		D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
@@ -137,11 +137,11 @@ GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSa
 
 	GILGAMESH_CHECK_MESSAGE(
 		topology == D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
-		"the pipeline must bind its configured topology");
+		"the draw setup must apply its configured topology");
 	GILGAMESH_CHECK_MESSAGE(rasterizerState != nullptr,
-		"the pipeline must bind its configured rasterizer state");
+		"the draw setup must apply its configured rasterizer state");
 	GILGAMESH_CHECK_MESSAGE(blendState != nullptr,
-		"the pipeline must bind its configured blend state");
+		"the draw setup must apply its configured blend state");
 
 	if (rasterizerState)
 	{
@@ -151,7 +151,7 @@ GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSa
 			rasterizerDesc.FillMode == D3D11_FILL_WIREFRAME &&
 			rasterizerDesc.CullMode == D3D11_CULL_NONE &&
 			rasterizerDesc.DepthClipEnable == TRUE,
-			"the pipeline must preserve non-default rasterizer choices");
+			"the draw setup must preserve non-default rasterizer choices");
 	}
 
 	if (blendState)
@@ -167,7 +167,7 @@ GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSa
 			target.BlendOp == D3D11_BLEND_OP_ADD &&
 			target.RenderTargetWriteMask == D3D11_COLOR_WRITE_ENABLE_ALL &&
 			sampleMask == 0xFFFFFFFFu,
-			"the pipeline must bind conventional straight-alpha blending");
+			"the draw setup must apply conventional straight-alpha blending");
 	}
 
 	testDevice.context->ClearState();

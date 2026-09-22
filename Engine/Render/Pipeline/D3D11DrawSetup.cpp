@@ -1,12 +1,12 @@
-#include "GraphicsPipeline.h"
+#include "D3D11DrawSetup.h"
 
 #include <cassert>
 #include <utility>
 
-HRESULT GraphicsPipeline::Initialize(
+HRESULT D3D11DrawSetup::Initialize(
 	ID3D11Device* device,
 	const ShaderManager& shaders,
-	const GraphicsPipelineDesc& desc)
+	const D3D11DrawSetupDesc& desc)
 {
 	if (device == nullptr
 		|| !desc.vertexShader.IsValid()
@@ -142,7 +142,7 @@ HRESULT GraphicsPipeline::Initialize(
 	return S_OK;
 }
 
-void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const noexcept
+void D3D11DrawSetup::Apply(ID3D11DeviceContext* context) const noexcept
 {
 	assert(context != nullptr);
 	assert(IsInitialized());
@@ -177,7 +177,7 @@ void GraphicsPipeline::Bind(ID3D11DeviceContext* context) const noexcept
 		0xFFFFFFFFu);
 }
 
-bool GraphicsPipeline::IsInitialized() const noexcept
+bool D3D11DrawSetup::IsInitialized() const noexcept
 {
 	return vertexShader_ != nullptr
 		&& depthStencilState_ != nullptr

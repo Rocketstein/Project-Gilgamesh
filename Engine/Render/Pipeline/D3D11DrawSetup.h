@@ -6,25 +6,25 @@
 #include "Engine/Render/D3D11/Shader/D3D11ShaderManager.h"
 #include "PipelineDesc.h"
 
-class GraphicsPipeline final
+class D3D11DrawSetup final
 {
 public:
-    GraphicsPipeline() = default;
-    ~GraphicsPipeline() = default;
+    D3D11DrawSetup() = default;
+    ~D3D11DrawSetup() = default;
 
-    GraphicsPipeline(const GraphicsPipeline&) = delete;
-    GraphicsPipeline& operator=(const GraphicsPipeline&) = delete;
+    D3D11DrawSetup(const D3D11DrawSetup&) = delete;
+    D3D11DrawSetup& operator=(const D3D11DrawSetup&) = delete;
 
-    GraphicsPipeline(GraphicsPipeline&&) noexcept = default;
-    GraphicsPipeline& operator=(GraphicsPipeline&&) noexcept = default;
+    D3D11DrawSetup(D3D11DrawSetup&&) noexcept = default;
+    D3D11DrawSetup& operator=(D3D11DrawSetup&&) noexcept = default;
 
     [[nodiscard]]
     HRESULT Initialize(
         ID3D11Device* device,
         const ShaderManager& shaders,
-        const GraphicsPipelineDesc& desc);
+        const D3D11DrawSetupDesc& desc);
 
-    void Bind(
+    void Apply(
         ID3D11DeviceContext* context) const noexcept;
 
     [[nodiscard]]

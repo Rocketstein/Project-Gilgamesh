@@ -22,7 +22,7 @@ struct DrawStateDesc
     bool blendEnabled = false;
 };
 
-struct GraphicsPipelineDesc
+struct D3D11DrawSetupDesc
 {
     VertexShaderHandle vertexShader;
     std::optional<PixelShaderHandle> pixelShader;

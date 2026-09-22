@@ -5,11 +5,11 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
-#include "Engine/Render/Pipeline/GraphicsPipeline.h"
+#include "Engine/Render/Pipeline/D3D11DrawSetup.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 
-// Draws frame-local static-mesh items through the current vertex-color pipeline.
+// Draws frame-local static-mesh items through the vertex-color draw setup.
 class SimpleMeshRenderer final
 {
 public:
@@ -35,6 +35,6 @@ public:
 	bool IsInitialized() const noexcept;
 
 private:
-	GraphicsPipeline pipeline_;
+	D3D11DrawSetup drawSetup_;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer_;
 };

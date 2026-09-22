@@ -56,7 +56,7 @@ bool SimpleMeshRenderer::Initialize(
 		}
 	};
 
-	const GraphicsPipelineDesc pipelineDesc{
+	const D3D11DrawSetupDesc drawSetupDesc{
 		.vertexShader = vertexShader.resource,
 		.pixelShader = pixelShader.resource,
 		.inputElements = inputElements,
@@ -68,12 +68,12 @@ bool SimpleMeshRenderer::Initialize(
 		}
 	};
 
-	GraphicsPipeline newPipeline;
-	const HRESULT pipelineResult = newPipeline.Initialize(
+	D3D11DrawSetup newDrawSetup;
+	const HRESULT drawSetupResult = newDrawSetup.Initialize(
 		device,
 		shaders,
-		pipelineDesc);
-	if (FAILED(pipelineResult)) return false;
+		drawSetupDesc);
+	if (FAILED(drawSetupResult)) return false;
 
 	D3D11_BUFFER_DESC constantBufferDesc{};
 	constantBufferDesc.ByteWidth = sizeof(ObjectConstants);
@@ -87,7 +87,7 @@ bool SimpleMeshRenderer::Initialize(
 		newObjectConstantBuffer.GetAddressOf());
 	if (FAILED(bufferResult)) return false;
 
-	pipeline_ = std::move(newPipeline);
+	drawSetup_ = std::move(newDrawSetup);
 	objectConstantBuffer_ = std::move(newObjectConstantBuffer);
 	return true;
 }
@@ -99,7 +99,7 @@ void SimpleMeshRenderer::Draw(
 {
 	if (!context || !IsInitialized() || drawItems.empty()) return;
 
-	pipeline_.Bind(context);
+	drawSetup_.Apply(context);
 
 	ID3D11Buffer* objectConstantBuffer =
 		objectConstantBuffer_.Get();
@@ -138,5 +138,5 @@ void SimpleMeshRenderer::Draw(
 
 bool SimpleMeshRenderer::IsInitialized() const noexcept
 {
-	return pipeline_.IsInitialized() && objectConstantBuffer_ != nullptr;
+	return drawSetup_.IsInitialized() && objectConstantBuffer_ != nullptr;
 }

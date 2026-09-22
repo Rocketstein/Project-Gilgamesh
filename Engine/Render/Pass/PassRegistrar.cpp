@@ -20,12 +20,12 @@ bool PassRegistrar::Prepare(ID3D11Device* device, ShaderManager& shaders)
 			pixelShader = loaded.resource;
 		}
 
-		GraphicsPipelineDesc pipelineDesc{};
-		pipelineDesc.vertexShader = vertexShader.resource;
-		pipelineDesc.pixelShader = pixelShader;
-		pipelineDesc.drawState = desc.drawState;
+		D3D11DrawSetupDesc drawSetupDesc{};
+		drawSetupDesc.vertexShader = vertexShader.resource;
+		drawSetupDesc.pixelShader = pixelShader;
+		drawSetupDesc.drawState = desc.drawState;
 
-		if (FAILED(entry.pipeline.Initialize(device, shaders, pipelineDesc)))
+		if (FAILED(entry.drawSetup.Initialize(device, shaders, drawSetupDesc)))
         {
             return false;
         }
