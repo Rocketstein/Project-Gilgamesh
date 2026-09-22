@@ -60,8 +60,8 @@ bool SimpleMeshRenderer::Initialize(
 		.vertexShader = vertexShader.resource,
 		.pixelShader = pixelShader.resource,
 		.inputElements = inputElements,
-		.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-		.depthStencil = {
+		.drawState = {
+			.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
 			.depthTestEnabled = true,
 			.depthWriteEnabled = true,
 			.depthComparison = D3D11_COMPARISON_LESS

@@ -44,6 +44,7 @@ target_sources (GilgameshEngine
 
 		Render/Pass/IRenderPass.h
 		Render/Pass/PassDescriptor.h
+		Render/Pass/PassRegistrar.cpp
 		Render/Pass/PassRegistrar.h
 		Render/Pass/RenderPassContext.h
 		Render/Pass/RenderFrameData.h

@@ -8,7 +8,7 @@ namespace
         PassDescriptor descriptor{};
         descriptor.name = name;
         descriptor.vertexShader = L"Primitive";
-        descriptor.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        descriptor.drawState.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
         return descriptor;
     }
 
@@ -28,9 +28,9 @@ namespace
             PassDescriptor descriptor = MakeDescriptor("Second");
             descriptor.vertexShader = L"EditorGrid";
             descriptor.pixelShader = L"EditorGrid";
-            descriptor.depthStencil.depthTestEnabled = true;
-            descriptor.depthStencil.depthWriteEnabled = false;
-            descriptor.blend.enabled = true;
+            descriptor.drawState.depthTestEnabled = true;
+            descriptor.drawState.depthWriteEnabled = false;
+            descriptor.drawState.blendEnabled = true;
             return descriptor;
         }
 
@@ -69,10 +69,10 @@ GILGAMESH_TEST("Engine.Render.PassRegistrar", "PreservesDescriptorRegistrationOr
     GILGAMESH_CHECK_MESSAGE(
         secondDescriptor.vertexShader == L"EditorGrid" &&
         secondDescriptor.pixelShader == L"EditorGrid" &&
-        secondDescriptor.depthStencil.depthTestEnabled &&
-        !secondDescriptor.depthStencil.depthWriteEnabled &&
-        secondDescriptor.blend.enabled,
-        "registration must preserve the pass's shader and pipeline requirements");
+        secondDescriptor.drawState.depthTestEnabled &&
+        !secondDescriptor.drawState.depthWriteEnabled &&
+        secondDescriptor.drawState.blendEnabled,
+        "registration must preserve the pass's shader and draw-state requirements");
     GILGAMESH_CHECK_MESSAGE(&registrar.GetPass(0) == &first &&
         &registrar.GetPass(1) == &second,
         "the registrar must expose the registered concrete pass objects");

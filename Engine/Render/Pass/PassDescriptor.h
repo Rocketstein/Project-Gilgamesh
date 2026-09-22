@@ -14,9 +14,5 @@ struct PassDescriptor
     std::filesystem::path vertexShader;
     std::optional<std::filesystem::path> pixelShader;
 
-    D3D11_PRIMITIVE_TOPOLOGY topology =
-        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-    DepthStencilPipelineDesc depthStencil;
-    RasterizerPipelineDesc rasterizer;
-    BlendPipelineDesc blend;
+    DrawStateDesc drawState;
 };

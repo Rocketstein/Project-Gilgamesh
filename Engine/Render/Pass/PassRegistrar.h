@@ -9,6 +9,8 @@
 #include "IRenderPass.h"
 #include "PassDescriptor.h"
 
+class ShaderManager;
+
 // Owns pass instances and their descriptions in registration order.
 class PassRegistrar final
 {
@@ -26,7 +28,7 @@ public:
         return registered;
     }
 
-    void Prepare(ID3D11Device* device, ShaderManager shaders);
+    bool Prepare(ID3D11Device* device, ShaderManager& shaders);
 
     [[nodiscard]] std::size_t Count() const noexcept { return entries_.size(); }
 

@@ -89,13 +89,11 @@ GILGAMESH_TEST("Engine.Render.GraphicsPipeline", "BindsConfiguredStateAndMovesSa
 
 	const GraphicsPipelineDesc pipelineDesc{
 		.vertexShader = vertexShader.resource,
-		.topology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
-		.rasterizer = {
+		.drawState = {
+			.topology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST,
 			.cullMode = D3D11_CULL_NONE,
-			.fillMode = D3D11_FILL_WIREFRAME
-		},
-		.blend = {
-			.enabled = true
+			.fillMode = D3D11_FILL_WIREFRAME,
+			.blendEnabled = true
 		}
 	};
 

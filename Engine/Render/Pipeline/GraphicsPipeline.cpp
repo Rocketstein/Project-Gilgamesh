@@ -10,7 +10,7 @@ HRESULT GraphicsPipeline::Initialize(
 {
 	if (device == nullptr
 		|| !desc.vertexShader.IsValid()
-		|| desc.topology == D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED)
+		|| desc.drawState.topology == D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED)
 	{
 		return E_INVALIDARG;
 	}
@@ -78,8 +78,8 @@ HRESULT GraphicsPipeline::Initialize(
 
 	// Configure Rasterizer State
 	D3D11_RASTERIZER_DESC rasterizerDescription{};
-	rasterizerDescription.CullMode = desc.rasterizer.cullMode;
-	rasterizerDescription.FillMode = desc.rasterizer.fillMode;
+	rasterizerDescription.CullMode = desc.drawState.cullMode;
+	rasterizerDescription.FillMode = desc.drawState.fillMode;
 	rasterizerDescription.DepthClipEnable = TRUE;
 
 	HRESULT hr =
@@ -92,13 +92,13 @@ HRESULT GraphicsPipeline::Initialize(
 	// Configure Depth Stencil State
 	D3D11_DEPTH_STENCIL_DESC depthStencilDescription{};
 	depthStencilDescription.DepthEnable =
-		desc.depthStencil.depthTestEnabled;
+		desc.drawState.depthTestEnabled;
 	depthStencilDescription.DepthWriteMask =
-		desc.depthStencil.depthWriteEnabled
+		desc.drawState.depthWriteEnabled
 			? D3D11_DEPTH_WRITE_MASK_ALL
 			: D3D11_DEPTH_WRITE_MASK_ZERO;
 	depthStencilDescription.DepthFunc =
-		desc.depthStencil.depthComparison;
+		desc.drawState.depthComparison;
 	depthStencilDescription.StencilEnable = FALSE;
 
 	hr =
@@ -114,7 +114,7 @@ HRESULT GraphicsPipeline::Initialize(
 	blendDescription.IndependentBlendEnable = FALSE;
 
 	D3D11_RENDER_TARGET_BLEND_DESC& rtBlendDescription = blendDescription.RenderTarget[0];
-	rtBlendDescription.BlendEnable = desc.blend.enabled;
+	rtBlendDescription.BlendEnable = desc.drawState.blendEnabled;
 	rtBlendDescription.BlendOp = D3D11_BLEND_OP_ADD;
 	rtBlendDescription.SrcBlend = D3D11_BLEND_SRC_ALPHA;
 	rtBlendDescription.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
@@ -137,7 +137,7 @@ HRESULT GraphicsPipeline::Initialize(
 	depthStencilState_ = std::move(newDepthStencilState);
 	rasterizerState_ = std::move(newRasterizerState);
 	blendState_ = std::move(newBlendState);
-	topology_ = desc.topology;
+	topology_ = desc.drawState.topology;
 
 	return S_OK;
 }
