@@ -1,4 +1,4 @@
-#include "Engine/Render/Pass/RenderFrameData.h"
+#include "Engine/Render/Pipeline/Pass/RenderFrameData.h"
 #include "Tests/TestFramework.h"
 
 namespace

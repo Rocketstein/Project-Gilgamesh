@@ -1,4 +1,4 @@
-#include "Engine/Render/Pass/PassRegistrar.h"
+#include "Engine/Render/Pipeline/Pass/PassRegistrar.h"
 #include "Tests/TestFramework.h"
 
 namespace

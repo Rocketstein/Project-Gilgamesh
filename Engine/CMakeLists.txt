@@ -42,12 +42,14 @@ target_sources (GilgameshEngine
 		Render/DrawSetup/DrawSetup.h
 		Render/DrawSetup/DrawSetup.cpp
 
-		Render/Pass/IRenderPass.h
-		Render/Pass/PassDescriptor.h
-		Render/Pass/PassRegistrar.cpp
-		Render/Pass/PassRegistrar.h
-		Render/Pass/RenderPassContext.h
-		Render/Pass/RenderFrameData.h
+		Render/Pipeline/RenderPipeline.cpp
+		Render/Pipeline/RenderPipeline.h
+		Render/Pipeline/Pass/IRenderPass.h
+		Render/Pipeline/Pass/PassDescriptor.h
+		Render/Pipeline/Pass/PassRegistrar.cpp
+		Render/Pipeline/Pass/PassRegistrar.h
+		Render/Pipeline/Pass/RenderPassContext.h
+		Render/Pipeline/Pass/RenderFrameData.h
 
 		Render/Techniques/SimpleMeshRenderer.cpp
 		Render/Techniques/SimpleMeshRenderer.h

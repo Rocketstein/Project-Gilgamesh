@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Engine/Render/Pass/IRenderPass.h"
-#include "Engine/Render/Pass/PassDescriptor.h"
+#include "Engine/Render/Pipeline/Pass/IRenderPass.h"
+#include "Engine/Render/Pipeline/Pass/PassDescriptor.h"
 
 class EditorGridLinePass final : public IRenderPass
 {
