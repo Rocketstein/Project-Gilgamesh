@@ -1,4 +1,5 @@
 target_sources(GilgameshTests
   PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/RenderConstantsTests.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/RenderPipelineTests.cpp"
 )

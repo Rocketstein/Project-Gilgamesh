@@ -44,6 +44,7 @@ target_sources (GilgameshEngine
 
 		Render/Pipeline/RenderPipeline.cpp
 		Render/Pipeline/RenderPipeline.h
+		Render/Pipeline/Resource/RenderConstants.h
 		Render/Pipeline/Pass/IRenderPass.h
 		Render/Pipeline/Pass/PassDescriptor.h
 		Render/Pipeline/Pass/RenderPassContext.h

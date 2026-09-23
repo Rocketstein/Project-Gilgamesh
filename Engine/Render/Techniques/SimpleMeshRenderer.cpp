@@ -104,7 +104,7 @@ void SimpleMeshRenderer::Draw(
 	ID3D11Buffer* objectConstantBuffer =
 		objectConstantBuffer_.Get();
 	context->VSSetConstantBuffers(
-		0,
+		2,
 		1,
 		&objectConstantBuffer);
 

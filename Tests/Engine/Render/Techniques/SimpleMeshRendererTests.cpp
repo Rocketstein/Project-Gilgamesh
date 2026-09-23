@@ -362,7 +362,7 @@ GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "BindsAndDrawsStaticMesh")
 
 	Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
 	testDevice.context->VSGetConstantBuffers(
-		0,
+		2,
 		1,
 		constantBuffer.GetAddressOf());
 
@@ -377,7 +377,7 @@ GILGAMESH_TEST("Engine.Render.SimpleMeshRenderer", "BindsAndDrawsStaticMesh")
 		indexOffset == 0,
 		"the draw must bind the mesh 32-bit index buffer");
 	GILGAMESH_CHECK_MESSAGE(constantBuffer != nullptr,
-		"the renderer must bind its object constants to vertex slot zero");
+		"the renderer must bind its object constants to vertex slot two");
 
 	if (constantBuffer)
 	{
