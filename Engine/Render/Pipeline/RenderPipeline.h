@@ -11,11 +11,12 @@ public:
     template<class Pass, class... Args>
     Pass& AddPass(Args&&... args)
     {
+        // Capture the pass metadata and transfer ownership to the pipeline.
         PassDescriptor descriptor = Pass::Describe();
         auto pass = std::make_unique<Pass>(std::forward<Args>(args)...);
-        Pass& registered = *pass;
+        Pass& addedPass = *pass;
         entries_.push_back({ std::move(descriptor), std::move(pass) });
-        return registered;
+        return addedPass;
     }
 
     bool Initialize(
