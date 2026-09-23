@@ -42,14 +42,19 @@ public:
     }
 
     // Replace the current constant-buffer contents.
-    void Update(ID3D11DeviceContext* context, const T& value) const
+    bool Update(ID3D11DeviceContext* context, const T& value) const
     {
-        if (!context || !buffer_) return;
+        if (!context || !IsInitialized()) return false;
 
         D3D11_MAPPED_SUBRESOURCE mData = {};
-        context->Map(buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mData);
+
+        const HRESULT hr = context->Map(buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mData);
+        if (FAILED(hr)) return false;
+
         memcpy(mData.pData, &value, sizeof(T));
         context->Unmap(buffer_.Get(), NULL);
+
+        return true;
     }
 
     [[nodiscard]]

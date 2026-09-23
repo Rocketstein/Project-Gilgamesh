@@ -1,10 +1,7 @@
 #include "SimpleMeshRenderer.h"
 
 #include <cstddef>
-#include <type_traits>
 #include <utility>
-
-#include <DirectXMath.h>
 
 #include "Engine/Render/Mesh/StaticMesh.h"
 #include "Engine/Render/Mesh/Vertex.h"
@@ -80,13 +77,22 @@ void SimpleMeshRenderer::Draw(
 
 	drawSetup_.Apply(context);
 
+	ID3D11Buffer* objectBuffer = objectCB_.GetBuffer();
+	context->VSSetConstantBuffers(2, 1, &objectBuffer);
+
 	for (const StaticMeshDrawItem& drawItem : drawItems)
 	{
 		if (!drawItem.mesh) continue;
 
-		ObjectConstants constants = {};
-		constants.model = drawItem.localToWorld;
-		objectCB_.Update(context, constants);
+		// Keep the primitive shader's current MVP contract until frame constants
+		// are prepared and bound separately at the view level.
+		ObjectConstants constants{};
+		constants.model = Transpose(
+			drawItem.localToWorld *
+			renderView.view *
+			renderView.projection);
+
+		if (!objectCB_.Update(context, constants)) return;
 
 		drawItem.mesh->Bind(context);
 		context->DrawIndexed(

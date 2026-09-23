@@ -3,7 +3,9 @@
 #include "Pass/PassDescriptor.h"
 #include "Pass/RenderFrameData.h"
 #include "Pass/RenderPassContext.h"
+#include "Engine/Render/Buffers/ConstantBuffer.h"
 #include "Engine/Render/DrawSetup/DrawSetup.h"
+#include "Engine/Render/Pipeline/Resource/RenderConstants.h"
 
 class RenderPipeline final
 {
@@ -11,12 +13,11 @@ public:
     template<class Pass, class... Args>
     Pass& AddPass(Args&&... args)
     {
-        // Capture the pass metadata and transfer ownership to the pipeline.
         PassDescriptor descriptor = Pass::Describe();
         auto pass = std::make_unique<Pass>(std::forward<Args>(args)...);
-        Pass& addedPass = *pass;
+        Pass& registered = *pass;
         entries_.push_back({ std::move(descriptor), std::move(pass) });
-        return addedPass;
+        return registered;
     }
 
     bool Initialize(
@@ -33,6 +34,11 @@ public:
     bool IsInitialized() const noexcept;
 
 private:
+    // Runs before every other rendering pass. Uploads global constants extracted from the scene to b0.
+    // TODO: Revise function parameters after implementing scene and ECS.
+    void BuildFrame(RenderPassContext& context);
+
+private:
     struct Entry
     {
         PassDescriptor descriptor;
@@ -40,6 +46,7 @@ private:
         DrawSetup drawSetup;
     };
 
+    ConstantBuffer<FrameConstants> frameCB_;
     std::vector<Entry> entries_;
     bool initialized_ = false;
 };

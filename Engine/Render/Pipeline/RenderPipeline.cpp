@@ -115,15 +115,40 @@ bool RenderPipeline::Initialize(
         preparedSetups.push_back(std::move(drawSetup));
     }
 
-    // Commit only after every entry has been prepared successfully.
     for (std::size_t index = 0; index < entries_.size(); ++index)
     {
         entries_[index].drawSetup =
             std::move(preparedSetups[index]);
     }
 
+    ConstantBuffer<FrameConstants> newFrameBuffer;
+    if (!(newFrameBuffer.Create(device))) return false;
+    frameCB_ = std::move(newFrameBuffer);
+
     initialized_ = true;
     return true;
+}
+
+void RenderPipeline::BuildFrame(RenderPassContext& context)
+{
+    FrameConstants frame = {};
+
+    const Matrix4 view = context.view.view;
+    const Matrix4 proj = context.view.projection;
+    const Matrix4 VP = view * proj;
+    const Matrix4 InvVP = Inverse(VP).value_or(Matrix4::Identity());
+
+    frame.view = view;
+    frame.projection = proj;
+    frame.viewProjection = VP;
+    frame.inverseVP = InvVP;
+    frame.viewportDim = {
+        static_cast<float>(context.targetExtent.width),
+        static_cast<float>(context.targetExtent.height)
+    };
+    frame.cameraWorldPos = -TransformDirection(view.Translation(), Transpose(view));
+
+    frameCB_.Update(&context.deviceContext, frame);
 }
 
 void RenderPipeline::Execute(RenderPassContext& context, const RenderFrameData& frame)
