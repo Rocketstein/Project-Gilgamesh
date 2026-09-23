@@ -1,9 +1,10 @@
 #pragma once
+#include "Pass/PassRegistrar.h"
 
 class RenderPipeline final
 {
 public:
-    RenderPipelineBuildResult Initialize(
+    bool Initialize(
         ID3D11Device* device,
         ShaderManager& shaders,
         PassRegistrar&& registrar);
@@ -22,7 +23,7 @@ private:
     {
         PassDescriptor descriptor;
         std::unique_ptr<IRenderPass> pass;
-        D3D11DrawSetup drawSetup;
+        DrawSetup drawSetup;
     };
 
     std::vector<Entry> entries_;
