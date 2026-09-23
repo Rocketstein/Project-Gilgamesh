@@ -14,7 +14,7 @@ struct alignas(16) FrameConstants
 	Matrix4 viewProjection;              // 64 bytes (offset 128)
 	Matrix4 inverseVP;                   // 64 bytes (offset 192)
 	Vector3 cameraWorldPos;              // 12 bytes (offset 256)
-	float cameraWorldPosPadding = 0.0f;  // 4 bytes (offset 268)
+	float cameraPadding = 0.0f;			 // 4 bytes (offset 268)
 	Vector2 viewportDim;                 // 8 bytes (offset 272)
 	Vector2 viewportPadding;             // 8 bytes (offset 280)
 }; // Total: 288 bytes

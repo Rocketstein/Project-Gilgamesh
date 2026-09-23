@@ -59,7 +59,6 @@ target_sources (GilgameshEngine
 		Render/Renderer/StaticMeshDrawItem.h
 
 		Render/Buffers/BufferUsage.h
-		Render/Buffers/ConstantBuffer.cpp
 		Render/Buffers/ConstantBuffer.h
 		Render/Buffers/IndexBuffer.h
 		Render/Buffers/IndexBuffer.cpp
