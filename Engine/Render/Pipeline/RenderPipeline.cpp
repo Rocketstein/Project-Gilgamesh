@@ -141,10 +141,8 @@ void RenderPipeline::Execute(RenderPassContext& context, const RenderFrameData& 
     }
 }
 
-void RenderPipeline::Reset()
+void RenderPipeline::Reset() noexcept
 {
-    if (!initialized_) return;
-
     entries_.clear();
     initialized_ = false;
 }

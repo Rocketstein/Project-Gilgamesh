@@ -1,8 +1,11 @@
 #pragma once
-#include "Pass/PassRegistrar.h"
+#include "Pass/IRenderPass.h"
+#include "Pass/PassDescriptor.h"
+#include "Pass/RenderFrameData.h"
+#include "Pass/RenderPassContext.h"
 #include "Engine/Render/DrawSetup/DrawSetup.h"
 
-struct RenderPassContext;
+class IRenderPass;
 
 class RenderPipeline final
 {
