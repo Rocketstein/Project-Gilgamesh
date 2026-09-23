@@ -11,8 +11,10 @@ public:
     ConstantBuffer(const ConstantBuffer&) = delete;
     ConstantBuffer& operator=(const ConstantBuffer&) = delete;
 
+    // Create a CPU-writable D3D11 constant buffer.
     void Create(ID3D11Device* device, UINT16 byteWidth);
-    
+
+    // Replace the current constant-buffer contents.
     void Update(ID3D11DeviceContext* context, const void* data, UINT16 byteWidth);
 
     [[nodiscard]]

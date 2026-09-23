@@ -7,7 +7,7 @@
 #include <DirectXMath.h>
 
 #include "Engine/Render/Mesh/StaticMesh.h"
-#include "Engine/Render/Types/Vertex.h"
+#include "Engine/Render/Mesh/Vertex.h"
 
 namespace
 {

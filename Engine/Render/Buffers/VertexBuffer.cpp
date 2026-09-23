@@ -3,6 +3,7 @@
 #include <cstring>
 #include <utility>
 
+// Create and initialize a vertex buffer without publishing partial state.
 HRESULT VertexBuffer::Create(ID3D11Device* device,
 	std::uint32_t byteWidth,
 	std::uint32_t count,

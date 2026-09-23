@@ -5,6 +5,7 @@ These instructions apply to the entire repository.
 ## Coding rules
 - Readability first. Efficiency second.
 - Add a brief, readable comment for each logical block and function headers with reasonable complexity.
+- Don't just select an approach because it is a minimal solution. Long term architecture matters.
 
 ## Platform and build
 
@@ -46,8 +47,10 @@ These instructions apply to the entire repository.
   wrappers such as `D3D11Device`, and retain native API names such as
   `ID3D11Device`.
 - Canonical renderer locations are:
+  - GPU buffer wrappers: `Engine/Render/Buffers/`
   - C++ shader resources: `Engine/Render/Shader/`
   - Draw state setup: `Engine/Render/DrawSetup/`
+  - Mesh resources and vertex formats: `Engine/Render/Mesh/`
   - Pipeline and pass orchestration: `Engine/Render/Pipeline/` and
     `Engine/Render/Pipeline/Pass/`
   - D3D11 device/presentation backend: `Engine/Render/D3D11/`

@@ -1,5 +1,6 @@
 #include "ConstantBuffer.h"
 
+// Create a dynamic constant buffer that can be updated every frame.
 void ConstantBuffer::Create(ID3D11Device* device, UINT16 byteWidth)
 {
 	if (!device || byteWidth == 0) return;
@@ -14,6 +15,7 @@ void ConstantBuffer::Create(ID3D11Device* device, UINT16 byteWidth)
 	buffer_->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ConstantBuffer")), "ConstantBuffer");
 }
 
+// Replace the constant buffer contents through a discard mapping.
 void ConstantBuffer::Update(ID3D11DeviceContext* context, const void* data, UINT16 byteWidth)
 {
 	if (!context || !data) return;

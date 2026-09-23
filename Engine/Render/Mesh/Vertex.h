@@ -2,7 +2,7 @@
 #include "Engine/Core/Math/Vector.h"
 
 // Prototype Vertex Types
-struct SimpleVertex2D 
+struct SimpleVertex2D
 {
 	float x, y;
 	float r, g, b;

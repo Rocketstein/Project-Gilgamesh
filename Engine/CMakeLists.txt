@@ -57,14 +57,13 @@ target_sources (GilgameshEngine
 		Render/Renderer/RenderView.h
 		Render/Renderer/StaticMeshDrawItem.h
 
-		Render/Types/Vertex.h
-		Render/Types/Buffers/BufferUsage.h
-		Render/Types/Buffers/ConstantBuffer.cpp
-		Render/Types/Buffers/ConstantBuffer.h
-		Render/Types/Buffers/IndexBuffer.h
-		Render/Types/Buffers/IndexBuffer.cpp
-		Render/Types/Buffers/VertexBuffer.h
-		Render/Types/Buffers/VertexBuffer.cpp
+		Render/Buffers/BufferUsage.h
+		Render/Buffers/ConstantBuffer.cpp
+		Render/Buffers/ConstantBuffer.h
+		Render/Buffers/IndexBuffer.h
+		Render/Buffers/IndexBuffer.cpp
+		Render/Buffers/VertexBuffer.h
+		Render/Buffers/VertexBuffer.cpp
 
 		Render/Mesh/StaticMeshData.h
 		Render/Mesh/PrimitiveMeshes.cpp
@@ -74,6 +73,7 @@ target_sources (GilgameshEngine
 		Render/Mesh/MeshHandle.h
 		Render/Mesh/MeshManager.cpp
 		Render/Mesh/MeshManager.h
+		Render/Mesh/Vertex.h
 
 		Runtime/Engine.cpp
 		Runtime/Engine.h

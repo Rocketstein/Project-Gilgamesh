@@ -3,6 +3,7 @@
 #include <cstring>
 #include <utility>
 
+// Create and initialize an index buffer without publishing partial state.
 HRESULT IndexBuffer::Create(ID3D11Device* device,
 	std::uint32_t byteWidth,
 	std::uint32_t count,
@@ -17,7 +18,7 @@ HRESULT IndexBuffer::Create(ID3D11Device* device,
 	desc.ByteWidth = byteWidth;
 	desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 
-	// Determine vertex buffer usage
+	// Determine index buffer usage.
 	if (usage == BufferUsage::BUFFER_IMMUTABLE)
 	{
 		desc.Usage = D3D11_USAGE_IMMUTABLE;

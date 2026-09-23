@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-#include "Engine/Render/Types/Buffers/VertexBuffer.h"
-#include "Engine/Render/Types/Buffers/IndexBuffer.h"
+#include "Engine/Render/Buffers/IndexBuffer.h"
+#include "Engine/Render/Buffers/VertexBuffer.h"
 
 class StaticMesh final
 {

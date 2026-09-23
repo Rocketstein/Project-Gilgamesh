@@ -5,8 +5,6 @@
 #include "Pass/RenderPassContext.h"
 #include "Engine/Render/DrawSetup/DrawSetup.h"
 
-class IRenderPass;
-
 class RenderPipeline final
 {
 public:
