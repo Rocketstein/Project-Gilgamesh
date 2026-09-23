@@ -9,19 +9,6 @@
 #include "Engine/Render/Mesh/StaticMesh.h"
 #include "Engine/Render/Mesh/Vertex.h"
 
-namespace
-{
-	struct alignas(16) ObjectConstants
-	{
-		DirectX::XMFLOAT4X4 modelViewProjection;
-	};
-
-	static_assert(std::is_standard_layout_v<NormalVertex>,
-		"NormalVertex must support explicit input-layout offsets");
-	static_assert(sizeof(ObjectConstants) % 16 == 0,
-		"D3D11 constant buffers must be a multiple of 16 bytes");
-}
-
 bool SimpleMeshRenderer::Initialize(
 	ID3D11Device* device,
 	ShaderManager& shaders)
@@ -75,20 +62,12 @@ bool SimpleMeshRenderer::Initialize(
 		drawSetupDesc);
 	if (FAILED(drawSetupResult)) return false;
 
-	D3D11_BUFFER_DESC constantBufferDesc{};
-	constantBufferDesc.ByteWidth = sizeof(ObjectConstants);
-	constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-
-	Microsoft::WRL::ComPtr<ID3D11Buffer> newObjectConstantBuffer;
-	const HRESULT bufferResult = device->CreateBuffer(
-		&constantBufferDesc,
-		nullptr,
-		newObjectConstantBuffer.GetAddressOf());
-	if (FAILED(bufferResult)) return false;
+	ConstantBuffer<ObjectConstants> newObjectBuffer;
+	if (!(newObjectBuffer.Create(device))) return false;
 
 	drawSetup_ = std::move(newDrawSetup);
-	objectConstantBuffer_ = std::move(newObjectConstantBuffer);
+	objectCB_ = std::move(newObjectBuffer);
+
 	return true;
 }
 
@@ -101,32 +80,13 @@ void SimpleMeshRenderer::Draw(
 
 	drawSetup_.Apply(context);
 
-	ID3D11Buffer* objectConstantBuffer =
-		objectConstantBuffer_.Get();
-	context->VSSetConstantBuffers(
-		2,
-		1,
-		&objectConstantBuffer);
-
 	for (const StaticMeshDrawItem& drawItem : drawItems)
 	{
 		if (!drawItem.mesh) continue;
 
-		ObjectConstants constants{};
-		DirectX::XMStoreFloat4x4(
-			&constants.modelViewProjection,
-			ToDirectX(Transpose(
-				drawItem.localToWorld *
-				renderView.view *
-				renderView.projection)));
-
-		context->UpdateSubresource(
-			objectConstantBuffer_.Get(),
-			0,
-			nullptr,
-			&constants,
-			0,
-			0);
+		ObjectConstants constants = {};
+		constants.model = drawItem.localToWorld;
+		objectCB_.Update(context, constants);
 
 		drawItem.mesh->Bind(context);
 		context->DrawIndexed(
@@ -138,5 +98,5 @@ void SimpleMeshRenderer::Draw(
 
 bool SimpleMeshRenderer::IsInitialized() const noexcept
 {
-	return drawSetup_.IsInitialized() && objectConstantBuffer_ != nullptr;
+	return drawSetup_.IsInitialized() && objectCB_.IsInitialized();
 }

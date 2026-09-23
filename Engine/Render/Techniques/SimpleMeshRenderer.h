@@ -9,6 +9,9 @@
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 
+#include "Engine/Render/Buffers/ConstantBuffer.h"
+#include "Engine/Render/Pipeline/Resource/RenderConstants.h"
+
 // Draws frame-local static-mesh items through the vertex-color draw setup.
 class SimpleMeshRenderer final
 {
@@ -36,5 +39,5 @@ public:
 
 private:
 	DrawSetup drawSetup_;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> objectConstantBuffer_;
+	ConstantBuffer<ObjectConstants> objectCB_;
 };

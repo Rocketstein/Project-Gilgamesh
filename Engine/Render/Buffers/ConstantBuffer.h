@@ -23,10 +23,10 @@ public:
     ConstantBuffer& operator=(ConstantBuffer&&) noexcept = default;
 
     // Create a CPU-writable D3D11 constant buffer.
-    void Create(ID3D11Device* device)
+    bool Create(ID3D11Device* device)
     {
-        UINT16 byteWidth = static_cast<UINT>(sizeof(T));
-        if (!device || byteWidth == 0) return;
+        UINT byteWidth = static_cast<UINT>(sizeof(T));
+        if (!device || byteWidth == 0) return false;
 
         D3D11_BUFFER_DESC desc = {};
         desc.ByteWidth = byteWidth;
@@ -36,12 +36,15 @@ public:
 
         device->CreateBuffer(&desc, nullptr, &buffer_);
         buffer_->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ConstantBuffer")), "ConstantBuffer");
+        initialized_ = true;
+
+        return true;
     }
 
     // Replace the current constant-buffer contents.
-    void Update(ID3D11DeviceContext* context, const T& value)
+    void Update(ID3D11DeviceContext* context, const T& value) const
     {
-        if (!context || !data) return;
+        if (!context || !buffer_) return;
 
         D3D11_MAPPED_SUBRESOURCE mData = {};
         context->Map(buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mData);
@@ -49,10 +52,13 @@ public:
         context->Unmap(buffer_.Get(), NULL);
     }
 
-
     [[nodiscard]]
     ID3D11Buffer* GetBuffer() const noexcept { return buffer_.Get(); }
 
+    [[nodiscard]]
+    bool IsInitialized() const noexcept { return initialized_; }
+
 private:
     Microsoft::WRL::ComPtr<ID3D11Buffer> buffer_;
+    bool initialized_ = false;
 };
