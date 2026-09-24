@@ -297,9 +297,15 @@ view, gathers those items, and invokes the renderer-owned technique.
 `EditorViewportPanel` measures and presents the viewport texture but does not
 own scene rendering.
 
+`RenderGraph` is a separate CPU-side declaration and compilation model. Passes
+declare texture attachments and shader reads; `Compile()` validates those
+declarations and derives a deterministic dependency order. Repeated writes to
+one texture retain declaration order, while independent passes may be reordered.
+The graph does not yet allocate textures, bind views, or execute pass callbacks.
+
 This is intentional prototype code, not a general scene renderer. There is no
-render graph, asset manager, material system, world renderer, or API-independent
-RHI.
+GPU-executed render graph, asset manager, material system, world renderer, or
+API-independent RHI.
 
 ## Current boundaries and non-features
 

@@ -355,9 +355,11 @@ or outputs with meaningful ordering. Likely generic triggers include:
 - Post-processing
 - Multiple views
 
-Start with explicit orchestration in the renderer. A registry, dependency
-solver, or render graph is unnecessary while the pass sequence is short and
-static.
+The CPU declaration and dependency-compilation portion of `RenderGraph` now
+exists. It validates texture access and computes pass order, but does not yet
+allocate GPU resources or execute passes. The next orchestration work is to
+realize those resources and execute the compiled order without mixing it with
+ECS extraction or draw-command design.
 
 ## Responsibility guide
 

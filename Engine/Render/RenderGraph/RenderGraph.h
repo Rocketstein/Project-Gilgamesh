@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -48,6 +49,23 @@ public:
         SetupFunction&& setup,
         ExecuteFunction&& execute);
 
+    // Validates declarations and builds a deterministic CPU pass order.
+    [[nodiscard]]
+    bool Compile();
+
+    [[nodiscard]]
+    bool IsCompiled() const noexcept
+    {
+        return isCompiled_;
+    }
+
+    // Indices refer to passes in their original AddPass registration order.
+    [[nodiscard]]
+    std::span<const std::size_t> GetCompiledPassOrder() const noexcept
+    {
+        return compiledPassOrder_;
+    }
+
     // Checks ownership, generation, and resource index for a texture handle.
     [[nodiscard]]
     bool IsValid(RenderGraphTextureHandle handle) const noexcept;
@@ -82,10 +100,12 @@ private:
 
     std::vector<TextureRecord> textures_;
     std::vector<PassDeclaration> passes_;
+    std::vector<std::size_t> compiledPassOrder_;
 
     std::uint64_t ownerId_ = 0;
     std::uint64_t generation_ = 1;
     bool isAddingPass_ = false;
+    bool isCompiled_ = false;
 };
 
 template<class SetupFunction, class ExecuteFunction>
@@ -141,4 +161,8 @@ void RenderGraph::AddPass(
     isAddingPass_ = false;
     pass.textureAccesses = std::move(builder.textureAccesses_);
     passes_.push_back(std::move(pass));
+
+    // A newly declared pass may change every dependency in the old plan.
+    compiledPassOrder_.clear();
+    isCompiled_ = false;
 }
