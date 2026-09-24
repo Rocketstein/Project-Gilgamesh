@@ -823,6 +823,66 @@ GILGAMESH_TEST(
 		"read-only depth access must not clear its texture");
 }
 
+// One logical texture may require several native view types across passes.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"CompileAcceptsTexturesRequiringMultipleViewTypes")
+{
+	RenderGraph graph;
+	const auto color = graph.CreateTexture(
+		"SceneColor",
+		MakeTextureDescription());
+	const auto depth = graph.CreateTexture(
+		"SceneDepth",
+		MakeTextureDescription(DXGI_FORMAT_D32_FLOAT));
+
+	graph.AddPass(
+		"InitializeAttachments",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				color,
+				RenderGraphLoadOp::Clear);
+			builder.SetDepthTarget(
+				depth,
+				RenderGraphDepthAccess::ReadWrite,
+				RenderGraphLoadOp::Clear);
+		},
+		[](ID3D11DeviceContext&) {});
+
+	graph.AddPass(
+		"ReadOnlyDepth",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetDepthTarget(
+				depth,
+				RenderGraphDepthAccess::ReadOnly,
+				RenderGraphLoadOp::Load);
+		},
+		[](ID3D11DeviceContext&) {});
+
+	graph.AddPass(
+		"SampleAttachments",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.ReadVertexTexture(color, 0);
+			builder.ReadPixelTexture(color, 0);
+			builder.ReadPixelTexture(depth, 1);
+		},
+		[](ID3D11DeviceContext&) {});
+
+	const bool compiled = graph.Compile();
+	const auto order = graph.GetCompiledPassOrder();
+	GILGAMESH_CHECK_MESSAGE(
+		compiled && graph.IsCompiled(),
+		"compatible RTV, writable/read-only DSV, and SRV requirements must compile");
+	GILGAMESH_CHECK_MESSAGE(
+		order.size() == 3 && order[0] == 0
+			&& order[1] == 1 && order[2] == 2,
+		"view requirements must not change the dependency order");
+}
+
 // Invalid enum values must not silently turn into another access mode.
 GILGAMESH_TEST(
 	"Engine.Render.RenderGraph",

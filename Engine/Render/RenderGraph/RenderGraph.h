@@ -83,11 +83,23 @@ public:
     }
 
 private:
+    // Describes the native texture views required by compiled pass bindings.
+    enum TextureViewRequirement : std::uint8_t
+    {
+        None                 = 0,
+        RenderTarget         = 1 << 0,
+        WritableDepthStencil = 1 << 1,
+        ReadOnlyDepthStencil = 1 << 2,
+        ShaderResource       = 1 << 3
+    };
+
     struct TextureRecord
     {
         std::string name;
         RenderGraphTextureDesc description;
         std::optional<ImportedRenderGraphTexture> importedTexture;
+        std::uint8_t compiledViewRequirements =
+            TextureViewRequirement::None;
     };
 
     // Owns everything declared by one AddPass call after setup returns.
@@ -113,10 +125,13 @@ private:
     [[nodiscard]]
     bool ValidateResourceDeclarations() const;
 
-    // Validates pass bindings and normalizes them into per-texture uses.
+    // Validates pass bindings and records their derived texture state.
     [[nodiscard]]
     bool ValidateBindingDeclarations(
-        TextureUsesByTexture& usesByTexture) const;
+        TextureUsesByTexture& usesByTexture);
+
+    // Discards every result derived from the current declarations.
+    void InvalidateCompiledState() noexcept;
 
     std::vector<TextureRecord> textures_;
     std::vector<PassDeclaration> passes_;
@@ -183,6 +198,5 @@ void RenderGraph::AddPass(
     passes_.push_back(std::move(pass));
 
     // A newly declared pass may change every dependency in the old plan.
-    compiledPassOrder_.clear();
-    isCompiled_ = false;
+    InvalidateCompiledState();
 }

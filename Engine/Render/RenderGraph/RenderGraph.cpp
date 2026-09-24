@@ -86,8 +86,7 @@ void RenderGraph::Reset() noexcept
 	}
 
 	// Destroy callbacks before resources so captured frame data is released now.
-	compiledPassOrder_.clear();
-	isCompiled_ = false;
+	InvalidateCompiledState();
 	passes_.clear();
 	textures_.clear();
 
@@ -98,6 +97,16 @@ void RenderGraph::Reset() noexcept
 		ownerId_ = AcquireRenderGraphOwnerId();
 		generation_ = 1;
 	}
+}
+
+void RenderGraph::InvalidateCompiledState() noexcept
+{
+	compiledPassOrder_.clear();
+	for (TextureRecord& texture : textures_)
+	{
+		texture.compiledViewRequirements = TextureViewRequirement::None;
+	}
+	isCompiled_ = false;
 }
 
 bool RenderGraph::ValidateResourceDeclarations() const
@@ -149,7 +158,7 @@ bool RenderGraph::ValidateResourceDeclarations() const
 }
 
 bool RenderGraph::ValidateBindingDeclarations(
-	TextureUsesByTexture& usesByTexture) const
+	TextureUsesByTexture& usesByTexture)
 {
 	using AccessType = GraphPassBuilder::TextureAccess::Type;
 	constexpr std::uint8_t Read = 1 << 0;
@@ -250,6 +259,8 @@ bool RenderGraph::ValidateBindingDeclarations(
 						texture.name));
 				}
 				colorSlots[access.slot] = true;
+				textures_[textureIndex].compiledViewRequirements |=
+					TextureViewRequirement::RenderTarget;
 				flags = Attachment | Write;
 				if (access.loadOp == RenderGraphLoadOp::Load)
 				{
@@ -301,6 +312,16 @@ bool RenderGraph::ValidateBindingDeclarations(
 						texture.name));
 				}
 				hasDepthTarget = true;
+				if (access.depthAccess == RenderGraphDepthAccess::ReadOnly)
+				{
+					textures_[textureIndex].compiledViewRequirements |=
+						TextureViewRequirement::ReadOnlyDepthStencil;
+				}
+				else
+				{
+					textures_[textureIndex].compiledViewRequirements |=
+						TextureViewRequirement::WritableDepthStencil;
+				}
 				flags = Attachment | Read;
 				if (access.depthAccess == RenderGraphDepthAccess::ReadWrite)
 				{
@@ -341,6 +362,8 @@ bool RenderGraph::ValidateBindingDeclarations(
 						texture.name));
 				}
 				slots[access.slot] = true;
+				textures_[textureIndex].compiledViewRequirements |=
+					TextureViewRequirement::ShaderResource;
 				flags |= Read;
 				break;
 			}
@@ -366,14 +389,16 @@ bool RenderGraph::ValidateBindingDeclarations(
 
 bool RenderGraph::Compile()
 {
+	using std::vector;
+	using std::size_t;
+
 	if (isAddingPass_)
 	{
 		return LogCompileFailure("Compile cannot run inside pass setup");
 	}
 
 	// A failed recompilation must never leave a stale executable order visible.
-	compiledPassOrder_.clear();
-	isCompiled_ = false;
+	InvalidateCompiledState();
 
 	if (!ValidateResourceDeclarations())
 	{
@@ -383,14 +408,20 @@ bool RenderGraph::Compile()
 	TextureUsesByTexture usesByTexture;
 	if (!ValidateBindingDeclarations(usesByTexture))
 	{
+		InvalidateCompiledState();
 		return false;
 	}
-
-	std::vector<std::vector<std::size_t>> outgoing(passes_.size());
-	std::vector<std::size_t> incomingCount(passes_.size(), 0);
-	const auto addDependency = [&](std::size_t producer, std::size_t consumer)
+	const auto invalidateAndLogFailure = [this](std::string_view message)
 	{
-		std::vector<std::size_t>& edges = outgoing[producer];
+		InvalidateCompiledState();
+		return LogCompileFailure(message);
+	};
+
+	vector<vector<size_t>> outgoing(passes_.size());
+	vector<size_t> incomingCount(passes_.size(), 0);
+	const auto addDependency = [&](size_t producer, size_t consumer)
+	{
+		vector<size_t>& edges = outgoing[producer];
 		if (std::find(edges.begin(), edges.end(), consumer) == edges.end())
 		{
 			edges.push_back(consumer);
@@ -399,12 +430,12 @@ bool RenderGraph::Compile()
 	};
 
 	// Writers preserve declaration order; pure readers observe one version.
-	for (std::size_t textureIndex = 0; textureIndex < usesByTexture.size(); ++textureIndex)
+	for (size_t textureIndex = 0; textureIndex < usesByTexture.size(); ++textureIndex)
 	{
-		const std::vector<TextureUse>& uses = usesByTexture[textureIndex];
+		const vector<TextureUse>& uses = usesByTexture[textureIndex];
 		const TextureRecord& texture = textures_[textureIndex];
 		const bool isImported = texture.importedTexture.has_value();
-		std::vector<std::size_t> writers;
+		vector<size_t> writers;
 		for (const TextureUse& use : uses)
 		{
 			if (use.writes)
@@ -415,12 +446,12 @@ bool RenderGraph::Compile()
 
 		if (writers.empty() && !uses.empty() && !isImported)
 		{
-			return LogCompileFailure(std::format(
+			return invalidateAndLogFailure(std::format(
 				"transient texture '{}' is read but never written",
 				texture.name));
 		}
 
-		for (std::size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex)
+		for (size_t writerIndex = 1; writerIndex < writers.size(); ++writerIndex)
 		{
 			addDependency(writers[writerIndex - 1], writers[writerIndex]);
 		}
@@ -435,7 +466,7 @@ bool RenderGraph::Compile()
 				// Load on the first transient writer has no prior contents.
 				if (use.reads && nextWriter == writers.begin() && !isImported)
 				{
-					return LogCompileFailure(std::format(
+					return invalidateAndLogFailure(std::format(
 						"pass '{}' loads transient texture '{}' before any write",
 						passes_[use.passIndex].name,
 						texture.name));
@@ -471,10 +502,10 @@ bool RenderGraph::Compile()
 
 	// Stable Kahn sort uses registration order only to break independent ties.
 	std::priority_queue<
-		std::size_t,
-		std::vector<std::size_t>,
-		std::greater<std::size_t>> ready;
-	for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex)
+		size_t,
+		vector<size_t>,
+		std::greater<size_t>> ready;
+	for (size_t passIndex = 0; passIndex < passes_.size(); ++passIndex)
 	{
 		if (incomingCount[passIndex] == 0)
 		{
@@ -482,15 +513,15 @@ bool RenderGraph::Compile()
 		}
 	}
 
-	std::vector<std::size_t> order;
+	vector<size_t> order;
 	order.reserve(passes_.size());
 	while (!ready.empty())
 	{
-		const std::size_t passIndex = ready.top();
+		const size_t passIndex = ready.top();
 		ready.pop();
 		order.push_back(passIndex);
 
-		for (const std::size_t dependent : outgoing[passIndex])
+		for (const size_t dependent : outgoing[passIndex])
 		{
 			if (--incomingCount[dependent] == 0)
 			{
@@ -501,11 +532,11 @@ bool RenderGraph::Compile()
 
 	if (order.size() != passes_.size())
 	{
-		for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex)
+		for (size_t passIndex = 0; passIndex < passes_.size(); ++passIndex)
 		{
 			if (incomingCount[passIndex] != 0)
 			{
-				return LogCompileFailure(std::format(
+				return invalidateAndLogFailure(std::format(
 					"cyclic dependencies leave pass '{}' blocked",
 					passes_[passIndex].name));
 			}
@@ -539,8 +570,7 @@ RenderGraphTextureHandle RenderGraph::CreateTexture(
 		description,
 		std::nullopt
 	});
-	compiledPassOrder_.clear();
-	isCompiled_ = false;
+	InvalidateCompiledState();
 
 	return RenderGraphTextureHandle(index, generation_, ownerId_);
 }
@@ -567,8 +597,7 @@ RenderGraphTextureHandle RenderGraph::ImportTexture(
 		description,
 		importedTexture
 	});
-	compiledPassOrder_.clear();
-	isCompiled_ = false;
+	InvalidateCompiledState();
 
 	return RenderGraphTextureHandle(index, generation_, ownerId_);
 }
