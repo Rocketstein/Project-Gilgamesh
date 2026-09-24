@@ -189,9 +189,11 @@ Rendering technique
 One pass may invoke several techniques, and one draw setup may be reusable by
 several techniques or passes. `RenderGraph` now provides this pass boundary: it
 owns dependency ordering and declared texture binding, while execute callbacks
-perform the draw-local work. The existing editor viewport remains a candidate
-for adoption; additional objectives such as an editor-selection ID target,
-shadows, or a depth-only prepass will exercise the dependency model further.
+perform the draw-local work. The editor viewport is the first concrete adopter.
+`EditorProgram` imports the viewport-owned native color and depth resources,
+declares an `EditorScene` pass, and invokes `SimpleMeshRenderer` from that
+pass's execute callback. The viewport does not depend on the graph; the editor
+program composes the two systems.
 
 ## Current baseline
 
@@ -209,15 +211,21 @@ implementation establishes these working pieces:
   model-view-projection constant buffer, and indexed draw loop
 - A `RenderGraph` that compiles texture dependencies, realizes graph-owned GPU
   resources, and executes declared pass state in compiled order
+- Per-frame import of the editor viewport's existing color and depth resources
+  into an `EditorScene` graph pass
 - An editor-only `EditorPreviewScene` that owns temporary mesh handles and
   instance transforms
 
 `EditorProgram` owns the editor viewport and preview scene. It creates the
 `RenderView`, asks the preview scene to gather draw items, and invokes the
-renderer-owned technique. Cube creation, handle lifetime, and instance state
-stay in `EditorPreviewScene`; mesh upload, draw state, constants, binding,
-and `DrawIndexed()` stay on the renderer side. This is deliberately not yet a
-general scene graph or ECS extraction layer.
+renderer-owned technique from the `EditorScene` pass callback. The graph binds
+and clears the imported viewport attachments before that callback. Cube
+creation, handle lifetime, and instance state stay in `EditorPreviewScene`;
+mesh upload, draw state, constants, binding, and `DrawIndexed()` stay on the
+renderer side. The swap chain and ImGui remain outside the graph;
+`Renderer::BindOutput()` restores the presentation target before the editor
+submits its UI draw data. This is deliberately not yet a general scene graph or
+ECS extraction layer.
 
 ## Milestones
 
@@ -365,9 +373,12 @@ the relevant outputs and shader-resource slots at the pass boundary.
 
 The callback deliberately owns `DrawSetup`, constant-buffer, mesh, and draw
 submission work. The graph does not inspect techniques, ECS state, or future
-render commands. The next orchestration work is to migrate concrete rendering
-objectives onto this boundary and let real multi-pass use reveal any missing
-subresource, viewport, or command-submission requirements.
+render commands. `EditorProgram` now exercises this boundary by importing the
+existing viewport color and depth resources and running `SimpleMeshRenderer`
+inside an `EditorScene` pass. Swap-chain presentation and ImGui composition
+remain deliberately outside the graph. The next orchestration work should come
+from a real second objective; editor selection, shadows, or a depth-only pass
+can reveal missing subresource, viewport, or command-submission requirements.
 
 ## Responsibility guide
 
