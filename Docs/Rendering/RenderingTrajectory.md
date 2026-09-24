@@ -355,11 +355,11 @@ or outputs with meaningful ordering. Likely generic triggers include:
 - Post-processing
 - Multiple views
 
-The CPU declaration and dependency-compilation portion of `RenderGraph` now
-exists. It validates texture access and computes pass order, but does not yet
-allocate GPU resources or execute passes. The next orchestration work is to
-realize those resources and execute the compiled order without mixing it with
-ECS extraction or draw-command design.
+The declaration, dependency-compilation, and GPU resource-realization portions
+of `RenderGraph` now exist. It validates texture access, computes pass order,
+and creates the graph-owned texture views required by those declarations. The
+next orchestration work is to bind those views and execute the compiled order
+without mixing it with ECS extraction or draw-command design.
 
 ## Responsibility guide
 
@@ -380,7 +380,6 @@ Use the following rule when deciding where new state belongs:
 The following remain deferred until a measured or feature-driven need appears:
 
 - Multiple graphics backends or a generic RHI
-- Render graph and automatic resource-dependency scheduling
 - A universal material or pass-definition language
 - General asset import, streaming, and hot reload
 - Draw-setup descriptor hashing and caching

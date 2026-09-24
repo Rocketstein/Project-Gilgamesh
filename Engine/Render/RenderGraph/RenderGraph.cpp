@@ -70,6 +70,100 @@ namespace
 		}
 	}
 
+	// Resolves a logical depth format to its typeless resource format.
+	DXGI_FORMAT GetDepthResourceFormat(DXGI_FORMAT format) noexcept
+	{
+		switch (format)
+		{
+		case DXGI_FORMAT_D16_UNORM:
+		case DXGI_FORMAT_R16_TYPELESS:
+			return DXGI_FORMAT_R16_TYPELESS;
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+		case DXGI_FORMAT_R24G8_TYPELESS:
+			return DXGI_FORMAT_R24G8_TYPELESS;
+		case DXGI_FORMAT_D32_FLOAT:
+		case DXGI_FORMAT_R32_TYPELESS:
+			return DXGI_FORMAT_R32_TYPELESS;
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+		case DXGI_FORMAT_R32G8X24_TYPELESS:
+			return DXGI_FORMAT_R32G8X24_TYPELESS;
+		default:
+			return DXGI_FORMAT_UNKNOWN;
+		}
+	}
+
+	// Resolves a logical depth format to a writable or read-only DSV format.
+	DXGI_FORMAT GetDepthStencilViewFormat(DXGI_FORMAT format) noexcept
+	{
+		switch (format)
+		{
+		case DXGI_FORMAT_D16_UNORM:
+		case DXGI_FORMAT_R16_TYPELESS:
+			return DXGI_FORMAT_D16_UNORM;
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+		case DXGI_FORMAT_R24G8_TYPELESS:
+			return DXGI_FORMAT_D24_UNORM_S8_UINT;
+		case DXGI_FORMAT_D32_FLOAT:
+		case DXGI_FORMAT_R32_TYPELESS:
+			return DXGI_FORMAT_D32_FLOAT;
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+		case DXGI_FORMAT_R32G8X24_TYPELESS:
+			return DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+		default:
+			return DXGI_FORMAT_UNKNOWN;
+		}
+	}
+
+	// Resolves a logical depth format to its shader-readable view format.
+	DXGI_FORMAT GetDepthShaderResourceViewFormat(DXGI_FORMAT format) noexcept
+	{
+		switch (format)
+		{
+		case DXGI_FORMAT_D16_UNORM:
+		case DXGI_FORMAT_R16_TYPELESS:
+			return DXGI_FORMAT_R16_UNORM;
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+		case DXGI_FORMAT_R24G8_TYPELESS:
+			return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+		case DXGI_FORMAT_D32_FLOAT:
+		case DXGI_FORMAT_R32_TYPELESS:
+			return DXGI_FORMAT_R32_FLOAT;
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+		case DXGI_FORMAT_R32G8X24_TYPELESS:
+			return DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
+		default:
+			return DXGI_FORMAT_UNKNOWN;
+		}
+	}
+
+	// Reports whether the depth family also contains a stencil component.
+	bool HasStencilComponent(DXGI_FORMAT format) noexcept
+	{
+		return format == DXGI_FORMAT_D24_UNORM_S8_UINT
+			|| format == DXGI_FORMAT_R24G8_TYPELESS
+			|| format == DXGI_FORMAT_D32_FLOAT_S8X24_UINT
+			|| format == DXGI_FORMAT_R32G8X24_TYPELESS;
+	}
+
+	// Confirms that a supplied native view refers to the imported texture.
+	bool IsViewOfTexture(
+		ID3D11View* view,
+		ID3D11Texture2D* texture) noexcept
+	{
+		if (!view || !texture)
+		{
+			return false;
+		}
+
+		Microsoft::WRL::ComPtr<ID3D11Resource> viewResource;
+		Microsoft::WRL::ComPtr<ID3D11Resource> textureResource;
+		view->GetResource(viewResource.GetAddressOf());
+		const HRESULT result = texture->QueryInterface(
+			IID_PPV_ARGS(textureResource.GetAddressOf()));
+		return SUCCEEDED(result)
+			&& viewResource.Get() == textureResource.Get();
+	}
+
 } // Anonymous namespace
 
 RenderGraph::RenderGraph() noexcept
@@ -86,8 +180,8 @@ void RenderGraph::Reset() noexcept
 	}
 
 	// Destroy callbacks before resources so captured frame data is released now.
-	InvalidateCompiledState();
 	passes_.clear();
+	InvalidateCompiledState();
 	textures_.clear();
 
 	// A fresh generation prevents reused indices from reviving stale handles.
@@ -102,11 +196,24 @@ void RenderGraph::Reset() noexcept
 void RenderGraph::InvalidateCompiledState() noexcept
 {
 	compiledPassOrder_.clear();
+	ReleaseResources();
 	for (TextureRecord& texture : textures_)
 	{
 		texture.compiledViewRequirements = TextureViewRequirement::None;
 	}
 	isCompiled_ = false;
+}
+
+void RenderGraph::ReleaseResources() noexcept
+{
+	for (TextureRecord& texture : textures_)
+	{
+		texture.ownedSRV.Reset();
+		texture.ownedReadOnlyDSV.Reset();
+		texture.ownedWritableDSV.Reset();
+		texture.ownedRTV.Reset();
+		texture.ownedTexture.Reset();
+	}
 }
 
 bool RenderGraph::ValidateResourceDeclarations() const
@@ -126,9 +233,8 @@ bool RenderGraph::ValidateResourceDeclarations() const
 		if (description.extent.width == 0
 			|| description.extent.height == 0
 			|| description.format == DXGI_FORMAT_UNKNOWN
-			|| description.mipLevels == 0
-			|| description.sampleCount == 0
-			|| (description.sampleCount > 1 && description.mipLevels != 1))
+			|| description.mipLevels != 1
+			|| description.sampleCount == 0)
 		{
 			return LogCompileFailure(std::format(
 				"texture '{}' has an invalid description",
@@ -244,7 +350,7 @@ bool RenderGraph::ValidateBindingDeclarations(
 						pass.name,
 						access.slot));
 				}
-				if (IsTypedDepthFormat(description.format))
+				if (IsDepthCompatibleFormat(description.format))
 				{
 					return LogCompileFailure(std::format(
 						"pass '{}' uses depth texture '{}' as a color target",
@@ -304,7 +410,10 @@ bool RenderGraph::ValidateBindingDeclarations(
 						pass.name,
 						texture.name));
 				}
-				if (imported && !imported->depthStencilView)
+				if (imported
+					&& !(access.depthAccess == RenderGraphDepthAccess::ReadOnly
+						? imported->readOnlyDepthStencilView
+						: imported->writableDepthStencilView))
 				{
 					return LogCompileFailure(std::format(
 						"pass '{}' uses imported texture '{}' without a depth-stencil view",
@@ -387,7 +496,7 @@ bool RenderGraph::ValidateBindingDeclarations(
 	return true;
 }
 
-bool RenderGraph::Compile()
+bool RenderGraph::Compile(ID3D11Device* device)
 {
 	using std::vector;
 	using std::size_t;
@@ -543,9 +652,394 @@ bool RenderGraph::Compile()
 		}
 	}
 
+	// Create GPU resources after compilation.
+	if (!CreateResources(device))
+	{
+		InvalidateCompiledState();
+		return false;
+	}
+
 	// Publish the plan only after all validation and sorting succeeds.
 	compiledPassOrder_ = std::move(order);
 	isCompiled_ = true;
+
+	return true;
+}
+
+bool RenderGraph::CreateResources(ID3D11Device* device)
+{
+	if (!device)
+	{
+		return LogCompileFailure(
+			"GPU resource creation requires a D3D11 device");
+	}
+
+	// Rebuilding must not retain views whose requirements have changed.
+	ReleaseResources();
+	const auto failCreation = [this](
+		const TextureRecord& texture,
+		std::string_view objectName,
+		HRESULT result)
+	{
+		ReleaseResources();
+		return LogCompileFailure(std::format(
+			"failed to create {} for texture '{}' (HRESULT=0x{:08X})",
+			objectName,
+			texture.name,
+			static_cast<std::uint32_t>(result)));
+	};
+	const auto failTexture = [this](
+		const TextureRecord& texture,
+		std::string_view reason)
+	{
+		ReleaseResources();
+		return LogCompileFailure(std::format(
+			"texture '{}' {}",
+			texture.name,
+			reason));
+	};
+
+	for (TextureRecord& texture : textures_)
+	{
+		if (texture.compiledViewRequirements == TextureViewRequirement::None)
+		{
+			continue;
+		}
+
+		const auto hasRequirement = [&texture](TextureViewRequirement requirement)
+		{
+			return (texture.compiledViewRequirements & requirement) != 0;
+		};
+		const bool requiresRenderTarget =
+			hasRequirement(TextureViewRequirement::RenderTarget);
+		const bool requiresWritableDepth =
+			hasRequirement(TextureViewRequirement::WritableDepthStencil);
+		const bool requiresReadOnlyDepth =
+			hasRequirement(TextureViewRequirement::ReadOnlyDepthStencil);
+		const bool requiresDepth =
+			requiresWritableDepth || requiresReadOnlyDepth;
+		const bool requiresShaderResource =
+			hasRequirement(TextureViewRequirement::ShaderResource);
+
+		const RenderGraphTextureDesc& description = texture.description;
+		const DXGI_FORMAT depthResourceFormat =
+			GetDepthResourceFormat(description.format);
+		const bool isDepthFormat =
+			depthResourceFormat != DXGI_FORMAT_UNKNOWN;
+		if (requiresDepth && !isDepthFormat)
+		{
+			return failTexture(
+				texture,
+				"does not have a depth-compatible format");
+		}
+		if (requiresRenderTarget && isDepthFormat)
+		{
+			return failTexture(
+				texture,
+				"cannot use a depth format as a render target");
+		}
+
+		UINT bindFlags = 0;
+		if (requiresRenderTarget)
+		{
+			bindFlags |= D3D11_BIND_RENDER_TARGET;
+		}
+		if (requiresDepth)
+		{
+			bindFlags |= D3D11_BIND_DEPTH_STENCIL;
+		}
+		if (requiresShaderResource)
+		{
+			bindFlags |= D3D11_BIND_SHADER_RESOURCE;
+		}
+
+		// Imported resources are not created here, but their declarations must be truthful.
+		if (texture.importedTexture)
+		{
+			const ImportedRenderGraphTexture& imported =
+				*texture.importedTexture;
+			if (!imported.texture)
+			{
+				return failTexture(texture, "does not provide a native texture");
+			}
+
+			Microsoft::WRL::ComPtr<ID3D11Device> importedDevice;
+			imported.texture->GetDevice(importedDevice.GetAddressOf());
+			if (importedDevice.Get() != device)
+			{
+				return failTexture(
+					texture,
+					"belongs to a different D3D11 device");
+			}
+
+			D3D11_TEXTURE2D_DESC importedDescription{};
+			imported.texture->GetDesc(&importedDescription);
+			const bool formatMatches = isDepthFormat
+				? GetDepthResourceFormat(importedDescription.Format)
+					== depthResourceFormat
+				: importedDescription.Format == description.format;
+			if (importedDescription.Width != description.extent.width
+				|| importedDescription.Height != description.extent.height
+				|| importedDescription.MipLevels != description.mipLevels
+				|| importedDescription.ArraySize != 1
+				|| importedDescription.SampleDesc.Count != description.sampleCount
+				|| importedDescription.SampleDesc.Quality != 0
+				|| !formatMatches)
+			{
+				return failTexture(
+					texture,
+					"does not match its declared description");
+			}
+			if ((importedDescription.BindFlags & bindFlags) != bindFlags)
+			{
+				return failTexture(
+					texture,
+					"does not support all declared bindings");
+			}
+
+			if (requiresRenderTarget)
+			{
+				D3D11_RENDER_TARGET_VIEW_DESC viewDescription{};
+				if (!IsViewOfTexture(imported.renderTargetView, imported.texture))
+				{
+					return failTexture(
+						texture,
+						"has a render-target view for another resource");
+				}
+				imported.renderTargetView->GetDesc(&viewDescription);
+				if (viewDescription.Format != description.format)
+				{
+					return failTexture(
+						texture,
+						"has an incompatible render-target view format");
+				}
+			}
+
+			const DXGI_FORMAT depthViewFormat =
+				GetDepthStencilViewFormat(description.format);
+			if (requiresWritableDepth)
+			{
+				D3D11_DEPTH_STENCIL_VIEW_DESC viewDescription{};
+				if (!IsViewOfTexture(
+					imported.writableDepthStencilView,
+					imported.texture))
+				{
+					return failTexture(
+						texture,
+						"has a writable depth view for another resource");
+				}
+				imported.writableDepthStencilView->GetDesc(&viewDescription);
+				if (viewDescription.Format != depthViewFormat
+					|| viewDescription.Flags != 0)
+				{
+					return failTexture(
+						texture,
+						"does not provide a compatible writable depth view");
+				}
+			}
+
+			if (requiresReadOnlyDepth)
+			{
+				D3D11_DEPTH_STENCIL_VIEW_DESC viewDescription{};
+				if (!IsViewOfTexture(
+					imported.readOnlyDepthStencilView,
+					imported.texture))
+				{
+					return failTexture(
+						texture,
+						"has a read-only depth view for another resource");
+				}
+				imported.readOnlyDepthStencilView->GetDesc(&viewDescription);
+				const UINT requiredFlags = HasStencilComponent(description.format)
+					? D3D11_DSV_READ_ONLY_DEPTH | D3D11_DSV_READ_ONLY_STENCIL
+					: D3D11_DSV_READ_ONLY_DEPTH;
+				if (viewDescription.Format != depthViewFormat
+					|| (viewDescription.Flags & requiredFlags) != requiredFlags)
+				{
+					return failTexture(
+						texture,
+						"does not provide a compatible read-only depth view");
+				}
+			}
+
+			if (requiresShaderResource)
+			{
+				D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
+				if (!IsViewOfTexture(imported.shaderResourceView, imported.texture))
+				{
+					return failTexture(
+						texture,
+						"has a shader-resource view for another resource");
+				}
+				imported.shaderResourceView->GetDesc(&viewDescription);
+				const DXGI_FORMAT shaderViewFormat = isDepthFormat
+					? GetDepthShaderResourceViewFormat(description.format)
+					: description.format;
+				if (viewDescription.Format != shaderViewFormat)
+				{
+					return failTexture(
+						texture,
+						"has an incompatible shader-resource view format");
+				}
+			}
+
+			continue;
+		}
+
+		D3D11_TEXTURE2D_DESC nativeDescription{};
+		nativeDescription.Width = description.extent.width;
+		nativeDescription.Height = description.extent.height;
+		nativeDescription.MipLevels = description.mipLevels;
+		nativeDescription.ArraySize = 1;
+		nativeDescription.Format = isDepthFormat
+			? depthResourceFormat
+			: description.format;
+		nativeDescription.SampleDesc.Count = description.sampleCount;
+		nativeDescription.SampleDesc.Quality = 0;
+		nativeDescription.Usage = D3D11_USAGE_DEFAULT;
+		nativeDescription.BindFlags = bindFlags;
+		nativeDescription.CPUAccessFlags = 0;
+		nativeDescription.MiscFlags = 0;
+
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> nativeTexture;
+		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView;
+		Microsoft::WRL::ComPtr<ID3D11DepthStencilView> writableDepthView;
+		Microsoft::WRL::ComPtr<ID3D11DepthStencilView> readOnlyDepthView;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shaderResourceView;
+
+		HRESULT result = device->CreateTexture2D(
+			&nativeDescription,
+			nullptr,
+			nativeTexture.GetAddressOf());
+		if (FAILED(result))
+		{
+			return failCreation(texture, "texture", result);
+		}
+
+		if (requiresRenderTarget)
+		{
+			D3D11_RENDER_TARGET_VIEW_DESC viewDescription{};
+			viewDescription.Format = description.format;
+			if (description.sampleCount > 1)
+			{
+				viewDescription.ViewDimension =
+					D3D11_RTV_DIMENSION_TEXTURE2DMS;
+			}
+			else
+			{
+				viewDescription.ViewDimension =
+					D3D11_RTV_DIMENSION_TEXTURE2D;
+				viewDescription.Texture2D.MipSlice = 0;
+			}
+
+			result = device->CreateRenderTargetView(
+				nativeTexture.Get(),
+				&viewDescription,
+				renderTargetView.GetAddressOf());
+			if (FAILED(result))
+			{
+				return failCreation(texture, "render-target view", result);
+			}
+		}
+
+		if (requiresDepth)
+		{
+			D3D11_DEPTH_STENCIL_VIEW_DESC viewDescription{};
+			viewDescription.Format =
+				GetDepthStencilViewFormat(description.format);
+			if (description.sampleCount > 1)
+			{
+				viewDescription.ViewDimension =
+					D3D11_DSV_DIMENSION_TEXTURE2DMS;
+			}
+			else
+			{
+				viewDescription.ViewDimension =
+					D3D11_DSV_DIMENSION_TEXTURE2D;
+				viewDescription.Texture2D.MipSlice = 0;
+			}
+
+			if (requiresWritableDepth)
+			{
+				result = device->CreateDepthStencilView(
+					nativeTexture.Get(),
+					&viewDescription,
+					writableDepthView.GetAddressOf());
+				if (FAILED(result))
+				{
+					return failCreation(
+						texture,
+						"writable depth-stencil view",
+						result);
+				}
+			}
+
+			if (requiresReadOnlyDepth)
+			{
+				viewDescription.Flags = D3D11_DSV_READ_ONLY_DEPTH;
+				if (HasStencilComponent(description.format))
+				{
+					viewDescription.Flags |= D3D11_DSV_READ_ONLY_STENCIL;
+				}
+				result = device->CreateDepthStencilView(
+					nativeTexture.Get(),
+					&viewDescription,
+					readOnlyDepthView.GetAddressOf());
+				if (FAILED(result))
+				{
+					return failCreation(
+						texture,
+						"read-only depth-stencil view",
+						result);
+				}
+			}
+		}
+
+		if (requiresShaderResource)
+		{
+			D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
+			viewDescription.Format = isDepthFormat
+				? GetDepthShaderResourceViewFormat(description.format)
+				: description.format;
+			if (viewDescription.Format == DXGI_FORMAT_UNKNOWN)
+			{
+				return failTexture(
+					texture,
+					"does not have a shader-readable format");
+			}
+
+			if (description.sampleCount > 1)
+			{
+				viewDescription.ViewDimension =
+					D3D11_SRV_DIMENSION_TEXTURE2DMS;
+			}
+			else
+			{
+				viewDescription.ViewDimension =
+					D3D11_SRV_DIMENSION_TEXTURE2D;
+				viewDescription.Texture2D.MostDetailedMip = 0;
+				viewDescription.Texture2D.MipLevels =
+					description.mipLevels;
+			}
+
+			result = device->CreateShaderResourceView(
+				nativeTexture.Get(),
+				&viewDescription,
+				shaderResourceView.GetAddressOf());
+			if (FAILED(result))
+			{
+				return failCreation(texture, "shader-resource view", result);
+			}
+		}
+
+		// Publish a texture only after all of its required views exist.
+		texture.ownedTexture = std::move(nativeTexture);
+		texture.ownedRTV = std::move(renderTargetView);
+		texture.ownedWritableDSV = std::move(writableDepthView);
+		texture.ownedReadOnlyDSV = std::move(readOnlyDepthView);
+		texture.ownedSRV = std::move(shaderResourceView);
+	}
+
 	return true;
 }
 

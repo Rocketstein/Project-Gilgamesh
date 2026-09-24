@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <d3d11.h>
+#include <wrl/client.h>
 
 #include "GraphPassBuilder.h"
 
@@ -49,9 +50,9 @@ public:
         SetupFunction&& setup,
         ExecuteFunction&& execute);
 
-    // Validates declarations and builds a deterministic CPU pass order.
+    // Compiles declarations and creates the graph-owned GPU resources.
     [[nodiscard]]
-    bool Compile();
+    bool Compile(ID3D11Device* device);
 
     [[nodiscard]]
     bool IsCompiled() const noexcept
@@ -100,6 +101,12 @@ private:
         std::optional<ImportedRenderGraphTexture> importedTexture;
         std::uint8_t compiledViewRequirements =
             TextureViewRequirement::None;
+
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> ownedTexture;
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> ownedRTV;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> ownedWritableDSV;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> ownedReadOnlyDSV;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> ownedSRV;
     };
 
     // Owns everything declared by one AddPass call after setup returns.
@@ -121,6 +128,7 @@ private:
     using TextureUsesByTexture =
         std::vector<std::vector<TextureUse>>;
 
+private:
     // Validates logical and imported texture declarations.
     [[nodiscard]]
     bool ValidateResourceDeclarations() const;
@@ -133,6 +141,13 @@ private:
     // Discards every result derived from the current declarations.
     void InvalidateCompiledState() noexcept;
 
+    // Creates GPU resources from the textures after compilation.
+    bool CreateResources(ID3D11Device* device);
+
+    // Releases every GPU resource owned by this graph.
+    void ReleaseResources() noexcept;
+
+private:
     std::vector<TextureRecord> textures_;
     std::vector<PassDeclaration> passes_;
     std::vector<std::size_t> compiledPassOrder_;

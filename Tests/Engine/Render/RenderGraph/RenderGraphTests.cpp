@@ -7,6 +7,35 @@
 
 namespace
 {
+	Microsoft::WRL::ComPtr<ID3D11Device> CreateRenderGraphTestDevice()
+	{
+		Microsoft::WRL::ComPtr<ID3D11Device> device;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		const HRESULT result = D3D11CreateDevice(
+			nullptr,
+			D3D_DRIVER_TYPE_WARP,
+			nullptr,
+			0,
+			nullptr,
+			0,
+			D3D11_SDK_VERSION,
+			device.GetAddressOf(),
+			nullptr,
+			context.GetAddressOf());
+		if (FAILED(result))
+		{
+			device.Reset();
+		}
+		return device;
+	}
+
+	ID3D11Device* GetRenderGraphTestDevice()
+	{
+		static Microsoft::WRL::ComPtr<ID3D11Device> device =
+			CreateRenderGraphTestDevice();
+		return device.Get();
+	}
+
 	RenderGraphTextureDesc MakeTextureDescription(
 		DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM)
 	{
@@ -283,7 +312,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(GetRenderGraphTestDevice());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -325,7 +354,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(GetRenderGraphTestDevice());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -368,7 +397,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(GetRenderGraphTestDevice());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -449,6 +478,7 @@ GILGAMESH_TEST(
 			nativeTexture.Get(),
 			renderTargetView.Get(),
 			nullptr,
+			nullptr,
 			shaderResourceView.Get()
 		});
 	graph.AddPass(
@@ -466,7 +496,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(device.Get());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -474,6 +504,71 @@ GILGAMESH_TEST(
 	GILGAMESH_CHECK_MESSAGE(
 		order.size() == 2 && order[0] == 0 && order[1] == 1,
 		"the initial read must precede the graph's first imported writer");
+}
+
+// Imported native metadata must agree with the graph declaration.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"CompileRejectsMismatchedImportedDescription")
+{
+	ID3D11Device* device = GetRenderGraphTestDevice();
+	GILGAMESH_CHECK_MESSAGE(
+		device != nullptr,
+		"the WARP device must be available for imported texture validation");
+	if (!device) return;
+
+	D3D11_TEXTURE2D_DESC nativeDescription{};
+	nativeDescription.Width = 64;
+	nativeDescription.Height = 64;
+	nativeDescription.MipLevels = 1;
+	nativeDescription.ArraySize = 1;
+	nativeDescription.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	nativeDescription.SampleDesc.Count = 1;
+	nativeDescription.Usage = D3D11_USAGE_DEFAULT;
+	nativeDescription.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> nativeTexture;
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView;
+	HRESULT result = device->CreateTexture2D(
+		&nativeDescription,
+		nullptr,
+		nativeTexture.GetAddressOf());
+	if (SUCCEEDED(result))
+	{
+		result = device->CreateRenderTargetView(
+			nativeTexture.Get(),
+			nullptr,
+			renderTargetView.GetAddressOf());
+	}
+	GILGAMESH_CHECK_MESSAGE(
+		SUCCEEDED(result) && nativeTexture && renderTargetView,
+		"the mismatched imported texture fixture must be created");
+	if (FAILED(result) || !nativeTexture || !renderTargetView) return;
+
+	ImportedRenderGraphTexture imported;
+	imported.texture = nativeTexture.Get();
+	imported.renderTargetView = renderTargetView.Get();
+
+	RenderGraph graph;
+	const auto texture = graph.ImportTexture(
+		"MismatchedImport",
+		MakeTextureDescription(),
+		imported);
+	graph.AddPass(
+		"WriteImport",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				texture,
+				RenderGraphLoadOp::Clear);
+		},
+		[](ID3D11DeviceContext&) {});
+
+	GILGAMESH_CHECK_MESSAGE(
+		!graph.Compile(device) && !graph.IsCompiled()
+			&& graph.GetCompiledPassOrder().empty(),
+		"an imported texture with mismatched native metadata must be rejected");
 }
 
 // Two handles for one native texture would hide a read/write hazard.
@@ -530,7 +625,7 @@ GILGAMESH_TEST(
 		imported);
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled()
+		!graph.Compile(device.Get()) && !graph.IsCompiled()
 			&& graph.GetCompiledPassOrder().empty(),
 		"one native texture must not be imported under two graph handles");
 }
@@ -554,7 +649,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile(),
+		!graph.Compile(GetRenderGraphTestDevice()),
 		"the first access to a transient texture cannot be Load");
 	GILGAMESH_CHECK_MESSAGE(
 		!graph.IsCompiled() && graph.GetCompiledPassOrder().empty(),
@@ -579,7 +674,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled()
+		!graph.Compile(GetRenderGraphTestDevice()) && !graph.IsCompiled()
 			&& graph.GetCompiledPassOrder().empty(),
 		"a transient texture cannot be read without any writer");
 }
@@ -609,7 +704,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(GetRenderGraphTestDevice());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -644,7 +739,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(GetRenderGraphTestDevice());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -685,7 +780,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile(),
+		!graph.Compile(GetRenderGraphTestDevice()),
 		"a dependency cycle across textures must fail compilation");
 	GILGAMESH_CHECK_MESSAGE(
 		!graph.IsCompiled() && graph.GetCompiledPassOrder().empty(),
@@ -711,7 +806,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled(),
+		!graph.Compile(GetRenderGraphTestDevice()) && !graph.IsCompiled(),
 		"one pass must not use the same texture as SRV and color target");
 }
 
@@ -739,7 +834,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled(),
+		!graph.Compile(GetRenderGraphTestDevice()) && !graph.IsCompiled(),
 		"one pass cannot combine color targets with different extents");
 }
 
@@ -773,7 +868,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled(),
+		!graph.Compile(GetRenderGraphTestDevice()) && !graph.IsCompiled(),
 		"two pixel shader resources cannot occupy one binding slot");
 
 	// A separate graph isolates the color-target slot conflict.
@@ -794,7 +889,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!targetGraph.Compile() && !targetGraph.IsCompiled(),
+		!targetGraph.Compile(GetRenderGraphTestDevice()) && !targetGraph.IsCompiled(),
 		"two render targets cannot occupy one color-target slot");
 }
 
@@ -819,7 +914,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled(),
+		!graph.Compile(GetRenderGraphTestDevice()) && !graph.IsCompiled(),
 		"read-only depth access must not clear its texture");
 }
 
@@ -872,7 +967,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 
-	const bool compiled = graph.Compile();
+	const bool compiled = graph.Compile(GetRenderGraphTestDevice());
 	const auto order = graph.GetCompiledPassOrder();
 	GILGAMESH_CHECK_MESSAGE(
 		compiled && graph.IsCompiled(),
@@ -881,6 +976,36 @@ GILGAMESH_TEST(
 		order.size() == 3 && order[0] == 0
 			&& order[1] == 1 && order[2] == 2,
 		"view requirements must not change the dependency order");
+}
+
+// Resource creation failure must not publish a partial compiled graph.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"CompileRequiresDeviceForGraphOwnedResources")
+{
+	RenderGraph graph;
+	const auto color = graph.CreateTexture(
+		"SceneColor",
+		MakeTextureDescription());
+
+	graph.AddPass(
+		"InitializeColor",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				color,
+				RenderGraphLoadOp::Clear);
+		},
+		[](ID3D11DeviceContext&) {});
+
+	GILGAMESH_CHECK_MESSAGE(
+		!graph.Compile(nullptr) && !graph.IsCompiled()
+			&& graph.GetCompiledPassOrder().empty(),
+		"resource creation without a device must not publish a partial plan");
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Compile(GetRenderGraphTestDevice()) && graph.IsCompiled(),
+		"the same declarations must remain compilable with a valid device");
 }
 
 // Invalid enum values must not silently turn into another access mode.
@@ -904,7 +1029,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 	GILGAMESH_CHECK_MESSAGE(
-		!colorGraph.Compile() && !colorGraph.IsCompiled(),
+		!colorGraph.Compile(GetRenderGraphTestDevice()) && !colorGraph.IsCompiled(),
 		"color attachments must reject unknown load operations");
 
 	// Depth attachments validate both independent enum arguments.
@@ -923,7 +1048,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 	GILGAMESH_CHECK_MESSAGE(
-		!depthLoadGraph.Compile() && !depthLoadGraph.IsCompiled(),
+		!depthLoadGraph.Compile(GetRenderGraphTestDevice()) && !depthLoadGraph.IsCompiled(),
 		"depth attachments must reject unknown load operations");
 
 	RenderGraph depthAccessGraph;
@@ -941,7 +1066,7 @@ GILGAMESH_TEST(
 		},
 		[](ID3D11DeviceContext&) {});
 	GILGAMESH_CHECK_MESSAGE(
-		!depthAccessGraph.Compile() && !depthAccessGraph.IsCompiled(),
+		!depthAccessGraph.Compile(GetRenderGraphTestDevice()) && !depthAccessGraph.IsCompiled(),
 		"depth attachments must reject unknown access modes");
 }
 
@@ -964,7 +1089,7 @@ GILGAMESH_TEST(
 		[](ID3D11DeviceContext&) {});
 
 	GILGAMESH_CHECK_MESSAGE(
-		graph.Compile() && graph.IsCompiled()
+		graph.Compile(GetRenderGraphTestDevice()) && graph.IsCompiled()
 			&& graph.GetCompiledPassOrder().size() == 1,
 		"a valid graph must publish its compiled order");
 	(void)graph.CreateTexture("UnusedNewTexture", MakeTextureDescription());
@@ -972,7 +1097,7 @@ GILGAMESH_TEST(
 		!graph.IsCompiled() && graph.GetCompiledPassOrder().empty(),
 		"adding a texture must invalidate the previous compiled plan");
 	GILGAMESH_CHECK_MESSAGE(
-		graph.Compile() && graph.IsCompiled(),
+		graph.Compile(GetRenderGraphTestDevice()) && graph.IsCompiled(),
 		"a graph with an unused texture must still recompile");
 
 	// A new declaration discards the old plan before the next compile attempt.
@@ -987,7 +1112,7 @@ GILGAMESH_TEST(
 		!graph.IsCompiled() && graph.GetCompiledPassOrder().empty(),
 		"adding a pass must invalidate the previous compiled plan");
 	GILGAMESH_CHECK_MESSAGE(
-		!graph.Compile() && !graph.IsCompiled()
+		!graph.Compile(GetRenderGraphTestDevice()) && !graph.IsCompiled()
 			&& graph.GetCompiledPassOrder().empty(),
 		"a failed recompile must leave no stale or partial plan");
 

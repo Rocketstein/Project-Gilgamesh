@@ -57,7 +57,8 @@ struct ImportedRenderGraphTexture
     ID3D11Texture2D* texture = nullptr;
 
     ID3D11RenderTargetView* renderTargetView = nullptr;
-    ID3D11DepthStencilView* depthStencilView = nullptr;
+    ID3D11DepthStencilView* writableDepthStencilView = nullptr;
+    ID3D11DepthStencilView* readOnlyDepthStencilView = nullptr;
     ID3D11ShaderResourceView* shaderResourceView = nullptr;
 };
 
