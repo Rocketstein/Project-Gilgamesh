@@ -48,7 +48,6 @@ target_sources (GilgameshEngine
 		Render/RenderGraph/RenderGraph.h
 		Render/RenderGraph/GraphPassBuilder.cpp
 		Render/RenderGraph/GraphPassBuilder.h
-		Render/RenderGraph/Pass/GraphPass.h
 
 
 		Render/Techniques/SimpleMeshRenderer.cpp
