@@ -1,8 +1,11 @@
 #include "Engine/Render/RenderGraph/RenderGraph.h"
 #include "Tests/TestFramework.h"
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 #include <wrl/client.h>
 
 namespace
@@ -34,6 +37,66 @@ namespace
 		static Microsoft::WRL::ComPtr<ID3D11Device> device =
 			CreateRenderGraphTestDevice();
 		return device.Get();
+	}
+
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext>
+		GetRenderGraphTestContext()
+	{
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+		if (ID3D11Device* device = GetRenderGraphTestDevice())
+		{
+			device->GetImmediateContext(context.GetAddressOf());
+		}
+		return context;
+	}
+
+	// Copies one non-multisampled RGBA8 texture to staging memory for verification.
+	bool ReadFirstRgba8Pixel(
+		ID3D11Device* device,
+		ID3D11DeviceContext* context,
+		ID3D11Texture2D* texture,
+		std::array<std::uint8_t, 4>& pixel)
+	{
+		if (!device || !context || !texture)
+		{
+			return false;
+		}
+
+		D3D11_TEXTURE2D_DESC description{};
+		texture->GetDesc(&description);
+		description.Usage = D3D11_USAGE_STAGING;
+		description.BindFlags = 0;
+		description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		description.MiscFlags = 0;
+
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
+		if (FAILED(device->CreateTexture2D(
+			&description,
+			nullptr,
+			stagingTexture.GetAddressOf())))
+		{
+			return false;
+		}
+
+		context->CopyResource(stagingTexture.Get(), texture);
+		D3D11_MAPPED_SUBRESOURCE mapped{};
+		if (FAILED(context->Map(
+			stagingTexture.Get(),
+			0,
+			D3D11_MAP_READ,
+			0,
+			&mapped)))
+		{
+			return false;
+		}
+
+		const auto* source = static_cast<const std::uint8_t*>(mapped.pData);
+		for (std::size_t channel = 0; channel < pixel.size(); ++channel)
+		{
+			pixel[channel] = source[channel];
+		}
+		context->Unmap(stagingTexture.Get(), 0);
+		return true;
 	}
 
 	RenderGraphTextureDesc MakeTextureDescription(
@@ -1120,4 +1183,521 @@ GILGAMESH_TEST(
 	GILGAMESH_CHECK_MESSAGE(
 		!graph.IsCompiled() && graph.GetCompiledPassOrder().empty(),
 		"Reset must leave the graph uncompiled");
+}
+
+// Execution is valid only for a compiled graph and a live device context.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"ExecuteRequiresCompiledGraphAndContext")
+{
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context =
+		GetRenderGraphTestContext();
+	GILGAMESH_CHECK_MESSAGE(
+		context != nullptr,
+		"the WARP immediate context must be available for graph execution");
+	if (!context) return;
+
+	RenderGraph graph;
+	int executeCalls = 0;
+	graph.AddPass(
+		"EmptyPass",
+		[](GraphPassBuilder&) {},
+		[&](ID3D11DeviceContext&)
+		{
+			++executeCalls;
+		});
+
+	GILGAMESH_CHECK_MESSAGE(
+		!graph.Execute(context.Get()) && executeCalls == 0,
+		"an uncompiled graph must reject execution without invoking callbacks");
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Compile(GetRenderGraphTestDevice()),
+		"the empty execution graph must compile");
+	GILGAMESH_CHECK_MESSAGE(
+		!graph.Execute(nullptr) && executeCalls == 0,
+		"execution must reject a null device context");
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Execute(context.Get()) && executeCalls == 1,
+		"a compiled graph must invoke its callback exactly once");
+
+	context->ClearState();
+}
+
+// Execute follows the compiled DAG order rather than AddPass registration order.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"ExecuteUsesCompiledPassOrder")
+{
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context =
+		GetRenderGraphTestContext();
+	GILGAMESH_CHECK_MESSAGE(
+		context != nullptr,
+		"the WARP immediate context must be available for ordered execution");
+	if (!context) return;
+	context->ClearState();
+
+	RenderGraph graph;
+	const RenderGraphTextureHandle texture = graph.CreateTexture(
+		"ProducedTexture",
+		MakeTextureDescription());
+	std::vector<int> executionOrder;
+
+	graph.AddPass(
+		"RegisteredReader",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.ReadPixelTexture(texture, 3);
+		},
+		[&](ID3D11DeviceContext&)
+		{
+			executionOrder.push_back(0);
+		});
+	graph.AddPass(
+		"RegisteredProducer",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				texture,
+				RenderGraphLoadOp::Clear);
+		},
+		[&](ID3D11DeviceContext&)
+		{
+			executionOrder.push_back(1);
+		});
+
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Compile(GetRenderGraphTestDevice()),
+		"the producer-reader graph must compile");
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Execute(context.Get()),
+		"the producer-reader graph must execute");
+	const std::vector<int> expectedOrder{ 1, 0 };
+	GILGAMESH_CHECK_MESSAGE(
+		executionOrder == expectedOrder,
+		"execution must run the producer before its earlier-registered reader");
+
+	context->ClearState();
+}
+
+// A compiled graph may execute only on a context from its resource device.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"ExecuteRejectsContextFromAnotherDevice")
+{
+	Microsoft::WRL::ComPtr<ID3D11Device> otherDevice;
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> otherContext;
+	const HRESULT createResult = D3D11CreateDevice(
+		nullptr,
+		D3D_DRIVER_TYPE_WARP,
+		nullptr,
+		0,
+		nullptr,
+		0,
+		D3D11_SDK_VERSION,
+		otherDevice.GetAddressOf(),
+		nullptr,
+		otherContext.GetAddressOf());
+	GILGAMESH_CHECK_MESSAGE(
+		SUCCEEDED(createResult) && otherDevice && otherContext,
+		"a second WARP device must be available for context validation");
+	if (FAILED(createResult) || !otherDevice || !otherContext) return;
+
+	RenderGraph graph;
+	int executeCalls = 0;
+	graph.AddPass(
+		"DeviceBoundPass",
+		[](GraphPassBuilder&) {},
+		[&](ID3D11DeviceContext&)
+		{
+			++executeCalls;
+		});
+
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Compile(GetRenderGraphTestDevice()),
+		"the device-bound execution graph must compile");
+	GILGAMESH_CHECK_MESSAGE(
+		!graph.Execute(otherContext.Get()) && executeCalls == 0,
+		"a context from another device must be rejected before callbacks run");
+}
+
+// Callback failures must not leave graph bindings or execution state behind.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"ExecuteCleansUpAfterCallbackFailure")
+{
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context =
+		GetRenderGraphTestContext();
+	GILGAMESH_CHECK_MESSAGE(
+		context != nullptr,
+		"the WARP immediate context must be available for failure cleanup");
+	if (!context) return;
+	context->ClearState();
+
+	RenderGraph graph;
+	const RenderGraphTextureHandle color = graph.CreateTexture(
+		"FailureTarget",
+		MakeTextureDescription());
+	bool shouldThrow = true;
+	int executeCalls = 0;
+	graph.AddPass(
+		"FailOnce",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				color,
+				RenderGraphLoadOp::Clear);
+		},
+		[&](ID3D11DeviceContext&)
+		{
+			++executeCalls;
+			if (shouldThrow)
+			{
+				throw std::runtime_error("expected render failure");
+			}
+		});
+
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Compile(GetRenderGraphTestDevice()),
+		"the callback-failure graph must compile");
+	bool callbackThrew = false;
+	try
+	{
+		(void)graph.Execute(context.Get());
+	}
+	catch (const std::runtime_error&)
+	{
+		callbackThrew = true;
+	}
+
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthTarget;
+	context->OMGetRenderTargets(
+		1,
+		target.GetAddressOf(),
+		depthTarget.GetAddressOf());
+	GILGAMESH_CHECK_MESSAGE(
+		callbackThrew && !target && !depthTarget,
+		"a callback exception must propagate after output bindings are cleared");
+
+	shouldThrow = false;
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Execute(context.Get()) && executeCalls == 2,
+		"a graph must be executable again after callback failure cleanup");
+
+	context->ClearState();
+}
+
+// Each callback sees exactly the native views declared for that pass.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"ExecuteBindsAndUnbindsDeclaredTextureViews")
+{
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context =
+		GetRenderGraphTestContext();
+	GILGAMESH_CHECK_MESSAGE(
+		context != nullptr,
+		"the WARP immediate context must be available for binding verification");
+	if (!context) return;
+	context->ClearState();
+
+	RenderGraph graph;
+	const RenderGraphTextureHandle color = graph.CreateTexture(
+		"SceneColor",
+		MakeTextureDescription());
+	const RenderGraphTextureHandle depth = graph.CreateTexture(
+		"SceneDepth",
+		MakeTextureDescription(DXGI_FORMAT_D32_FLOAT));
+	Microsoft::WRL::ComPtr<ID3D11Resource> writtenColorResource;
+	Microsoft::WRL::ComPtr<ID3D11Resource> writtenDepthResource;
+
+	graph.AddPass(
+		"WriteAttachments",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				color,
+				RenderGraphLoadOp::Clear);
+			builder.SetDepthTarget(
+				depth,
+				RenderGraphDepthAccess::ReadWrite,
+				RenderGraphLoadOp::Clear);
+		},
+		[&](ID3D11DeviceContext& passContext)
+		{
+			Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
+			Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthTarget;
+			D3D11_VIEWPORT viewport{};
+			UINT viewportCount = 1;
+			passContext.OMGetRenderTargets(
+				1,
+				target.GetAddressOf(),
+				depthTarget.GetAddressOf());
+			passContext.RSGetViewports(&viewportCount, &viewport);
+
+			GILGAMESH_CHECK_MESSAGE(
+				target != nullptr && depthTarget != nullptr,
+				"the writer callback must see its declared RTV and DSV");
+			GILGAMESH_CHECK_MESSAGE(
+				viewportCount == 1
+					&& viewport.Width == 128.0f
+					&& viewport.Height == 128.0f
+					&& viewport.MinDepth == 0.0f
+					&& viewport.MaxDepth == 1.0f,
+				"an attachment pass must receive a full-size default viewport");
+			if (target)
+			{
+				target->GetResource(writtenColorResource.GetAddressOf());
+			}
+			if (depthTarget)
+			{
+				D3D11_DEPTH_STENCIL_VIEW_DESC viewDescription{};
+				depthTarget->GetDesc(&viewDescription);
+				GILGAMESH_CHECK_MESSAGE(
+					viewDescription.Flags == 0,
+					"read-write depth access must bind the writable DSV");
+				depthTarget->GetResource(writtenDepthResource.GetAddressOf());
+			}
+		});
+
+	graph.AddPass(
+		"ReadColorWithReadOnlyDepth",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetDepthTarget(
+				depth,
+				RenderGraphDepthAccess::ReadOnly,
+				RenderGraphLoadOp::Load);
+			builder.ReadVertexTexture(color, 4);
+			builder.ReadPixelTexture(color, 7);
+		},
+		[&](ID3D11DeviceContext& passContext)
+		{
+			Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
+			Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthTarget;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexView;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> pixelView;
+			passContext.OMGetRenderTargets(
+				1,
+				target.GetAddressOf(),
+				depthTarget.GetAddressOf());
+			passContext.VSGetShaderResources(
+				4,
+				1,
+				vertexView.GetAddressOf());
+			passContext.PSGetShaderResources(
+				7,
+				1,
+				pixelView.GetAddressOf());
+
+			GILGAMESH_CHECK_MESSAGE(
+				target == nullptr && depthTarget != nullptr,
+				"the read pass must bind only its declared output attachment");
+			GILGAMESH_CHECK_MESSAGE(
+				vertexView != nullptr && pixelView != nullptr,
+				"the read pass must bind both declared shader-stage slots");
+
+			if (depthTarget)
+			{
+				D3D11_DEPTH_STENCIL_VIEW_DESC viewDescription{};
+				depthTarget->GetDesc(&viewDescription);
+				Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+				depthTarget->GetResource(resource.GetAddressOf());
+				GILGAMESH_CHECK_MESSAGE(
+					(viewDescription.Flags & D3D11_DSV_READ_ONLY_DEPTH) != 0
+						&& resource.Get() == writtenDepthResource.Get(),
+					"read-only depth access must select the read-only view of the written texture");
+			}
+
+			Microsoft::WRL::ComPtr<ID3D11Resource> vertexResource;
+			Microsoft::WRL::ComPtr<ID3D11Resource> pixelResource;
+			if (vertexView)
+			{
+				vertexView->GetResource(vertexResource.GetAddressOf());
+			}
+			if (pixelView)
+			{
+				pixelView->GetResource(pixelResource.GetAddressOf());
+			}
+			GILGAMESH_CHECK_MESSAGE(
+				vertexResource.Get() == writtenColorResource.Get()
+					&& pixelResource.Get() == writtenColorResource.Get(),
+				"shader reads must refer to the color texture produced by the writer");
+		});
+
+	graph.AddPass(
+		"ObservePreviousPassCleanup",
+		[](GraphPassBuilder&) {},
+		[&](ID3D11DeviceContext& passContext)
+		{
+			Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
+			Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthTarget;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexView;
+			Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> pixelView;
+			passContext.OMGetRenderTargets(
+				1,
+				target.GetAddressOf(),
+				depthTarget.GetAddressOf());
+			passContext.VSGetShaderResources(
+				4,
+				1,
+				vertexView.GetAddressOf());
+			passContext.PSGetShaderResources(
+				7,
+				1,
+				pixelView.GetAddressOf());
+
+			GILGAMESH_CHECK_MESSAGE(
+				!target && !depthTarget && !vertexView && !pixelView,
+				"a completed pass must leave its OM and shader-resource bindings clear");
+		});
+
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Compile(GetRenderGraphTestDevice()),
+		"the attachment and shader-read graph must compile");
+	GILGAMESH_CHECK_MESSAGE(
+		graph.Execute(context.Get()),
+		"the attachment and shader-read graph must execute");
+
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> finalTarget;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> finalDepthTarget;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> finalVertexView;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> finalPixelView;
+	context->OMGetRenderTargets(
+		1,
+		finalTarget.GetAddressOf(),
+		finalDepthTarget.GetAddressOf());
+	context->VSGetShaderResources(
+		4,
+		1,
+		finalVertexView.GetAddressOf());
+	context->PSGetShaderResources(
+		7,
+		1,
+		finalPixelView.GetAddressOf());
+	GILGAMESH_CHECK_MESSAGE(
+		!finalTarget && !finalDepthTarget && !finalVertexView && !finalPixelView,
+		"Execute must return with graph-managed OM and shader-resource slots unbound");
+
+	context->ClearState();
+}
+
+// Load preserves imported contents while Clear replaces them before the callback.
+GILGAMESH_TEST(
+	"Engine.Render.RenderGraph",
+	"ExecuteHonorsColorLoadOperations")
+{
+	ID3D11Device* device = GetRenderGraphTestDevice();
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context =
+		GetRenderGraphTestContext();
+	GILGAMESH_CHECK_MESSAGE(
+		device != nullptr && context != nullptr,
+		"the WARP device and context must be available for load-operation verification");
+	if (!device || !context) return;
+	context->ClearState();
+
+	D3D11_TEXTURE2D_DESC nativeDescription{};
+	nativeDescription.Width = 128;
+	nativeDescription.Height = 128;
+	nativeDescription.MipLevels = 1;
+	nativeDescription.ArraySize = 1;
+	nativeDescription.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	nativeDescription.SampleDesc.Count = 1;
+	nativeDescription.Usage = D3D11_USAGE_DEFAULT;
+	nativeDescription.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
+	HRESULT result = device->CreateTexture2D(
+		&nativeDescription,
+		nullptr,
+		texture.GetAddressOf());
+	if (SUCCEEDED(result))
+	{
+		result = device->CreateRenderTargetView(
+			texture.Get(),
+			nullptr,
+			target.GetAddressOf());
+	}
+	GILGAMESH_CHECK_MESSAGE(
+		SUCCEEDED(result) && texture && target,
+		"the imported color-target fixture must be created");
+	if (FAILED(result) || !texture || !target) return;
+
+	ImportedRenderGraphTexture imported;
+	imported.texture = texture.Get();
+	imported.renderTargetView = target.Get();
+	const Color4 initialColor{ 1.0f, 0.0f, 1.0f, 1.0f };
+	context->ClearRenderTargetView(target.Get(), initialColor.Data());
+
+	RenderGraph loadGraph;
+	const RenderGraphTextureHandle loadTarget = loadGraph.ImportTexture(
+		"LoadedColor",
+		MakeTextureDescription(),
+		imported);
+	loadGraph.AddPass(
+		"PreserveColor",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				loadTarget,
+				RenderGraphLoadOp::Load);
+		},
+		[](ID3D11DeviceContext&) {});
+	GILGAMESH_CHECK_MESSAGE(
+		loadGraph.Compile(device) && loadGraph.Execute(context.Get()),
+		"the imported Load pass must compile and execute");
+
+	context->OMSetRenderTargets(0, nullptr, nullptr);
+	std::array<std::uint8_t, 4> loadedPixel{};
+	const bool readLoadedPixel = ReadFirstRgba8Pixel(
+		device,
+		context.Get(),
+		texture.Get(),
+		loadedPixel);
+	const std::array<std::uint8_t, 4> expectedLoadedPixel{
+		255, 0, 255, 255
+	};
+	GILGAMESH_CHECK_MESSAGE(
+		readLoadedPixel && loadedPixel == expectedLoadedPixel,
+		"Load must preserve the imported render target's existing contents");
+
+	RenderGraph clearGraph;
+	const RenderGraphTextureHandle clearTarget = clearGraph.ImportTexture(
+		"ClearedColor",
+		MakeTextureDescription(),
+		imported);
+	clearGraph.AddPass(
+		"ClearColor",
+		[&](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(
+				0,
+				clearTarget,
+				RenderGraphLoadOp::Clear,
+				Color4{ 0.0f, 1.0f, 0.0f, 1.0f });
+		},
+		[](ID3D11DeviceContext&) {});
+	GILGAMESH_CHECK_MESSAGE(
+		clearGraph.Compile(device) && clearGraph.Execute(context.Get()),
+		"the imported Clear pass must compile and execute");
+
+	context->OMSetRenderTargets(0, nullptr, nullptr);
+	std::array<std::uint8_t, 4> clearedPixel{};
+	const bool readClearedPixel = ReadFirstRgba8Pixel(
+		device,
+		context.Get(),
+		texture.Get(),
+		clearedPixel);
+	const std::array<std::uint8_t, 4> expectedClearedPixel{
+		0, 255, 0, 255
+	};
+	GILGAMESH_CHECK_MESSAGE(
+		readClearedPixel && clearedPixel == expectedClearedPixel,
+		"Clear must replace the render target contents before the callback");
+
+	context->ClearState();
 }

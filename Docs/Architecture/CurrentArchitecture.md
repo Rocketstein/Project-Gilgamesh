@@ -300,13 +300,25 @@ own scene rendering.
 `RenderGraph` declares texture attachments and shader reads. `Compile(device)`
 validates those declarations, derives a deterministic dependency order, and
 creates graph-owned D3D11 textures with only their required RTV, DSV, and SRV
-objects. Imported textures remain caller-owned. Repeated writes to one texture
-retain declaration order, while independent passes may be reordered. The graph
-does not yet bind views or execute pass callbacks.
+objects. Imported textures remain caller-owned and their native texture and
+views must remain alive through graph execution. Repeated writes to one texture
+retain declaration order, while independent passes may be reordered.
+
+`Execute(context)` visits that compiled order, resolves graph-owned or imported
+views, binds the RTV, DSV, and stage-specific SRV slots declared by each pass,
+applies requested clears, and establishes a full-attachment default viewport.
+It then invokes the pass callback and unbinds the pass outputs and declared
+shader-resource slots at the pass boundary. This keeps graph-declared D3D11
+read/write hazards and pass-level state transitions inside the graph. Callbacks
+must not bind graph textures through undeclared shader stages or slots. The
+callback remains responsible for applying `DrawSetup`, updating and binding
+constant buffers, binding meshes and other draw-local resources, and issuing
+draw calls. Depth clears currently affect only the depth plane; stencil access
+and stencil load/clear behavior are not modeled yet.
 
 This is intentional prototype code, not a general scene renderer. There is no
-GPU-executed render graph, asset manager, material system, world renderer, or
-API-independent RHI.
+asset manager, material system, world renderer, render-command extraction
+system, or API-independent RHI.
 
 ## Current boundaries and non-features
 

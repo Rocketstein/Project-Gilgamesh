@@ -34,7 +34,7 @@ public:
         std::string_view name,
         const RenderGraphTextureDesc& description);
 
-    // Registers a texture whose native lifetime remains owned by the caller.
+    // Registers caller-owned native objects that must outlive graph execution.
     [[nodiscard]]
     RenderGraphTextureHandle ImportTexture(
         std::string_view name,
@@ -53,6 +53,11 @@ public:
     // Compiles declarations and creates the graph-owned GPU resources.
     [[nodiscard]]
     bool Compile(ID3D11Device* device);
+
+    // Binds declared resources and invokes each pass in compiled order.
+    // Callbacks must not bind graph textures through undeclared stages or slots.
+    [[nodiscard]]
+    bool Execute(ID3D11DeviceContext* context);
 
     [[nodiscard]]
     bool IsCompiled() const noexcept
@@ -147,7 +152,42 @@ private:
     // Releases every GPU resource owned by this graph.
     void ReleaseResources() noexcept;
 
+    // Resolves the native views selected during resource realization.
+    [[nodiscard]]
+    ID3D11RenderTargetView* ResolveRenderTargetView(
+        const TextureRecord& texture) const noexcept;
+
+    [[nodiscard]]
+    ID3D11DepthStencilView* ResolveDepthStencilView(
+        const TextureRecord& texture,
+        RenderGraphDepthAccess access) const noexcept;
+
+    [[nodiscard]]
+    ID3D11ShaderResourceView* ResolveShaderResourceView(
+        const TextureRecord& texture) const noexcept;
+
+    // Applies the attachment state declared by one compiled pass.
+    void BindPassAttachments(
+        ID3D11DeviceContext* context,
+        const PassDeclaration& pass) const noexcept;
+
+    // Executes attachment clear operations before the pass callback.
+    void ClearPassAttachments(
+        ID3D11DeviceContext* context,
+        const PassDeclaration& pass) const noexcept;
+
+    // Binds stage-specific shader reads after attachment clears.
+    void BindPassShaderResources(
+        ID3D11DeviceContext* context,
+        const PassDeclaration& pass) const noexcept;
+
+    // Ends the graph-managed resource usages of one pass.
+    void UnbindPassResources(
+        ID3D11DeviceContext* context,
+        const PassDeclaration& pass) const noexcept;
+
 private:
+    Microsoft::WRL::ComPtr<ID3D11Device> compiledDevice_;
     std::vector<TextureRecord> textures_;
     std::vector<PassDeclaration> passes_;
     std::vector<std::size_t> compiledPassOrder_;
@@ -155,6 +195,7 @@ private:
     std::uint64_t ownerId_ = 0;
     std::uint64_t generation_ = 1;
     bool isAddingPass_ = false;
+    bool isExecuting_ = false;
     bool isCompiled_ = false;
 };
 
@@ -183,6 +224,12 @@ void RenderGraph::AddPass(
     {
         throw std::logic_error(
             "RenderGraph::AddPass cannot be nested inside pass setup");
+    }
+
+    if (isExecuting_)
+    {
+        throw std::logic_error(
+            "RenderGraph::AddPass cannot run during graph execution");
     }
 
     PassDeclaration pass{

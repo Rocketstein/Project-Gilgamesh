@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <functional>
@@ -31,6 +32,17 @@ namespace
 			Renderer,
 			Error,
 			"RenderGraph compile failed: {}",
+			message);
+		return false;
+	}
+
+	// Reports one execution failure without introducing a dedicated error type.
+	bool LogExecutionFailure(std::string_view message)
+	{
+		GILGAMESH_LOG(
+			Renderer,
+			Error,
+			"RenderGraph execution failed: {}",
 			message);
 		return false;
 	}
@@ -173,8 +185,8 @@ RenderGraph::RenderGraph() noexcept
 
 void RenderGraph::Reset() noexcept
 {
-	assert(!isAddingPass_);
-	if (isAddingPass_)
+	assert(!isAddingPass_ && !isExecuting_);
+	if (isAddingPass_ || isExecuting_)
 	{
 		return;
 	}
@@ -197,6 +209,7 @@ void RenderGraph::InvalidateCompiledState() noexcept
 {
 	compiledPassOrder_.clear();
 	ReleaseResources();
+	compiledDevice_.Reset();
 	for (TextureRecord& texture : textures_)
 	{
 		texture.compiledViewRequirements = TextureViewRequirement::None;
@@ -410,6 +423,16 @@ bool RenderGraph::ValidateBindingDeclarations(
 						pass.name,
 						texture.name));
 				}
+				if (access.loadOp == RenderGraphLoadOp::Clear
+					&& (!std::isfinite(access.clearDepth)
+						|| access.clearDepth < 0.0f
+						|| access.clearDepth > 1.0f))
+				{
+					return LogCompileFailure(std::format(
+						"pass '{}' clears depth texture '{}' with a value outside [0, 1]",
+						pass.name,
+						texture.name));
+				}
 				if (imported
 					&& !(access.depthAccess == RenderGraphDepthAccess::ReadOnly
 						? imported->readOnlyDepthStencilView
@@ -500,6 +523,11 @@ bool RenderGraph::Compile(ID3D11Device* device)
 {
 	using std::vector;
 	using std::size_t;
+
+	if (isExecuting_)
+	{
+		return LogCompileFailure("Compile cannot run during graph execution");
+	}
 
 	if (isAddingPass_)
 	{
@@ -661,9 +689,256 @@ bool RenderGraph::Compile(ID3D11Device* device)
 
 	// Publish the plan only after all validation and sorting succeeds.
 	compiledPassOrder_ = std::move(order);
+	compiledDevice_ = device;
 	isCompiled_ = true;
 
 	return true;
+}
+
+bool RenderGraph::Execute(ID3D11DeviceContext* context)
+{
+	if (!context)
+	{
+		return LogExecutionFailure("a D3D11 device context is required");
+	}
+	if (!isCompiled_ || !compiledDevice_)
+	{
+		return LogExecutionFailure("the graph has not been compiled");
+	}
+	if (isAddingPass_)
+	{
+		return LogExecutionFailure("Execute cannot run inside pass setup");
+	}
+	if (isExecuting_)
+	{
+		return LogExecutionFailure("nested graph execution is not allowed");
+	}
+
+	// Native resources cannot be used through a context from another device.
+	Microsoft::WRL::ComPtr<ID3D11Device> contextDevice;
+	context->GetDevice(contextDevice.GetAddressOf());
+	if (contextDevice.Get() != compiledDevice_.Get())
+	{
+		return LogExecutionFailure(
+			"the device context does not belong to the compiled device");
+	}
+
+	isExecuting_ = true;
+	const PassDeclaration* activePass = nullptr;
+
+	try
+	{
+		for (const std::size_t passIndex : compiledPassOrder_)
+		{
+			activePass = &passes_[passIndex];
+			BindPassAttachments(context, *activePass);
+			ClearPassAttachments(context, *activePass);
+			BindPassShaderResources(context, *activePass);
+			std::invoke(activePass->execute, std::ref(*context));
+			UnbindPassResources(context, *activePass);
+			activePass = nullptr;
+		}
+	}
+	catch (...)
+	{
+		// Leave graph-managed bindings clean even when user draw code fails.
+		if (activePass)
+		{
+			UnbindPassResources(context, *activePass);
+		}
+		isExecuting_ = false;
+		throw;
+	}
+
+	isExecuting_ = false;
+	return true;
+}
+
+ID3D11RenderTargetView* RenderGraph::ResolveRenderTargetView(
+	const TextureRecord& texture) const noexcept
+{
+	return texture.importedTexture
+		? texture.importedTexture->renderTargetView
+		: texture.ownedRTV.Get();
+}
+
+ID3D11DepthStencilView* RenderGraph::ResolveDepthStencilView(
+	const TextureRecord& texture,
+	RenderGraphDepthAccess access) const noexcept
+{
+	if (texture.importedTexture)
+	{
+		return access == RenderGraphDepthAccess::ReadOnly
+			? texture.importedTexture->readOnlyDepthStencilView
+			: texture.importedTexture->writableDepthStencilView;
+	}
+
+	return access == RenderGraphDepthAccess::ReadOnly
+		? texture.ownedReadOnlyDSV.Get()
+		: texture.ownedWritableDSV.Get();
+}
+
+ID3D11ShaderResourceView* RenderGraph::ResolveShaderResourceView(
+	const TextureRecord& texture) const noexcept
+{
+	return texture.importedTexture
+		? texture.importedTexture->shaderResourceView
+		: texture.ownedSRV.Get();
+}
+
+void RenderGraph::BindPassAttachments(
+	ID3D11DeviceContext* context,
+	const PassDeclaration& pass) const noexcept
+{
+	using AccessType = GraphPassBuilder::TextureAccess::Type;
+
+	std::array<
+		ID3D11RenderTargetView*,
+		D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> renderTargets{};
+	ID3D11DepthStencilView* depthTarget = nullptr;
+	const TextureRecord* firstAttachment = nullptr;
+	UINT renderTargetCount = 0;
+
+	// Resolve the complete output-merger binding before publishing it.
+	for (const GraphPassBuilder::TextureAccess& access : pass.textureAccesses)
+	{
+		const TextureRecord& texture = textures_[access.texture.index_];
+		switch (access.type)
+		{
+		case AccessType::ColorTarget:
+			renderTargets[access.slot] = ResolveRenderTargetView(texture);
+			renderTargetCount = std::max(
+				renderTargetCount,
+				static_cast<UINT>(access.slot + 1));
+			if (!firstAttachment)
+			{
+				firstAttachment = &texture;
+			}
+			break;
+
+		case AccessType::DepthTarget:
+			depthTarget = ResolveDepthStencilView(
+				texture,
+				access.depthAccess);
+			if (!firstAttachment)
+			{
+				firstAttachment = &texture;
+			}
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	context->OMSetRenderTargets(
+		renderTargetCount,
+		renderTargetCount > 0 ? renderTargets.data() : nullptr,
+		depthTarget);
+
+	// Full-attachment rendering is the default; callbacks may override it.
+	if (firstAttachment)
+	{
+		D3D11_VIEWPORT viewport{};
+		viewport.Width = static_cast<float>(
+			firstAttachment->description.extent.width);
+		viewport.Height = static_cast<float>(
+			firstAttachment->description.extent.height);
+		viewport.MinDepth = 0.0f;
+		viewport.MaxDepth = 1.0f;
+		context->RSSetViewports(1, &viewport);
+	}
+
+}
+
+void RenderGraph::ClearPassAttachments(
+	ID3D11DeviceContext* context,
+	const PassDeclaration& pass) const noexcept
+{
+	using AccessType = GraphPassBuilder::TextureAccess::Type;
+
+	for (const GraphPassBuilder::TextureAccess& access : pass.textureAccesses)
+	{
+		if (access.loadOp != RenderGraphLoadOp::Clear)
+		{
+			continue;
+		}
+
+		const TextureRecord& texture = textures_[access.texture.index_];
+		if (access.type == AccessType::ColorTarget)
+		{
+			context->ClearRenderTargetView(
+				ResolveRenderTargetView(texture),
+				access.clearColor.Data());
+		}
+		else if (access.type == AccessType::DepthTarget)
+		{
+			// Stencil load/store behavior is not modeled by the graph yet.
+			context->ClearDepthStencilView(
+				ResolveDepthStencilView(texture, access.depthAccess),
+				D3D11_CLEAR_DEPTH,
+				access.clearDepth,
+				0);
+		}
+	}
+}
+
+void RenderGraph::BindPassShaderResources(
+	ID3D11DeviceContext* context,
+	const PassDeclaration& pass) const noexcept
+{
+	using AccessType = GraphPassBuilder::TextureAccess::Type;
+
+	// Shader reads are stage- and slot-specific declarations.
+	for (const GraphPassBuilder::TextureAccess& access : pass.textureAccesses)
+	{
+		if (access.type != AccessType::VertexShaderRead
+			&& access.type != AccessType::PixelShaderRead)
+		{
+			continue;
+		}
+
+		ID3D11ShaderResourceView* shaderResource =
+			ResolveShaderResourceView(textures_[access.texture.index_]);
+		if (access.type == AccessType::VertexShaderRead)
+		{
+			context->VSSetShaderResources(
+				access.slot,
+				1,
+				&shaderResource);
+		}
+		else
+		{
+			context->PSSetShaderResources(
+				access.slot,
+				1,
+				&shaderResource);
+		}
+	}
+}
+
+void RenderGraph::UnbindPassResources(
+	ID3D11DeviceContext* context,
+	const PassDeclaration& pass) const noexcept
+{
+	using AccessType = GraphPassBuilder::TextureAccess::Type;
+	ID3D11ShaderResourceView* nullView = nullptr;
+
+	// End graph-declared reads so later passes may write the same resources.
+	for (const GraphPassBuilder::TextureAccess& access : pass.textureAccesses)
+	{
+		if (access.type == AccessType::VertexShaderRead)
+		{
+			context->VSSetShaderResources(access.slot, 1, &nullView);
+		}
+		else if (access.type == AccessType::PixelShaderRead)
+		{
+			context->PSSetShaderResources(access.slot, 1, &nullView);
+		}
+	}
+
+	// End attachment writes so later passes may sample the same resources.
+	context->OMSetRenderTargets(0, nullptr, nullptr);
 }
 
 bool RenderGraph::CreateResources(ID3D11Device* device)
@@ -1052,6 +1327,11 @@ RenderGraphTextureHandle RenderGraph::CreateTexture(
 		throw std::logic_error(
 			"RenderGraph resources cannot be created inside pass setup");
 	}
+	if (isExecuting_)
+	{
+		throw std::logic_error(
+			"RenderGraph resources cannot be created during graph execution");
+	}
 
 	if (textures_.size() >= RenderGraphTextureHandle::InvalidIndex)
 	{
@@ -1078,6 +1358,11 @@ RenderGraphTextureHandle RenderGraph::ImportTexture(
 	{
 		throw std::logic_error(
 			"RenderGraph resources cannot be imported inside pass setup");
+	}
+	if (isExecuting_)
+	{
+		throw std::logic_error(
+			"RenderGraph resources cannot be imported during graph execution");
 	}
 
 	if (textures_.size() >= RenderGraphTextureHandle::InvalidIndex)

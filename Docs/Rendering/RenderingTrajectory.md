@@ -187,11 +187,11 @@ Rendering technique
 ```
 
 One pass may invoke several techniques, and one draw setup may be reusable by
-several techniques or passes. The existing editor viewport is an offscreen
-target, but that alone does not justify a general pass framework. Introduce
-explicit passes when a second rendering objective creates real ordering or
-resource dependencies, such as an editor-selection ID target, shadows, or a
-depth-only prepass.
+several techniques or passes. `RenderGraph` now provides this pass boundary: it
+owns dependency ordering and declared texture binding, while execute callbacks
+perform the draw-local work. The existing editor viewport remains a candidate
+for adoption; additional objectives such as an editor-selection ID target,
+shadows, or a depth-only prepass will exercise the dependency model further.
 
 ## Current baseline
 
@@ -207,6 +207,8 @@ implementation establishes these working pieces:
 - Frame-local `RenderView` and `StaticMeshDrawItem` submission data
 - `SimpleMeshRenderer` ownership of the fixed shaders, `DrawSetup`,
   model-view-projection constant buffer, and indexed draw loop
+- A `RenderGraph` that compiles texture dependencies, realizes graph-owned GPU
+  resources, and executes declared pass state in compiled order
 - An editor-only `EditorPreviewScene` that owns temporary mesh handles and
   instance transforms
 
@@ -344,7 +346,7 @@ Add these only when scene scale makes them useful:
 These are extraction and submission concerns. They do not belong in generic
 ECS storage or in the mesh resource itself.
 
-### Milestone 6: explicit pass orchestration
+### Milestone 6: explicit pass orchestration — foundation implemented
 
 Introduce an explicit pass model when there are multiple rendering objectives
 or outputs with meaningful ordering. Likely generic triggers include:
@@ -355,11 +357,17 @@ or outputs with meaningful ordering. Likely generic triggers include:
 - Post-processing
 - Multiple views
 
-The declaration, dependency-compilation, and GPU resource-realization portions
-of `RenderGraph` now exist. It validates texture access, computes pass order,
-and creates the graph-owned texture views required by those declarations. The
-next orchestration work is to bind those views and execute the compiled order
-without mixing it with ECS extraction or draw-command design.
+`RenderGraph` now implements declaration, dependency compilation, GPU resource
+realization, and execution. Execution follows the compiled pass order, binds
+the declared RTV, DSV, and shader-stage SRV slots, performs requested clears,
+sets a full-attachment default viewport, invokes the pass callback, and unbinds
+the relevant outputs and shader-resource slots at the pass boundary.
+
+The callback deliberately owns `DrawSetup`, constant-buffer, mesh, and draw
+submission work. The graph does not inspect techniques, ECS state, or future
+render commands. The next orchestration work is to migrate concrete rendering
+objectives onto this boundary and let real multi-pass use reveal any missing
+subresource, viewport, or command-submission requirements.
 
 ## Responsibility guide
 
@@ -372,7 +380,7 @@ Use the following rule when deciding where new state belongs:
 | Frame-local visible instance data | Render extraction output |
 | GPU geometry lifetime | `StaticMesh` |
 | Shader and fixed draw behavior | Rendering technique and `DrawSetup` |
-| Output target, clears, and ordering | Render pass or current explicit orchestration |
+| Output target, clears, resource binding, and ordering | `RenderGraph` pass |
 | Window, swap chain, and D3D11 device | `Renderer` |
 
 ## Explicitly deferred
@@ -387,6 +395,7 @@ The following remain deferred until a measured or feature-driven need appears:
 - Shader permutations and automatic variant management
 - Multithreaded D3D11 command recording
 - General state-change deduplication
+- Stencil-plane access and independent depth/stencil load and clear operations
 - Geometry, hull, and domain shader support
 
 ## Decision rule
