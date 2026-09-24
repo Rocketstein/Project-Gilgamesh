@@ -312,6 +312,30 @@ ID3D11PixelShader* ShaderManager::Get(
         .GetNativeHandle();
 }
 
+const ShaderReflectionData* ShaderManager::GetReflection(
+    VertexShaderHandle handle) const noexcept
+{
+    if (!handle.IsValid() ||
+        handle.index_ >= vertexShaders_.resources.size())
+    {
+        return nullptr;
+    }
+
+    return &vertexShaders_.resources[handle.index_].GetReflection();
+}
+
+const ShaderReflectionData* ShaderManager::GetReflection(
+    PixelShaderHandle handle) const noexcept
+{
+    if (!handle.IsValid() ||
+        handle.index_ >= pixelShaders_.resources.size())
+    {
+        return nullptr;
+    }
+
+    return &pixelShaders_.resources[handle.index_].GetReflection();
+}
+
 std::span<const std::byte>
 ShaderManager::GetBytecode(
     VertexShaderHandle handle) const noexcept

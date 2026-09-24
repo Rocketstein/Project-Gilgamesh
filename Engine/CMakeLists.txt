@@ -37,6 +37,8 @@ target_sources (GilgameshEngine
 		Render/Shader/ShaderManager.cpp
 		Render/Shader/ShaderManager.h
 		Render/Shader/ShaderTypes.h
+		Render/Shader/ShaderReflection.cpp
+		Render/Shader/ShaderReflection.h
 		Render/Shader/ShaderConstants.h
 
 		Render/DrawSetup/DrawSetupDesc.h
@@ -118,6 +120,7 @@ target_link_libraries(GilgameshEngine
 	PRIVATE
 		user32
         d3d11
+        d3dcompiler
         dxgi
 		dxguid
 )

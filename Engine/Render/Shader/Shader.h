@@ -5,6 +5,8 @@
 #include <vector>
 #include <wrl/client.h>
 
+#include "ShaderReflection.h"
+
 class VertexShader final
 {
 public:
@@ -26,8 +28,12 @@ public:
 	[[nodiscard]]
 	std::span<const std::byte> GetBytecode() const { return bytecode_; }
 
+	[[nodiscard]]
+	const ShaderReflectionData& GetReflection() const noexcept { return reflection_; }
+
 private:
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> shader_;
+	ShaderReflectionData reflection_;
 	std::vector<std::byte> bytecode_;
 };
 
@@ -48,6 +54,10 @@ public:
 	[[nodiscard]]
 	ID3D11PixelShader* GetNativeHandle() const { return shader_.Get(); }
 
+	[[nodiscard]]
+	const ShaderReflectionData& GetReflection() const noexcept { return reflection_; }
+
 private:
 	Microsoft::WRL::ComPtr<ID3D11PixelShader> shader_;
+	ShaderReflectionData reflection_;
 };

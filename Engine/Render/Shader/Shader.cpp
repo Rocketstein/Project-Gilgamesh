@@ -1,8 +1,16 @@
 #include "Shader.h"
 
+#include <utility>
+
 HRESULT VertexShader::Initialize(ID3D11Device* device, std::vector<std::byte> bytecode)
 {
 	if (device == nullptr || bytecode.empty()) return E_INVALIDARG;
+
+	ShaderReflectionData reflection;
+	const HRESULT reflectionResult = ExtractShaderReflection(
+		bytecode,
+		reflection);
+	if (FAILED(reflectionResult)) return reflectionResult;
 
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> shader;
 
@@ -14,7 +22,9 @@ HRESULT VertexShader::Initialize(ID3D11Device* device, std::vector<std::byte> by
 
 	if (FAILED(result)) return result;
 
+	// Publish the shader, metadata, and bytecode only after every step succeeds.
 	shader_ = std::move(shader);
+	reflection_ = std::move(reflection);
 	bytecode_ = std::move(bytecode);
 
 	return S_OK;
@@ -23,6 +33,12 @@ HRESULT VertexShader::Initialize(ID3D11Device* device, std::vector<std::byte> by
 HRESULT PixelShader::Initialize(ID3D11Device* device, std::vector<std::byte> bytecode)
 {
 	if (device == nullptr || bytecode.empty()) return E_INVALIDARG;
+
+	ShaderReflectionData reflection;
+	const HRESULT reflectionResult = ExtractShaderReflection(
+		bytecode,
+		reflection);
+	if (FAILED(reflectionResult)) return reflectionResult;
 
 	Microsoft::WRL::ComPtr<ID3D11PixelShader> shader;
 
@@ -34,7 +50,9 @@ HRESULT PixelShader::Initialize(ID3D11Device* device, std::vector<std::byte> byt
 
 	if (FAILED(result)) return result;
 
+	// The pixel shader needs only its native object and reflected metadata.
 	shader_ = std::move(shader);
+	reflection_ = std::move(reflection);
 
 	return S_OK;
 }

@@ -61,6 +61,15 @@ public:
     ID3D11PixelShader* Get(
         PixelShaderHandle handle) const noexcept;
 
+    // Borrowed metadata pointers are invalidated by later loads or shutdown.
+    [[nodiscard]]
+    const ShaderReflectionData* GetReflection(
+        VertexShaderHandle handle) const noexcept;
+
+    [[nodiscard]]
+    const ShaderReflectionData* GetReflection(
+        PixelShaderHandle handle) const noexcept;
+
     [[nodiscard]]
     std::span<const std::byte> GetBytecode(
         VertexShaderHandle handle) const noexcept;
@@ -90,6 +99,7 @@ private:
         ShaderLoadError error = ShaderLoadError::None;
     };
 
+private:
     template<ShaderStage Stage>
     ShaderLoadResult<ShaderHandle<Stage>>
         LoadInternal(const std::filesystem::path& logicalName);
