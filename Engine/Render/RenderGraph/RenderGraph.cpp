@@ -10,6 +10,7 @@
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "Engine/Core/Logging/Logger.h"
@@ -21,6 +22,17 @@ namespace
 	{
 		static std::atomic<std::uint64_t> nextOwnerId{ 1 };
 		return nextOwnerId.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	// Reports one compile failure without introducing a dedicated error type.
+	bool LogCompileFailure(std::string_view message)
+	{
+		GILGAMESH_LOG(
+			Renderer,
+			Error,
+			"RenderGraph compile failed: {}",
+			message);
+		return false;
 	}
 
 	// Typed depth formats cannot be used as color render targets.
@@ -58,13 +70,6 @@ namespace
 		}
 	}
 
-	// One pass has at most one combined use of a given texture in the DAG.
-	struct TextureUse
-	{
-		std::size_t passIndex = 0;
-		bool reads = false;
-		bool writes = false;
-	};
 } // Anonymous namespace
 
 RenderGraph::RenderGraph() noexcept
@@ -95,27 +100,20 @@ void RenderGraph::Reset() noexcept
 	}
 }
 
-bool RenderGraph::Compile()
+bool RenderGraph::ValidateResourceDeclarations() const
 {
-	const auto fail = [](std::string message)
-	{
-		GILGAMESH_LOG(Renderer, Error, "RenderGraph compile failed: {}", message);
-		return false;
-	};
+	std::unordered_map<ID3D11Texture2D*, std::size_t>
+		firstImportByTexture;
+	firstImportByTexture.reserve(textures_.size());
 
-	if (isAddingPass_)
+	for (std::size_t textureIndex = 0;
+		textureIndex < textures_.size();
+		++textureIndex)
 	{
-		return fail("Compile cannot run inside pass setup");
-	}
-
-	// A failed recompilation must never leave a stale executable order visible.
-	compiledPassOrder_.clear();
-	isCompiled_ = false;
-
-	// Reject descriptions that could not represent a 2D D3D11 texture.
-	for (const TextureRecord& texture : textures_)
-	{
+		const TextureRecord& texture = textures_[textureIndex];
 		const RenderGraphTextureDesc& description = texture.description;
+
+		// Reject descriptions that could not represent a 2D D3D11 texture.
 		if (description.extent.width == 0
 			|| description.extent.height == 0
 			|| description.format == DXGI_FORMAT_UNKNOWN
@@ -123,39 +121,43 @@ bool RenderGraph::Compile()
 			|| description.sampleCount == 0
 			|| (description.sampleCount > 1 && description.mipLevels != 1))
 		{
-			return fail(std::format(
+			return LogCompileFailure(std::format(
 				"texture '{}' has an invalid description",
 				texture.name));
 		}
-	}
 
-	// One native texture must have one graph handle so aliases cannot bypass hazards.
-	for (std::size_t textureIndex = 0; textureIndex < textures_.size(); ++textureIndex)
-	{
-		const auto& imported = textures_[textureIndex].importedTexture;
+		const auto& imported = texture.importedTexture;
 		if (!imported || !imported->texture)
 		{
 			continue;
 		}
 
-		for (std::size_t earlierIndex = 0; earlierIndex < textureIndex; ++earlierIndex)
+		// One native texture must have one graph handle so hazards stay visible.
+		const auto [firstImport, inserted] = firstImportByTexture.emplace(
+			imported->texture,
+			textureIndex);
+		if (!inserted)
 		{
-			const auto& earlier = textures_[earlierIndex].importedTexture;
-			if (earlier && earlier->texture == imported->texture)
-			{
-				return fail(std::format(
-					"imported textures '{}' and '{}' alias the same native texture",
-					textures_[earlierIndex].name,
-					textures_[textureIndex].name));
-			}
+			return LogCompileFailure(std::format(
+				"imported textures '{}' and '{}' alias the same native texture",
+				textures_[firstImport->second].name,
+				texture.name));
 		}
 	}
 
+	return true;
+}
+
+bool RenderGraph::ValidateBindingDeclarations(
+	TextureUsesByTexture& usesByTexture) const
+{
 	using AccessType = GraphPassBuilder::TextureAccess::Type;
 	constexpr std::uint8_t Read = 1 << 0;
 	constexpr std::uint8_t Write = 1 << 1;
 	constexpr std::uint8_t Attachment = 1 << 2;
-	std::vector<std::vector<TextureUse>> usesByTexture(textures_.size());
+
+	usesByTexture.clear();
+	usesByTexture.resize(textures_.size());
 
 	// Validate bindings within each pass and collapse duplicate shader reads.
 	for (std::size_t passIndex = 0; passIndex < passes_.size(); ++passIndex)
@@ -172,7 +174,7 @@ bool RenderGraph::Compile()
 		{
 			if (!IsValid(access.texture))
 			{
-				return fail(std::format(
+				return LogCompileFailure(std::format(
 					"pass '{}' references an invalid texture handle",
 					pass.name));
 			}
@@ -187,7 +189,7 @@ bool RenderGraph::Compile()
 
 			if (imported && !imported->texture)
 			{
-				return fail(std::format(
+				return LogCompileFailure(std::format(
 					"pass '{}' uses imported texture '{}' without a native texture",
 					pass.name,
 					texture.name));
@@ -199,7 +201,7 @@ bool RenderGraph::Compile()
 			{
 				if (flags != 0)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' binds texture '{}' both as an attachment and another view",
 						pass.name,
 						texture.name));
@@ -209,7 +211,7 @@ bool RenderGraph::Compile()
 					&& (firstAttachment->extent != description.extent
 						|| firstAttachment->sampleCount != description.sampleCount))
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' has attachments with different extents or sample counts",
 						pass.name));
 				}
@@ -222,27 +224,27 @@ bool RenderGraph::Compile()
 				if (access.loadOp != RenderGraphLoadOp::Load
 					&& access.loadOp != RenderGraphLoadOp::Clear)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' has an invalid color load operation",
 						pass.name));
 				}
 				if (access.slot >= colorSlots.size() || colorSlots[access.slot])
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' has an invalid or duplicate color target slot {}",
 						pass.name,
 						access.slot));
 				}
 				if (IsTypedDepthFormat(description.format))
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' uses depth texture '{}' as a color target",
 						pass.name,
 						texture.name));
 				}
 				if (imported && !imported->renderTargetView)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' uses imported texture '{}' without a render target view",
 						pass.name,
 						texture.name));
@@ -259,26 +261,26 @@ bool RenderGraph::Compile()
 				if (access.loadOp != RenderGraphLoadOp::Load
 					&& access.loadOp != RenderGraphLoadOp::Clear)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' has an invalid depth load operation",
 						pass.name));
 				}
 				if (access.depthAccess != RenderGraphDepthAccess::ReadOnly
 					&& access.depthAccess != RenderGraphDepthAccess::ReadWrite)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' has an invalid depth access mode",
 						pass.name));
 				}
 				if (hasDepthTarget)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' declares more than one depth target",
 						pass.name));
 				}
 				if (!IsDepthCompatibleFormat(description.format))
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' uses non-depth texture '{}' as a depth target",
 						pass.name,
 						texture.name));
@@ -286,14 +288,14 @@ bool RenderGraph::Compile()
 				if (access.depthAccess == RenderGraphDepthAccess::ReadOnly
 					&& access.loadOp == RenderGraphLoadOp::Clear)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' clears read-only depth texture '{}'",
 						pass.name,
 						texture.name));
 				}
 				if (imported && !imported->depthStencilView)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' uses imported texture '{}' without a depth-stencil view",
 						pass.name,
 						texture.name));
@@ -319,21 +321,21 @@ bool RenderGraph::Compile()
 						: pixelSlots;
 				if (access.slot >= slots.size() || slots[access.slot])
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' has an invalid or duplicate shader texture slot {}",
 						pass.name,
 						access.slot));
 				}
 				if ((flags & Attachment) != 0)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' binds texture '{}' as both an attachment and shader input",
 						pass.name,
 						texture.name));
 				}
 				if (imported && !imported->shaderResourceView)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' uses imported texture '{}' without a shader resource view",
 						pass.name,
 						texture.name));
@@ -357,6 +359,31 @@ bool RenderGraph::Compile()
 				});
 			}
 		}
+	}
+
+	return true;
+}
+
+bool RenderGraph::Compile()
+{
+	if (isAddingPass_)
+	{
+		return LogCompileFailure("Compile cannot run inside pass setup");
+	}
+
+	// A failed recompilation must never leave a stale executable order visible.
+	compiledPassOrder_.clear();
+	isCompiled_ = false;
+
+	if (!ValidateResourceDeclarations())
+	{
+		return false;
+	}
+
+	TextureUsesByTexture usesByTexture;
+	if (!ValidateBindingDeclarations(usesByTexture))
+	{
+		return false;
 	}
 
 	std::vector<std::vector<std::size_t>> outgoing(passes_.size());
@@ -388,7 +415,7 @@ bool RenderGraph::Compile()
 
 		if (writers.empty() && !uses.empty() && !isImported)
 		{
-			return fail(std::format(
+			return LogCompileFailure(std::format(
 				"transient texture '{}' is read but never written",
 				texture.name));
 		}
@@ -408,7 +435,7 @@ bool RenderGraph::Compile()
 				// Load on the first transient writer has no prior contents.
 				if (use.reads && nextWriter == writers.begin() && !isImported)
 				{
-					return fail(std::format(
+					return LogCompileFailure(std::format(
 						"pass '{}' loads transient texture '{}' before any write",
 						passes_[use.passIndex].name,
 						texture.name));
@@ -478,7 +505,7 @@ bool RenderGraph::Compile()
 		{
 			if (incomingCount[passIndex] != 0)
 			{
-				return fail(std::format(
+				return LogCompileFailure(std::format(
 					"cyclic dependencies leave pass '{}' blocked",
 					passes_[passIndex].name));
 			}

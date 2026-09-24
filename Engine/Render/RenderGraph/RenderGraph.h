@@ -98,6 +98,26 @@ private:
         std::function<void(ID3D11DeviceContext&)> execute;
     };
 
+    // Summarizes one pass's dependency-relevant use of one texture.
+    struct TextureUse
+    {
+        std::size_t passIndex = 0;
+        bool reads = false;
+        bool writes = false;
+    };
+
+    using TextureUsesByTexture =
+        std::vector<std::vector<TextureUse>>;
+
+    // Validates logical and imported texture declarations.
+    [[nodiscard]]
+    bool ValidateResourceDeclarations() const;
+
+    // Validates pass bindings and normalizes them into per-texture uses.
+    [[nodiscard]]
+    bool ValidateBindingDeclarations(
+        TextureUsesByTexture& usesByTexture) const;
+
     std::vector<TextureRecord> textures_;
     std::vector<PassDeclaration> passes_;
     std::vector<std::size_t> compiledPassOrder_;
