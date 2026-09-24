@@ -37,18 +37,19 @@ target_sources (GilgameshEngine
 		Render/Shader/ShaderManager.cpp
 		Render/Shader/ShaderManager.h
 		Render/Shader/ShaderTypes.h
+		Render/Shader/ShaderConstants.h
 
 		Render/DrawSetup/DrawSetupDesc.h
 		Render/DrawSetup/DrawSetup.h
 		Render/DrawSetup/DrawSetup.cpp
 
-		Render/Pipeline/RenderPipeline.cpp
-		Render/Pipeline/RenderPipeline.h
-		Render/Pipeline/Resource/RenderConstants.h
-		Render/Pipeline/Pass/IRenderPass.h
-		Render/Pipeline/Pass/PassDescriptor.h
-		Render/Pipeline/Pass/RenderPassContext.h
-		Render/Pipeline/Pass/RenderFrameData.h
+		Render/RenderGraph/Resource/RenderGraphTexture.h
+		Render/RenderGraph/RenderGraph.cpp
+		Render/RenderGraph/RenderGraph.h
+		Render/RenderGraph/GraphPassBuilder.cpp
+		Render/RenderGraph/GraphPassBuilder.h
+		Render/RenderGraph/Pass/GraphPass.h
+
 
 		Render/Techniques/SimpleMeshRenderer.cpp
 		Render/Techniques/SimpleMeshRenderer.h

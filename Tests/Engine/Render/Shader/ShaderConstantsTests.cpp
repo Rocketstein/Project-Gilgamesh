@@ -1,10 +1,10 @@
-#include "Engine/Render/Pipeline/Resource/RenderConstants.h"
+#include "Engine/Render/Shader/ShaderConstants.h"
 #include "Tests/TestFramework.h"
 
 #include <cstddef>
 
 GILGAMESH_TEST(
-    "Engine.Render.RenderConstants",
+    "Engine.Render.ShaderConstants",
     "MatchesConstantBufferPacking")
 {
     // Validate the explicit sizes consumed by D3D11 constant buffers.
@@ -12,7 +12,7 @@ GILGAMESH_TEST(
         sizeof(FrameConstants) == 288 &&
         sizeof(EditorConstants) == 32 &&
         sizeof(ObjectConstants) == 64,
-        "render constants must occupy complete 16-byte registers");
+        "shader constants must occupy complete 16-byte registers");
 
     // The float3 gap must place viewportDim at the next HLSL register.
     GILGAMESH_CHECK_MESSAGE(

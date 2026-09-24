@@ -51,8 +51,6 @@ These instructions apply to the entire repository.
   - C++ shader resources: `Engine/Render/Shader/`
   - Draw state setup: `Engine/Render/DrawSetup/`
   - Mesh resources and vertex formats: `Engine/Render/Mesh/`
-  - Pipeline and pass orchestration: `Engine/Render/Pipeline/` and
-    `Engine/Render/Pipeline/Pass/`
   - D3D11 device/presentation backend: `Engine/Render/D3D11/`
 - `DrawSetup` is the reusable shader/fixed-state bundle. `RenderPipeline` is the
   coordinator that orders and executes passes; do not use those names

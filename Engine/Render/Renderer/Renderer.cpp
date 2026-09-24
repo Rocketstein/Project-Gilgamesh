@@ -86,8 +86,6 @@ RenderResult Renderer::EndFrame()
 {
     const HRESULT result = surface_.Present();
 
-    // RenderPipeline orchestration will eventually go here.
-
     if (result == DXGI_STATUS_OCCLUDED)
         return RenderResult::Occluded;
 

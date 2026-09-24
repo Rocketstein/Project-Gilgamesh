@@ -10,7 +10,7 @@
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
 
 #include "Engine/Render/Buffers/ConstantBuffer.h"
-#include "Engine/Render/Pipeline/Resource/RenderConstants.h"
+#include "Engine/Render/Shader/ShaderConstants.h"
 
 // Draws frame-local static-mesh items through the vertex-color draw setup.
 class SimpleMeshRenderer final
