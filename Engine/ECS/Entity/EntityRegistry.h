@@ -39,7 +39,7 @@ public:
 
 	void Destroy(Entity entity);
 
-	bool IsValid(Entity entity);
+	bool IsValid(Entity entity) const noexcept;
 
 	// =========================================
 	// Component Management
@@ -48,7 +48,15 @@ public:
 
 
 private:
-	std::vector<Entity> entities_;
+	struct EntitySlot
+	{
+		std::uint32_t generation;
+		Entity entity;
+	};
+
+
+	std::vector<std::uint32_t> freeIndices_;
+	std::vector<EntitySlot> entities_;
 	std::unordered_map<std::type_index, IComponentStorage> storages_;
 
 };

@@ -10,6 +10,14 @@ public:
 	World() = default;
 
 
+	[[nodiscard]]
+	Entity CreateEntity();
+
+	[[nodiscard]]
+	bool DestroyEntity(Entity entity);
+
+	[[nodiscard]]
+	bool IsAlive(Entity entity) const noexcept;
 
 private:
 	EntityRegistry entityRegistery_;
