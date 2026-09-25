@@ -20,6 +20,6 @@ public:
 	bool IsAlive(Entity entity) const noexcept;
 
 private:
-	EntityRegistry entityRegistery_;
+	EntityRegistry entityRegistry_;
 
 };

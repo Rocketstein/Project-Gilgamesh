@@ -2,17 +2,15 @@
 
 Entity World::CreateEntity()
 {
-	Entity entity;
-
-	return entity;
+	return entityRegistry_.Create();
 }
 
 bool World::DestroyEntity(Entity entity)
 {
-	return true;
+	return entityRegistry_.Destroy(entity);
 }
 
 bool World::IsAlive(Entity entity) const noexcept
 {
-	return entityRegistery_.IsValid(entity);
+	return entityRegistry_.IsValid(entity);
 }
