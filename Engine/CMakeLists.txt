@@ -28,6 +28,10 @@ target_sources (GilgameshEngine
 		Platform/Windows/Logging/DebugOutputSink.cpp
 		Platform/Windows/Logging/DebugOutputSink.h
 
+		ECS/Entity/Entity.h
+		ECS/Entity/EntityRegistry.h
+		ECS/Framework/World.h
+
 		Render/D3D11/D3D11Device.cpp
 		Render/D3D11/D3D11Device.h
 		Render/D3D11/PresentationSurface.cpp

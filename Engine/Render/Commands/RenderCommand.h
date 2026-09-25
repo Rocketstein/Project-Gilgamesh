@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "Engine/Render/DrawSetup/DrawSetup.h"
+
 class VertexBuffer;
 class IndexBuffer;
 
@@ -11,8 +13,7 @@ struct RenderCommand
 	uint64_t sortKey = 0;
 
 	// Geometry
-	VertexBuffer* VB = nullptr;
-	IndexBuffer* IB = nullptr;
+	DrawSetup* setup;
 
 	// Draw Arguments
 	uint32_t indexCount = 0;
