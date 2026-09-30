@@ -29,6 +29,7 @@ target_sources (GilgameshEngine
 		Platform/Windows/Logging/DebugOutputSink.h
 
 		ECS/Entity/Entity.h
+		ECS/Framework/ComponentType.h
 		ECS/Framework/ArchetypeManager.cpp
 		ECS/Framework/ArchetypeManager.h
 		ECS/Framework/Archetype.h

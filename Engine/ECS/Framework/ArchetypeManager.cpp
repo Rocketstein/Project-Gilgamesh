@@ -5,7 +5,7 @@
 Archetype& ArchetypeManager::FindOrCreate(std::span<const ComponentTypeId> componentTypes)
 {
 	// Canonicalize component groupings
-	Signature signature = CanonicalizeSignature(componentTypes);
+	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
 
 	// Check if the component grouping already exists; if true, return.
 	if (archetypes_.count(signature))
@@ -22,7 +22,7 @@ Archetype& ArchetypeManager::FindOrCreate(std::span<const ComponentTypeId> compo
 Archetype* ArchetypeManager::Find(std::span<const ComponentTypeId> componentTypes)
 {
 	// Canonicalize component groupings
-	Signature signature = CanonicalizeSignature(componentTypes);
+	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
 
 	// Check if the component grouping already exists; if true, return.
 	if (archetypes_.count(signature))
@@ -42,10 +42,10 @@ void ArchetypeManager::EraseEntity(Entity entity)
 
 }
 
-ArchetypeManager::Signature ArchetypeManager::CanonicalizeSignature(
+ArchetypeSignature ArchetypeManager::CanonicalizeSignature(
 	std::span<const ComponentTypeId> componentTypes)
 {
-	Signature signature(componentTypes.begin(), componentTypes.end());
+	ArchetypeSignature signature(componentTypes.begin(), componentTypes.end());
 
 	std::sort(signature.begin(), signature.end());
 	signature.erase(

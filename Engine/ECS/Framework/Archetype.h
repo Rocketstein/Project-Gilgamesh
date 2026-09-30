@@ -5,9 +5,22 @@
 #include <vector>
 
 #include "Chunk.h"
-#include "Engine/ECS/Entity/Entity.h"
 
 struct Archetype
 {
+	ArchetypeSignature signature;
+	ComponentTypes componentTypes;
+
 	std::vector<std::unique_ptr<Chunk>> chunks;
+
+	template <typename T>
+	void RegisterComponent()
+	{
+		const ComponentTypeId typeID = typeid(T);
+		componentTypes.try_emplace(typeID, { sizeof(T), alignof(T) });
+	}
+
+	bool HasComponent(ComponentTypeId typeId) const {
+		return std::find(signature.begin(), signature.end(), typeId) != signature.end();
+	}
 };

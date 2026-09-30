@@ -12,9 +12,6 @@
 class ArchetypeManager final
 {
 public:
-	using ComponentTypeId = std::type_index;
-	using Signature = std::vector<ComponentTypeId>;
-
 	ArchetypeManager() = default;
 	ArchetypeManager(const ArchetypeManager&) = delete;
 	ArchetypeManager& operator=(const ArchetypeManager&) = delete;
@@ -35,9 +32,9 @@ public:
 
 private:
 	// Sort and remove duplicate types before looking up a signature.
-	[[nodiscard]] static Signature CanonicalizeSignature(
+	[[nodiscard]] static ArchetypeSignature CanonicalizeSignature(
 		std::span<const ComponentTypeId> componentTypes);
 
 	// Map keys compare complete signatures; map nodes keep archetype addresses stable.
-	std::map<Signature, Archetype> archetypes_;
+	std::map<ArchetypeSignature, Archetype> archetypes_;
 };
