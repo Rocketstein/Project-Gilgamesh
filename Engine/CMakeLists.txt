@@ -29,8 +29,12 @@ target_sources (GilgameshEngine
 		Platform/Windows/Logging/DebugOutputSink.h
 
 		ECS/Entity/Entity.h
-		ECS/Entity/EntityRegistry.cpp
-		ECS/Entity/EntityRegistry.h
+		ECS/Framework/Archetype.h
+		ECS/Framework/Chunk.h
+		ECS/Framework/EntityRegistry.cpp
+		ECS/Framework/EntityRegistry.h
+		ECS/Framework/Scene.cpp
+		ECS/Framework/Scene.h
 		ECS/Framework/World.cpp
 		ECS/Framework/World.h
 
