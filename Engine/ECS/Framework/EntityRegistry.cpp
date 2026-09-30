@@ -49,18 +49,15 @@ bool EntityRegistry::Destroy(Entity entity)
 	const bool canReuse =
 		slot.generation < std::numeric_limits<std::uint32_t>::max() - 1;
 
-	// Allocate free-list space before changing the entity or its components.
+	// Allocate free-list space before changing the entity's lifetime.
 	if (canReuse)
 	{
 		freeIndices_.reserve(freeIndices_.size() + 1);
 	}
 
-	for (auto& storage : storages_)
-	{
-		storage.second->Remove(entity);
-	}
-
-	// Invalidate the old handle immediately and never recycle an exhausted slot.
+	// Archetype row removal must precede this step once component storage exists.
+	// There are no component rows while the archetype storage API is only declared.
+	// Invalidate the old handle and never recycle an exhausted slot.
 	++slot.generation;
 	if (canReuse)
 	{

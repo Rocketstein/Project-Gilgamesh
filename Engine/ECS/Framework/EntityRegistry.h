@@ -1,33 +1,10 @@
 #pragma once
 
-#include <memory>
-#include <typeindex>
-#include <unordered_map>
+#include <cstdint>
 #include <vector>
 
-#include "Entity.h"
-
-// Component Storage Interface
-class IComponentStorage
-{
-public:
-	virtual ~IComponentStorage() = default;
-	virtual void Remove(Entity entity) = 0;
-	virtual bool const Has(Entity entity) = 0;
-};
-
-// Component Storage By Type
-template <typename T>
-class ComponentStorage : public IComponentStorage
-{
-public:
-	void Remove(Entity entity) override;
-	bool Has(Entity entity) const override;
-
-private:
-	// Component storage goes here
-	
-};
+#include "Engine/ECS/Entity/Entity.h"
+#include "Engine/ECS/Framework/ArchetypeManager.h"
 
 // Issues entity handles and owns the generations used to validate them.
 class EntityRegistry final
@@ -48,33 +25,23 @@ public:
 
 	[[nodiscard]] bool IsValid(Entity entity) const noexcept;
 
-	// =========================================
-	// Component Management
-	// =========================================
+	// Component operations become available when archetype storage is implemented.
+	// Keep unsupported calls explicit instead of leaving templates that use
+	// the removed per-type storage.
 	template <typename T, typename... Args>
-	T& Add(Entity entity, Args&&... args) {
-		auto& storage = GetStorage<T>();
-		storage.data[entity] = T{ std::forward<Args>(args)... };
-		return storage.data[entity];
-	}
+	T& Add(Entity entity, Args&&... args) = delete;
 
 	template <typename T>
-	T& Get(Entity entity) {
-		return GetStorage<T>().data.at(entity);
-	}
+	T& Get(Entity entity) = delete;
 
 	template <typename T>
-	bool Has(Entity entity) {
-		return GetStorage<T>().Has(entity);
-	}
+	bool Has(Entity entity) const = delete;
 
 	template <typename T>
-	void Remove(Entity entity) {
-		GetStorage<T>().Remove(entity);
-	}
+	void Remove(Entity entity) = delete;
 
-	template<class... Components, class Fn>
-	void ForEach(Fn&& fn);
+	template <class... Components, class Fn>
+	void ForEach(Fn&& fn) = delete;
 
 
 private:
@@ -86,7 +53,8 @@ private:
 
 	std::vector<std::uint32_t> freeIndices_;
 	std::vector<EntitySlot> slots_;
-	std::unordered_map<std::type_index, std::unique_ptr<IComponentStorage>> storages_;
+	// Own the future component storage behind the registry's entity API.
+	ArchetypeManager archetypeManager_;
 	std::uint64_t ownerId_ = 0;
 
 };

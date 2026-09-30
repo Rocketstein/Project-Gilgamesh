@@ -1,4 +1,4 @@
-#include "Engine/ECS/Entity/EntityRegistry.h"
+#include "Engine/ECS/Framework/EntityRegistry.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Tests/TestFramework.h"
 
