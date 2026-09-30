@@ -1,40 +1,55 @@
 #include "ArchetypeManager.h"
 
 #include <algorithm>
+#include <stdexcept>
+#include <utility>
+
+#include "Engine/Core/Logging/Logger.h"
 
 Archetype& ArchetypeManager::FindOrCreate(std::span<const ComponentTypeId> componentTypes)
 {
-	// Canonicalize component groupings
+	// Use one key for every ordering of the same component types.
 	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
 
-	// Check if the component grouping already exists; if true, return.
-	if (archetypes_.count(signature))
-		return archetypes_[signature];
+	// Existing archetypes already own the metadata for their signatures.
+	if (const auto existing = archetypes_.find(signature); existing != archetypes_.end())
+		return existing->second;
 
-	// Register new component grouping as an archetype
-	
-	// Create Archetype
-	Archetype archetype = {};
-	archetypes_[signature] = archetype;
-	return archetype;
+	// Resolve every component before inserting, so an incomplete archetype is never stored.
+	ComponentTypes componentMetadata;
+	componentMetadata.reserve(signature.size());
+	for (const ComponentTypeId& typeId : signature)
+	{
+		const auto registered = registeredComponentTypes_.find(typeId);
+		if (registered == registeredComponentTypes_.end())
+		{
+			GILGAMESH_LOG(Core, Error,
+				"Cannot create archetype: component type '{}' is not registered", typeId.name());
+			throw std::logic_error("Cannot create archetype with an unregistered component type");
+		}
+		componentMetadata.emplace(typeId, registered->second);
+	}
+
+	// The first argument is the map key; later arguments construct Archetype in place.
+	const auto result = archetypes_.try_emplace(
+		signature, signature, std::move(componentMetadata));
+	return result.first->second;
 }
 
 Archetype* ArchetypeManager::Find(std::span<const ComponentTypeId> componentTypes)
 {
-	// Canonicalize component groupings
+	// Use the same canonical key as FindOrCreate without requiring a default constructor.
 	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
-
-	// Check if the component grouping already exists; if true, return.
-	if (archetypes_.count(signature))
-		return &archetypes_[signature];
-
-	return nullptr;
+	const auto it = archetypes_.find(signature);
+	return it != archetypes_.end() ? &it->second : nullptr;
 }
 
 const Archetype* ArchetypeManager::Find(std::span<const ComponentTypeId> componentTypes) const
 {
-	const Archetype* archetype = Find(componentTypes);
-	return archetype;
+	// Look up the stored archetype without calling this const overload again.
+	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
+	const auto it = archetypes_.find(signature);
+	return it != archetypes_.end() ? &it->second : nullptr;
 }
 
 void ArchetypeManager::EraseEntity(Entity entity)

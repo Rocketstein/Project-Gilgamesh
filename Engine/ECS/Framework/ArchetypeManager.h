@@ -3,6 +3,7 @@
 #include <map>
 #include <span>
 #include <typeindex>
+#include <typeinfo>
 #include <vector>
 
 #include "Archetype.h"
@@ -18,8 +19,18 @@ public:
 	ArchetypeManager(ArchetypeManager&&) = delete;
 	ArchetypeManager& operator=(ArchetypeManager&&) = delete;
 
+	// Register storage metadata while the C++ component type is known.
+	template <typename T>
+	void RegisterComponent()
+	{
+		const ComponentTypeId typeId{ typeid(T) };
+		registeredComponentTypes_.try_emplace(
+			typeId, ComponentTypeInfo{ sizeof(T), alignof(T) });
+	}
+
 	// Normalize the type set and return its existing archetype, or create it once.
 	// The order of input types and duplicate entries do not affect identity.
+	// Every type must be registered before a new archetype is created.
 	Archetype& FindOrCreate(std::span<const ComponentTypeId> componentTypes);
 
 	// Return nullptr when this set of types has no archetype yet.
@@ -37,4 +48,6 @@ private:
 
 	// Map keys compare complete signatures; map nodes keep archetype addresses stable.
 	std::map<ArchetypeSignature, Archetype> archetypes_;
+	// Registered size and alignment information is shared by all archetypes.
+	ComponentTypes registeredComponentTypes_;
 };

@@ -1,13 +1,14 @@
 #pragma once
 
+#include <cstddef>
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
 
 struct ComponentTypeInfo
 {
-	size_t size;
-	size_t alignment;
+	std::size_t size;
+	std::size_t alignment;
 };
 
 using ComponentTypeId	 = std::type_index;

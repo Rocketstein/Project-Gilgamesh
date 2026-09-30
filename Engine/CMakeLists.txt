@@ -32,6 +32,7 @@ target_sources (GilgameshEngine
 		ECS/Framework/ComponentType.h
 		ECS/Framework/ArchetypeManager.cpp
 		ECS/Framework/ArchetypeManager.h
+		ECS/Framework/Archetype.cpp
 		ECS/Framework/Archetype.h
 		ECS/Framework/Chunk.h
 		ECS/Framework/EntityRegistry.cpp

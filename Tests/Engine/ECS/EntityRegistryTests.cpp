@@ -1,6 +1,88 @@
+#include <array>
+#include <stdexcept>
+
+#include "Engine/ECS/Framework/ArchetypeManager.h"
 #include "Engine/ECS/Framework/EntityRegistry.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Tests/TestFramework.h"
+
+GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "ReusesCanonicalSignature")
+{
+	ArchetypeManager manager;
+	manager.RegisterComponent<int>();
+	manager.RegisterComponent<float>();
+
+	// Duplicate and reordered type IDs describe the same component set.
+	const std::array<ComponentTypeId, 3> withDuplicate{
+		ComponentTypeId{ typeid(int) },
+		ComponentTypeId{ typeid(float) },
+		ComponentTypeId{ typeid(int) }
+	};
+	const std::array<ComponentTypeId, 2> reversed{
+		ComponentTypeId{ typeid(float) },
+		ComponentTypeId{ typeid(int) }
+	};
+
+	// Equivalent type sets must resolve to the same stored archetype.
+	Archetype& archetype = manager.FindOrCreate(withDuplicate);
+	Archetype& reused = manager.FindOrCreate(reversed);
+	const ArchetypeManager& readOnlyManager = manager;
+	const Archetype* found = readOnlyManager.Find(reversed);
+	GILGAMESH_CHECK_MESSAGE(&archetype == &reused && found == &archetype,
+		"equivalent signatures must return the same stored archetype");
+	GILGAMESH_CHECK_MESSAGE(archetype.signature.size() == 2 &&
+		archetype.HasComponent(ComponentTypeId{ typeid(int) }) &&
+		archetype.HasComponent(ComponentTypeId{ typeid(float) }),
+		"the stored signature must be canonical and contain both types");
+
+	// The archetype must receive the registered storage requirements for both types.
+	const auto intInfo = archetype.componentTypes.find(ComponentTypeId{ typeid(int) });
+	const auto floatInfo = archetype.componentTypes.find(ComponentTypeId{ typeid(float) });
+	GILGAMESH_CHECK_MESSAGE(archetype.componentTypes.size() == 2 &&
+		intInfo != archetype.componentTypes.end() &&
+		floatInfo != archetype.componentTypes.end(),
+		"the archetype must contain metadata for exactly its component types");
+	if (intInfo != archetype.componentTypes.end() && floatInfo != archetype.componentTypes.end())
+	{
+		GILGAMESH_CHECK_MESSAGE(intInfo->second.size == sizeof(int) &&
+			intInfo->second.alignment == alignof(int) &&
+			floatInfo->second.size == sizeof(float) &&
+			floatInfo->second.alignment == alignof(float),
+			"component metadata must preserve each type's size and alignment");
+	}
+}
+
+GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "RequiresRegisteredComponents")
+{
+	ArchetypeManager manager;
+	manager.RegisterComponent<int>();
+	const std::array<ComponentTypeId, 2> signature{
+		ComponentTypeId{ typeid(int) },
+		ComponentTypeId{ typeid(float) }
+	};
+
+	// A missing type must fail before an incomplete archetype is inserted.
+	bool rejected = false;
+	try
+	{
+		(void)manager.FindOrCreate(signature);
+	}
+	catch (const std::logic_error&)
+	{
+		rejected = true;
+	}
+	GILGAMESH_CHECK_MESSAGE(rejected,
+		"archetype creation must reject an unregistered component type");
+	GILGAMESH_CHECK_MESSAGE(manager.Find(signature) == nullptr,
+		"failed creation must not insert an incomplete archetype");
+
+	// Registration after the failed request must allow the same signature.
+	manager.RegisterComponent<float>();
+	Archetype& archetype = manager.FindOrCreate(signature);
+	GILGAMESH_CHECK_MESSAGE(manager.Find(signature) == &archetype &&
+		archetype.componentTypes.size() == 2,
+		"registration must allow the complete archetype to be created");
+}
 
 GILGAMESH_TEST("Engine.ECS.EntityRegistry", "DestroyInvalidatesOldHandle")
 {
