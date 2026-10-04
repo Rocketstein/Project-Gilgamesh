@@ -15,7 +15,7 @@ Archetype& ArchetypeManager::FindOrCreate(std::span<const ComponentTypeId> compo
 	if (const auto existing = archetypes_.find(signature); existing != archetypes_.end())
 		return existing->second;
 
-	// Resolve every component before inserting, so an incomplete archetype is never stored.
+	// Resolve every component before inserting
 	ComponentTypes componentMetadata;
 	componentMetadata.reserve(signature.size());
 	for (const ComponentTypeId& typeId : signature)

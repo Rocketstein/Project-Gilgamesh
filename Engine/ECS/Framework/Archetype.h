@@ -23,6 +23,8 @@ struct Archetype
 	const ArchetypeSignature signature;
 	// Size and alignment metadata for each component type in the signature.
 	const ComponentTypes componentTypes;
+	// Layout metadata is shared by every chunk of this archetype.
+	const ChunkLayout layout;
 	// Chunks must be destroyed before the metadata they reference.
 	std::vector<std::unique_ptr<Chunk>> chunks;
 };

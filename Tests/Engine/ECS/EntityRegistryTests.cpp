@@ -1,10 +1,20 @@
 #include <array>
+#include <cstddef>
 #include <stdexcept>
 
 #include "Engine/ECS/Framework/ArchetypeManager.h"
 #include "Engine/ECS/Framework/EntityRegistry.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Tests/TestFramework.h"
+
+namespace
+{
+// Exercises an allocation alignment larger than the Entity column requires.
+struct alignas(64) OverAlignedComponent
+{
+	std::byte value;
+};
+}
 
 GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "ReusesCanonicalSignature")
 {
@@ -82,6 +92,59 @@ GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "RequiresRegisteredComponents")
 	GILGAMESH_CHECK_MESSAGE(manager.Find(signature) == &archetype &&
 		archetype.componentTypes.size() == 2,
 		"registration must allow the complete archetype to be created");
+}
+
+GILGAMESH_TEST("Engine.ECS.ArchetypeLayout", "EmptySignatureUsesEntityColumn")
+{
+	ArchetypeManager manager;
+	const std::array<ComponentTypeId, 0> signature{};
+	const ChunkLayout& layout = manager.FindOrCreate(signature).layout;
+
+	// With no component columns, every byte is available to the Entity column.
+	GILGAMESH_CHECK_MESSAGE(layout.capacity == CHUNK_SIZE / sizeof(Entity),
+		"an empty archetype must use the entire chunk for Entity values");
+	GILGAMESH_CHECK_MESSAGE(layout.entityOffset == 0 &&
+		layout.allocationAlignment == alignof(Entity) &&
+		layout.componentColumns.empty(),
+		"an empty archetype must describe only an aligned Entity column");
+}
+
+GILGAMESH_TEST("Engine.ECS.ArchetypeLayout", "OverAlignedComponentFitsMaximumRows")
+{
+	ArchetypeManager manager;
+	manager.RegisterComponent<OverAlignedComponent>();
+	const ComponentTypeId typeId{ typeid(OverAlignedComponent) };
+	const std::array<ComponentTypeId, 1> signature{ typeId };
+	const ChunkLayout& layout = manager.FindOrCreate(signature).layout;
+
+	// The allocation and component column must satisfy the component's alignment.
+	const auto columnIt = layout.componentColumns.find(typeId);
+	GILGAMESH_CHECK_MESSAGE(layout.capacity > 0 &&
+		layout.allocationAlignment == alignof(OverAlignedComponent),
+		"the layout must fit rows in storage aligned for the component");
+	GILGAMESH_CHECK_MESSAGE(columnIt != layout.componentColumns.end(),
+		"the layout must contain the registered component column");
+	if (columnIt == layout.componentColumns.end())
+		return;
+
+	const ChunkLayout::Column& column = columnIt->second;
+	GILGAMESH_CHECK_MESSAGE(layout.entityOffset == 0 &&
+		column.offset % alignof(OverAlignedComponent) == 0 &&
+		column.stride == sizeof(OverAlignedComponent),
+		"the component column must start on an aligned address and use its object size as stride");
+	GILGAMESH_CHECK_MESSAGE(layout.entityOffset + layout.capacity * sizeof(Entity) <= column.offset &&
+		column.offset + layout.capacity * column.stride <= CHUNK_SIZE,
+		"the Entity and component columns must not overlap or exceed the chunk");
+
+	// One additional row must exceed the chunk after aligning the component column.
+	const std::size_t nextCapacity = static_cast<std::size_t>(layout.capacity) + 1;
+	const std::size_t entityBytes = nextCapacity * sizeof(Entity);
+	const std::size_t alignment = alignof(OverAlignedComponent);
+	const std::size_t alignedComponentOffset =
+		entityBytes + (alignment - entityBytes % alignment) % alignment;
+	GILGAMESH_CHECK_MESSAGE(
+		alignedComponentOffset + nextCapacity * sizeof(OverAlignedComponent) > CHUNK_SIZE,
+		"the layout capacity must be the maximum number of rows that fit");
 }
 
 GILGAMESH_TEST("Engine.ECS.EntityRegistry", "DestroyInvalidatesOldHandle")
