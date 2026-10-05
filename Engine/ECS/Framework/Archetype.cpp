@@ -103,22 +103,38 @@ Archetype::Archetype(ArchetypeSignature inSignature, ComponentTypes inComponentT
 {
 }
 
-Chunk* Archetype::FindOrCreateUsableChunk() const
-{	
+Chunk* Archetype::FindOrCreateUsableChunk()
+{
 	if (!availableChunks.empty())
 	{
 		return availableChunks.back();
 	}
 
-	std::unique_ptr<Chunk> newChunk = std::make_unique<Chunk>(layout);
-	availableChunks.push_back(std::move(newChunk.get()));
+	// Reserve the availability entry before publishing ownership of a new chunk.
+	availableChunks.reserve(chunks.size() + 1);
+	std::unique_ptr<Chunk> newChunk = std::make_unique<Chunk>(layout, componentTypes);
+	Chunk* result = newChunk.get();
+	chunks.push_back(std::move(newChunk));
+	availableChunks.push_back(result);
 
-	return availableChunks.back();
+	return result;
 }
 
-bool Archetype::RemoveEntity(Entity entity)
+std::optional<Entity> Archetype::EraseRow(Chunk& chunk, std::uint32_t row)
 {
+	// A formerly full chunk becomes available after one successful erase.
+	const bool wasFull = chunk.IsFull();
+	if (wasFull)
+	{
+		availableChunks.reserve(chunks.size());
+	}
 
+	std::optional<Entity> displaced = chunk.Erase(row);
+	if (wasFull)
+	{
+		availableChunks.push_back(&chunk);
+	}
+	return displaced;
 }
 
 bool Archetype::HasComponent(ComponentTypeId typeId) const

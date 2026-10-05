@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <typeinfo>
+#include <utility>
 #include <vector>
 
 #include "Engine/ECS/Entity/Entity.h"
@@ -41,8 +42,8 @@ public:
 		signature.emplace_back(typeid(T));
 
 		Archetype& target = archetypeManager_.FindOrCreate(signature);
-		Chunk& destination = target.FindOrCreateUsableChunk(); // Planned API
-		auto pending = destination.BeginRow(entity);              // Planned API
+		Chunk* destination = target.FindOrCreateUsableChunk();
+		auto pending = destination->BeginRow(entity);               // Planned API
 
 		// Construct T first: its constructor may throw while the source is intact.
 		T& value = pending.Construct<T>(std::forward<Args>(args)...);
@@ -64,7 +65,7 @@ public:
 		const std::uint32_t newRow = pending.Commit();
 		if (source.chunk != nullptr)
 		{
-			if (const auto displaced = source.chunk->EraseSwap(source.row))
+			if (const auto displaced = source.archetype->EraseRow(*source.chunk, source.row))
 			{
 				slots_[displaced->index_].row = source.row;
 			}
@@ -72,7 +73,7 @@ public:
 
 		EntitySlot& slot = slots_[entity.index_];
 		slot.archetype = &target;
-		slot.chunk = &destination;
+		slot.chunk = destination;
 		slot.row = newRow;
 		return value;
 	}

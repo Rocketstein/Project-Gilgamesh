@@ -1,9 +1,13 @@
 #pragma once
 
 #include <map>
+#include <memory>
+#include <new>
 #include <span>
 #include <typeindex>
 #include <typeinfo>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "Archetype.h"
@@ -23,9 +27,27 @@ public:
 	template <typename T>
 	void RegisterComponent()
 	{
+		static_assert(std::is_nothrow_move_constructible_v<T>,
+			"Components must be nothrow move constructible");
+		static_assert(std::is_nothrow_destructible_v<T>,
+			"Components must be nothrow destructible");
+
+		// Preserve T's move and destruction operations for runtime archetype rows.
 		const ComponentTypeId typeId{ typeid(T) };
 		registeredComponentTypes_.try_emplace(
-			typeId, ComponentTypeInfo{ sizeof(T), alignof(T) });
+			typeId, ComponentTypeInfo{
+				sizeof(T),
+				alignof(T),
+				[](void* destination, void* source) noexcept
+				{
+					std::construct_at(static_cast<T*>(destination),
+						std::move(*std::launder(static_cast<T*>(source))));
+				},
+				[](void* address) noexcept
+				{
+					std::destroy_at(std::launder(static_cast<T*>(address)));
+				}
+			});
 	}
 
 	// Normalize the type set and return its existing archetype, or create it once.

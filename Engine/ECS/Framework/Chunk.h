@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <new>
+#include <optional>
 #include <stdexcept>
 #include <typeinfo>
 #include <unordered_map>
@@ -54,23 +55,25 @@ struct ChunkLayout
 class Chunk final
 {
 public:
-    explicit Chunk(const ChunkLayout& layout);
-    // Storage allocation and cleanup will be added with the chunk implementation.
-    ~Chunk() = default;
+    Chunk(const ChunkLayout& layout, const ComponentTypes& componentTypes);
+    ~Chunk() noexcept;
 
     Chunk(const Chunk&) = delete;
     Chunk& operator=(const Chunk&) = delete;
     Chunk(Chunk&&) = delete;
     Chunk& operator=(Chunk&&) = delete;
 
-    // Remove a live row and fill its gap with the last row when needed.
-    bool Erase(std::uint32_t row);
+    // Remove a live row; nullopt means it was the last row. Invalid rows throw.
+    [[nodiscard]] std::optional<Entity> Erase(std::uint32_t row);
 
-    // Adds a new component to the chunk.
+    // Report whether this chunk has room for another complete row.
+    [[nodiscard]] bool IsFull() const noexcept { return count_ == layout_.capacity; }
+
+    // Construct one component in the next row; callers manage pending cleanup.
     template <typename T, typename... Args>
     T& InsertComponent(Args&&... args)
     {
-        if (storage_ = nullptr || count_ >= layout_.capacity)
+        if (storage_ == nullptr || count_ >= layout_.capacity)
         {
             throw std::length_error("Chunk is full and cannot accommodate more rows");
         }
@@ -112,7 +115,9 @@ public:
 private:
     // Layout metadata is owned by the archetype and outlives this chunk.
     const ChunkLayout& layout_;
-    // Aligned storage will hold the live component rows.
+    // Runtime lifetime operations are owned by the archetype.
+    const ComponentTypes& componentTypes_;
+    // Aligned storage holds the live component rows.
     std::byte* storage_ = nullptr;
     // Rows in [0, count_) contain live component values.
     std::uint32_t count_ = 0;
