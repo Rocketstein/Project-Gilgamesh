@@ -16,6 +16,9 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <new>
+#include <stdexcept>
+#include <typeinfo>
 #include <unordered_map>
 
 #include "ComponentType.h"
@@ -56,6 +59,28 @@ public:
     Chunk& operator=(const Chunk&) = delete;
     Chunk(Chunk&&) = delete;
     Chunk& operator=(Chunk&&) = delete;
+
+    // Return an existing component in a live row of this chunk.
+    template <typename T>
+    T& Get(std::uint32_t row)
+    {
+        // Only committed rows contain constructed component objects.
+        if (storage_ == nullptr || row >= count_)
+        {
+            throw std::out_of_range("Chunk row does not contain a live component");
+        }
+
+        // Locate T's column, then advance to the requested row within it.
+        const auto columnIt = layout_.componentColumns.find(ComponentTypeId{ typeid(T) });
+        if (columnIt == layout_.componentColumns.end())
+        {
+            throw std::out_of_range("Chunk does not contain the requested component type");
+        }
+
+        const ChunkLayout::Column& column = columnIt->second;
+        std::byte* address = storage_ + column.offset + row * column.stride;
+        return *std::launder(reinterpret_cast<T*>(address));
+    }
 
 private:
     // Layout metadata is owned by the archetype and outlives this chunk.

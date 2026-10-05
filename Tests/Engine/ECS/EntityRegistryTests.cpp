@@ -175,6 +175,47 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "DestroyInvalidatesOldHandle")
 		"reusing another slot must not disturb a live entity");
 }
 
+GILGAMESH_TEST("Engine.ECS.EntityRegistry", "HasRejectsEntitiesWithoutRows")
+{
+	EntityRegistry registry;
+	EntityRegistry otherRegistry;
+	const Entity entity = registry.Create();
+	const Entity foreign = otherRegistry.Create();
+
+	// New entities have no archetype row, and invalid handles cannot own one.
+	GILGAMESH_CHECK_MESSAGE(!registry.Has<int>(entity),
+		"a new entity must not report a component before placement");
+	GILGAMESH_CHECK_MESSAGE(!registry.Has<int>(Entity{}),
+		"the null handle must not report a component");
+	GILGAMESH_CHECK_MESSAGE(!registry.Has<int>(foreign),
+		"an entity from another registry must not report a component");
+
+	// A destroyed handle remains unable to report components.
+	GILGAMESH_CHECK_MESSAGE(registry.Destroy(entity),
+		"the entity must be destroyed for the stale-handle check");
+	GILGAMESH_CHECK_MESSAGE(!registry.Has<int>(entity),
+		"a stale handle must not report a component");
+}
+
+GILGAMESH_TEST("Engine.ECS.EntityRegistry", "GetRejectsUnplacedEntity")
+{
+	EntityRegistry registry;
+	const Entity entity = registry.Create();
+
+	// A newly created entity has no constructed component to return by reference.
+	bool rejected = false;
+	try
+	{
+		(void)registry.Get<int>(entity);
+	}
+	catch (const std::out_of_range&)
+	{
+		rejected = true;
+	}
+	GILGAMESH_CHECK_MESSAGE(rejected,
+		"Get must reject an entity without the requested component");
+}
+
 GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")
 {
 	World firstWorld;

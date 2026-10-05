@@ -57,6 +57,11 @@ bool EntityRegistry::Destroy(Entity entity)
 
 	// Archetype row removal must precede this step once component storage exists.
 	// There are no component rows while the archetype storage API is only declared.
+	// Clear the location before the slot can be reused.
+	slot.archetype = nullptr;
+	slot.chunk = nullptr;
+	slot.row = 0;
+
 	// Invalidate the old handle and never recycle an exhausted slot.
 	++slot.generation;
 	if (canReuse)
