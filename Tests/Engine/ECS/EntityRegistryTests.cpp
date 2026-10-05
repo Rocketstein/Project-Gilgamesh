@@ -1,6 +1,8 @@
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
+#include <utility>
 
 #include "Engine/ECS/Framework/ArchetypeManager.h"
 #include "Engine/ECS/Framework/EntityRegistry.h"
@@ -14,6 +16,45 @@ struct alignas(64) OverAlignedComponent
 {
 	std::byte value;
 };
+
+// Tracks the lifetime of a movable, noncopyable component across row changes.
+struct TrackedComponent
+{
+	static inline int liveCount = 0;
+
+	explicit TrackedComponent(int input)
+		: value(std::make_unique<int>(input))
+	{
+		++liveCount;
+	}
+
+	TrackedComponent(TrackedComponent&& other) noexcept
+		: value(std::move(other.value))
+	{
+		++liveCount;
+	}
+
+	TrackedComponent(const TrackedComponent&) = delete;
+	TrackedComponent& operator=(const TrackedComponent&) = delete;
+
+	~TrackedComponent() noexcept { --liveCount; }
+
+	// Owned data must survive a move between archetype rows.
+	std::unique_ptr<int> value;
+};
+
+// Lets an insertion fail after a preceding component was constructed.
+struct ThrowingComponent
+{
+	explicit ThrowingComponent(bool shouldThrow)
+	{
+		if (shouldThrow)
+			throw std::runtime_error("Component construction failed");
+	}
+
+	ThrowingComponent(ThrowingComponent&&) noexcept = default;
+};
+
 }
 
 GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "ReusesCanonicalSignature")
@@ -147,6 +188,166 @@ GILGAMESH_TEST("Engine.ECS.ArchetypeLayout", "OverAlignedComponentFitsMaximumRow
 		"the layout capacity must be the maximum number of rows that fit");
 }
 
+GILGAMESH_TEST("Engine.ECS.Archetype", "FailedConstructionRollsBackPendingRow")
+{
+	TrackedComponent::liveCount = 0;
+	{
+		EntityRegistry registry;
+		ArchetypeManager manager;
+		manager.RegisterComponent<TrackedComponent>();
+		manager.RegisterComponent<ThrowingComponent>();
+		const std::array<ComponentTypeId, 2> signature{
+			ComponentTypeId{ typeid(TrackedComponent) },
+			ComponentTypeId{ typeid(ThrowingComponent) }
+		};
+		Archetype& archetype = manager.FindOrCreate(signature);
+
+		// Keep one committed row to inspect after the next constructor throws.
+		const auto [chunk, firstRow] = archetype.InsertRow(
+			registry.Create(), [](Chunk::PendingRow& pending)
+			{
+				pending.Construct<TrackedComponent>(10);
+				pending.Construct<ThrowingComponent>(false);
+			});
+		GILGAMESH_CHECK_MESSAGE(firstRow == 0 && chunk->Count() == 1 &&
+			TrackedComponent::liveCount == 1,
+			"the first row must be complete before testing rollback");
+
+		bool rejected = false;
+		try
+		{
+			(void)archetype.InsertRow(
+				registry.Create(), [](Chunk::PendingRow& pending)
+				{
+					pending.Construct<TrackedComponent>(20);
+					pending.Construct<ThrowingComponent>(true);
+				});
+		}
+		catch (const std::runtime_error&)
+		{
+			rejected = true;
+		}
+		GILGAMESH_CHECK_MESSAGE(rejected && chunk->Count() == 1 &&
+			TrackedComponent::liveCount == 1 &&
+			chunk->Get<TrackedComponent>(0).value &&
+			*chunk->Get<TrackedComponent>(0).value == 10,
+			"failed construction must destroy only the pending objects");
+
+		// A later insertion must reuse the row abandoned by the exception.
+		const auto [reusedChunk, reusedRow] = archetype.InsertRow(
+			registry.Create(), [](Chunk::PendingRow& pending)
+			{
+				pending.Construct<TrackedComponent>(30);
+				pending.Construct<ThrowingComponent>(false);
+			});
+		GILGAMESH_CHECK_MESSAGE(reusedChunk == chunk && reusedRow == 1 &&
+			chunk->Count() == 2 && TrackedComponent::liveCount == 2,
+			"insertion must reuse the pending row after rollback");
+	}
+	GILGAMESH_CHECK_MESSAGE(TrackedComponent::liveCount == 0,
+		"destroying the archetype must destroy every committed component");
+}
+
+GILGAMESH_TEST("Engine.ECS.Archetype", "IncompleteRowDoesNotCommit")
+{
+	EntityRegistry registry;
+	ArchetypeManager manager;
+	manager.RegisterComponent<int>();
+	manager.RegisterComponent<float>();
+	const std::array<ComponentTypeId, 2> signature{
+		ComponentTypeId{ typeid(int) }, ComponentTypeId{ typeid(float) }
+	};
+	Archetype& archetype = manager.FindOrCreate(signature);
+
+	// A successful row gives a stable chunk pointer for rollback checks.
+	const auto [chunk, firstRow] = archetype.InsertRow(
+		registry.Create(), [](Chunk::PendingRow& pending)
+		{
+			pending.Construct<int>(1);
+			pending.Construct<float>(1.0f);
+		});
+	GILGAMESH_CHECK_MESSAGE(firstRow == 0 && chunk->Count() == 1,
+		"the first row must be committed");
+
+	bool rejected = false;
+	try
+	{
+		(void)archetype.InsertRow(
+			registry.Create(), [](Chunk::PendingRow& pending)
+			{
+				pending.Construct<int>(2);
+			});
+	}
+	catch (const std::logic_error&)
+	{
+		rejected = true;
+	}
+	GILGAMESH_CHECK_MESSAGE(rejected && chunk->Count() == 1 &&
+		chunk->Get<int>(0) == 1 && chunk->Get<float>(0) == 1.0f,
+		"a row with a missing column must not change committed storage");
+
+	// The complete retry should use the same chunk and next row index.
+	const auto [reusedChunk, reusedRow] = archetype.InsertRow(
+		registry.Create(), [](Chunk::PendingRow& pending)
+		{
+			pending.Construct<int>(3);
+			pending.Construct<float>(3.0f);
+		});
+	GILGAMESH_CHECK_MESSAGE(reusedChunk == chunk && reusedRow == 1 &&
+		chunk->Count() == 2 && chunk->Get<int>(1) == 3,
+		"incomplete-row rollback must leave the chunk reusable");
+}
+
+GILGAMESH_TEST("Engine.ECS.Archetype", "FullChunkBecomesAvailableAfterErase")
+{
+	EntityRegistry registry;
+	ArchetypeManager manager;
+	manager.RegisterComponent<int>();
+	const std::array<ComponentTypeId, 1> signature{ ComponentTypeId{ typeid(int) } };
+	Archetype& archetype = manager.FindOrCreate(signature);
+	Chunk* firstChunk = nullptr;
+	bool rowsStayedSequential = true;
+
+	// Fill one chunk and verify all rows used that allocation.
+	for (std::uint32_t i = 0; i < archetype.layout.capacity; ++i)
+	{
+		const auto [chunk, row] = archetype.InsertRow(
+			registry.Create(), [i](Chunk::PendingRow& pending)
+			{
+				pending.Construct<int>(static_cast<int>(i));
+			});
+		if (firstChunk == nullptr)
+			firstChunk = chunk;
+		rowsStayedSequential = rowsStayedSequential &&
+			chunk == firstChunk && row == i;
+	}
+	GILGAMESH_CHECK_MESSAGE(rowsStayedSequential && firstChunk != nullptr &&
+		firstChunk->IsFull(),
+		"rows must fill the first chunk before another is selected");
+
+	// A full chunk is removed from the availability list.
+	const auto [secondChunk, secondRow] = archetype.InsertRow(
+		registry.Create(), [](Chunk::PendingRow& pending)
+		{
+			pending.Construct<int>(-1);
+		});
+	GILGAMESH_CHECK_MESSAGE(secondChunk != firstChunk && secondRow == 0,
+		"the next insertion must allocate another chunk");
+
+	// Erasing from the full chunk makes it the next insertion target.
+	const auto displaced = archetype.EraseRow(*firstChunk, archetype.layout.capacity - 1);
+	GILGAMESH_CHECK_MESSAGE(!displaced && !firstChunk->IsFull(),
+		"erasing the final row must reopen the full chunk");
+	const auto [reusedChunk, reusedRow] = archetype.InsertRow(
+		registry.Create(), [](Chunk::PendingRow& pending)
+		{
+			pending.Construct<int>(-2);
+		});
+	GILGAMESH_CHECK_MESSAGE(reusedChunk == firstChunk &&
+		reusedRow == archetype.layout.capacity - 1 && firstChunk->IsFull(),
+		"the reopened chunk must be reused before another allocation");
+}
+
 GILGAMESH_TEST("Engine.ECS.EntityRegistry", "DestroyInvalidatesOldHandle")
 {
 	EntityRegistry registry;
@@ -214,6 +415,68 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "GetRejectsUnplacedEntity")
 	}
 	GILGAMESH_CHECK_MESSAGE(rejected,
 		"Get must reject an entity without the requested component");
+}
+
+GILGAMESH_TEST("Engine.ECS.EntityRegistry", "EmplaceMigratesAndRepairsSwappedRows")
+{
+	TrackedComponent::liveCount = 0;
+	{
+		EntityRegistry registry;
+		const Entity first = registry.Create();
+		const Entity second = registry.Create();
+		const Entity third = registry.Create();
+
+		// Place three entities in one archetype so removing the first swaps the last.
+		registry.Emplace<TrackedComponent>(first, 10);
+		registry.Emplace<TrackedComponent>(second, 20);
+		registry.Emplace<TrackedComponent>(third, 30);
+		GILGAMESH_CHECK_MESSAGE(TrackedComponent::liveCount == 3,
+			"each entity must own one live component before migration");
+
+		// Adding float moves the first component and repairs the third entity's slot.
+		registry.Emplace<float>(first, 1.5f);
+		GILGAMESH_CHECK_MESSAGE(registry.Has<float>(first) &&
+			registry.Get<float>(first) == 1.5f &&
+			registry.Get<TrackedComponent>(first).value &&
+			*registry.Get<TrackedComponent>(first).value == 10 &&
+			registry.Get<TrackedComponent>(third).value &&
+			*registry.Get<TrackedComponent>(third).value == 30 &&
+			TrackedComponent::liveCount == 3,
+			"migration must preserve values and update the source row swap");
+
+		// A failed constructor must leave the second entity in its source row.
+		bool rejected = false;
+		try
+		{
+			registry.Emplace<ThrowingComponent>(second, true);
+		}
+		catch (const std::runtime_error&)
+		{
+			rejected = true;
+		}
+		GILGAMESH_CHECK_MESSAGE(rejected && !registry.Has<ThrowingComponent>(second) &&
+			registry.Get<TrackedComponent>(second).value &&
+			*registry.Get<TrackedComponent>(second).value == 20 &&
+			TrackedComponent::liveCount == 3,
+			"failed migration must preserve the source component and slot");
+
+		// Destroying the third entity swaps the second into its row.
+		GILGAMESH_CHECK_MESSAGE(registry.Destroy(third) &&
+			!registry.IsValid(third) &&
+			registry.Get<TrackedComponent>(second).value &&
+			*registry.Get<TrackedComponent>(second).value == 20 &&
+			TrackedComponent::liveCount == 2,
+			"destruction must repair the slot of a swapped-in survivor");
+
+		// Each remaining destruction must end exactly one component lifetime.
+		GILGAMESH_CHECK_MESSAGE(registry.Destroy(first) &&
+			TrackedComponent::liveCount == 1 &&
+			registry.Destroy(second) &&
+			TrackedComponent::liveCount == 0,
+			"destroying migrated entities must release all component values");
+	}
+	GILGAMESH_CHECK_MESSAGE(TrackedComponent::liveCount == 0,
+		"registry destruction must not leave live components");
 }
 
 GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")

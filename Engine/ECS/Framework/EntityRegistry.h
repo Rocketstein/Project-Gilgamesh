@@ -19,12 +19,21 @@ public:
 	EntityRegistry(EntityRegistry&&) = delete;
 	EntityRegistry& operator=(EntityRegistry&&) = delete;
 
+	// =============================================================================
+	// Entity Lifecycle
+	// =============================================================================
+
 	[[nodiscard]] Entity Create();
 
 	[[nodiscard]] bool Destroy(Entity entity);
 
 	[[nodiscard]] bool IsValid(Entity entity) const noexcept;
 
+	// =============================================================================
+	// Component Operations
+	// =============================================================================
+	// Construct T in a new archetype row and migrate the entity's existing values.
+	// Component constructors must not structurally mutate this registry.
 	template <typename T, typename... Args>
 	T& Emplace(Entity entity, Args&&... args)
 	{
@@ -42,27 +51,25 @@ public:
 		signature.emplace_back(typeid(T));
 
 		Archetype& target = archetypeManager_.FindOrCreate(signature);
-		Chunk* destination = target.FindOrCreateUsableChunk();
-		auto pending = destination->BeginRow(entity);               // Planned API
-
-		// Construct T first: its constructor may throw while the source is intact.
-		T& value = pending.Construct<T>(std::forward<Args>(args)...);
-
-		// Construct every existing component in the destination row.
-		if (source.chunk != nullptr)
-		{
-			for (ComponentTypeId type : source.archetype->signature)
+		T* value = nullptr;
+		const auto [destination, newRow] = target.InsertRow(
+			entity,
+			[&](Chunk::PendingRow& pending)
 			{
-				const auto& info = source.archetype->componentTypes.at(type);
-				info.moveConstruct(
-					pending.ComponentAddress(type),
-					source.chunk->ComponentAddress(type, source.row));
-				pending.MarkConstructed(type);
-			}
-		}
+				// Construct T before moving old values: user arguments may throw.
+				value = &pending.Construct<T>(std::forward<Args>(args)...);
 
-		// Publish the complete row, then remove the old one.
-		const std::uint32_t newRow = pending.Commit();
+				// Move the source columns only after the new value exists.
+				if (source.chunk != nullptr)
+				{
+					for (ComponentTypeId type : source.archetype->signature)
+					{
+						pending.MoveFrom(type, *source.chunk, source.row);
+					}
+				}
+			});
+
+		// The destination is complete; erase the old row and repair any swap.
 		if (source.chunk != nullptr)
 		{
 			if (const auto displaced = source.archetype->EraseRow(*source.chunk, source.row))
@@ -75,7 +82,7 @@ public:
 		slot.archetype = &target;
 		slot.chunk = destination;
 		slot.row = newRow;
-		return value;
+		return *value;
 	}
 
 	template <typename T>
@@ -115,21 +122,66 @@ public:
 	template <typename T>
 	void Remove(Entity entity)
 	{
-		if (!Has<T>(entity))
+		if (!IsValid(entity) || !Has<T>(entity))
 		{
 			return;
 		}
 
-		ArchetypeSignature signature;
-		if (slots_[entity.index_].archetype != nullptr)
-		{
-			signature = slots_[entity.index_].archetype->signature;
-			archetypeManager_.EraseEntity(entity);
-		}
-		signature.push_back(ComponentTypeId{ typeid(T) });
+		const EntitySlot source = slots_[entity.index_];
+		ArchetypeSignature signature =
+			source.archetype ? source.archetype->signature : ArchetypeSignature{};
+		signature.erase(signature.begin(), signature.end(), typeid(T));
 
-		Archetype& archetype = archetypeManager_.FindOrCreate(signature);
-		slots_[entity.index_].archetype = &archetype;
+		if (signature.empty())
+		{
+			// The entity will have no components after this removal.
+			if (source.chunk != nullptr)
+			{
+				if (const auto displaced = source.archetype->EraseRow(*source.chunk, source.row))
+				{
+					slots_[displaced->index_].row = source.row;
+				}
+			}
+			EntitySlot& slot = slots_[entity.index_];
+			slot.archetype = nullptr;
+			slot.chunk = nullptr;
+			slot.row = 0;
+			return;
+		}
+
+		Archetype& target = archetypeManager_.FindOrCreate(signature);
+		T* value = nullptr;
+		const auto [destination, newRow] = target.InsertRow(
+			entity,
+			[&](Chunk::PendingRow& pending)
+			{
+				// Construct T before moving old values: user arguments may throw.
+				value = &pending.Construct<T>(std::forward<Args>(args)...);
+
+				// Move the source columns only after the new value exists.
+				if (source.chunk != nullptr)
+				{
+					for (ComponentTypeId type : source.archetype->signature)
+					{
+						pending.MoveFrom(type, *source.chunk, source.row);
+					}
+				}
+			});
+
+		// The destination is complete; erase the old row and repair any swap.
+		if (source.chunk != nullptr)
+		{
+			if (const auto displaced = source.archetype->EraseRow(*source.chunk, source.row))
+			{
+				slots_[displaced->index_].row = source.row;
+			}
+		}
+
+		EntitySlot& slot = slots_[entity.index_];
+		slot.archetype = &target;
+		slot.chunk = destination;
+		slot.row = newRow;
+		return *value;
 	}
 
 	template <class... Components, class Fn>

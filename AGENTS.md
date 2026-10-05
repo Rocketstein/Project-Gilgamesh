@@ -4,11 +4,14 @@ These instructions apply to the entire repository.
 
 ## Coding rules
 - Readability first. Efficiency second.
-- Add a brief, readable comment for each logical block and function/class/struct headers with reasonable complexity. 
-- Also add a short description of member variables unless the variable is trivial.
-- Use English comments regardless of conversation language.
 - Don't just select an approach because it is a minimal solution. Long term architecture matters.
 - Try not to multiplicate struct unless necessary. In particular, refrain from creating error type structs. Use logging instead.
+
+## Comment rules
+- Add a brief, readable comment for each logical block and function/class/struct headers with reasonable complexity.
+- Also add a short description of member variables unless the variable is trivial.
+- Use English comments regardless of conversation language.
+- Namespace should have a trailing comment with the namespace name, e.g. `} // namespace SomeNamespace, // Anonymous namespace`.
 
 ## Platform and build
 

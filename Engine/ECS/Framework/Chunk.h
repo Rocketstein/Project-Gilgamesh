@@ -23,6 +23,7 @@
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "ComponentType.h"
 #include "Engine/ECS/Entity/Entity.h"
@@ -55,6 +56,60 @@ struct ChunkLayout
 class Chunk final
 {
 public:
+    // Owns the objects constructed for one row until the archetype commits it.
+    class PendingRow final
+    {
+    public:
+        ~PendingRow() noexcept;
+
+        PendingRow(const PendingRow&) = delete;
+        PendingRow& operator=(const PendingRow&) = delete;
+        PendingRow(PendingRow&&) = delete;
+        PendingRow& operator=(PendingRow&&) = delete;
+
+        // Construct a new component directly in this uncommitted row.
+        template <typename T, typename... Args>
+        T& Construct(Args&&... args)
+        {
+            const ComponentTypeId typeId{ typeid(T) };
+            EnsureCanConstruct(typeId);
+
+            // Record the value only after its constructor has succeeded.
+            T& value = chunk_->InsertComponent<T>(std::forward<Args>(args)...);
+            try
+            {
+                constructedTypes_.push_back(typeId);
+            }
+            catch (...)
+            {
+                std::destroy_at(std::addressof(value));
+                throw;
+            }
+            return value;
+        }
+
+    private:
+        friend class Chunk;
+        friend struct Archetype;
+        friend class EntityRegistry;
+
+        PendingRow(Chunk& chunk, Entity entity);
+
+        // Reject missing or duplicate component columns before construction.
+        void EnsureCanConstruct(ComponentTypeId typeId) const;
+        // Only registry migration may move an existing component into this row.
+        void MoveFrom(ComponentTypeId typeId, Chunk& source, std::uint32_t sourceRow);
+        [[nodiscard]] bool IsComplete() const noexcept;
+        std::uint32_t Commit() noexcept;
+
+        // A null pointer means the row has been committed.
+        Chunk* chunk_ = nullptr;
+        // The row remains outside [0, count_) until Commit succeeds.
+        std::uint32_t row_ = 0;
+        // Lists the component objects to destroy if the insertion is abandoned.
+        std::vector<ComponentTypeId> constructedTypes_;
+    };
+
     Chunk(const ChunkLayout& layout, const ComponentTypes& componentTypes);
     ~Chunk() noexcept;
 
@@ -63,32 +118,11 @@ public:
     Chunk(Chunk&&) = delete;
     Chunk& operator=(Chunk&&) = delete;
 
-    // Remove a live row; nullopt means it was the last row. Invalid rows throw.
-    [[nodiscard]] std::optional<Entity> Erase(std::uint32_t row);
-
     // Report whether this chunk has room for another complete row.
     [[nodiscard]] bool IsFull() const noexcept { return count_ == layout_.capacity; }
 
-    // Construct one component in the next row; callers manage pending cleanup.
-    template <typename T, typename... Args>
-    T& InsertComponent(Args&&... args)
-    {
-        if (storage_ == nullptr || count_ >= layout_.capacity)
-        {
-            throw std::length_error("Chunk is full and cannot accommodate more rows");
-        }
-
-        // Find the cell for T at the requested row.
-        const auto it = layout_.componentColumns.find(ComponentTypeId{ typeid(T) });
-        if (it == layout_.componentColumns.end())
-        {
-            throw std::out_of_range("Chunk does not contain the requested component type");
-        }
-        const auto& column = it->second;
-        std::byte* address = storage_ + column.offset + count_ * column.stride;
-
-        return *std::construct_at(reinterpret_cast<T*>(address), std::forward<Args>(args)...);
-    }
+    // Count only rows whose Entity and component columns are complete.
+    [[nodiscard]] std::uint32_t Count() const noexcept { return count_; }
 
     // Return an existing component in a live row of this chunk.
     template <typename T>
@@ -113,6 +147,37 @@ public:
     }
 
 private:
+    friend struct Archetype;
+
+    // Remove a live row; the archetype must update its availability list.
+    [[nodiscard]] std::optional<Entity> Erase(std::uint32_t row);
+
+    // Open an uncommitted row; only the owning archetype may start it.
+    [[nodiscard]] PendingRow BeginRow(Entity entity);
+
+    // Resolve a constructed component in a committed source row.
+    [[nodiscard]] void* GetComponentAddress(ComponentTypeId typeId, std::uint32_t row);
+
+    // Construct one component in the next row for its pending transaction.
+    template <typename T, typename... Args>
+    T& InsertComponent(Args&&... args)
+    {
+        if (storage_ == nullptr || count_ >= layout_.capacity)
+        {
+            throw std::length_error("Chunk is full and cannot accommodate more rows");
+        }
+
+        // Find the cell for T at the requested row.
+        const auto it = layout_.componentColumns.find(ComponentTypeId{ typeid(T) });
+        if (it == layout_.componentColumns.end())
+        {
+            throw std::out_of_range("Chunk does not contain the requested component type");
+        }
+        const auto& column = it->second;
+        std::byte* address = storage_ + column.offset + count_ * column.stride;
+
+        return *std::construct_at(reinterpret_cast<T*>(address), std::forward<Args>(args)...);
+    }
     // Layout metadata is owned by the archetype and outlives this chunk.
     const ChunkLayout& layout_;
     // Runtime lifetime operations are owned by the archetype.

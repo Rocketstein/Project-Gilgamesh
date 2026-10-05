@@ -1,11 +1,14 @@
 #include "Chunk.h"
 
+#include <algorithm>
+#include <cassert>
 #include <bit>
 #include <memory>
 #include <new>
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 static_assert(std::is_nothrow_copy_constructible_v<Entity> &&
 	std::is_nothrow_copy_assignable_v<Entity>,
@@ -32,6 +35,88 @@ namespace
 			static_cast<std::size_t>(row) * sizeof(Entity);
 		return std::launder(reinterpret_cast<Entity*>(address));
 	}
+} // Anonymous namespace
+
+Chunk::PendingRow::PendingRow(Chunk& chunk, Entity entity)
+	: row_(chunk.count_)
+{
+	if (chunk.IsFull())
+	{
+		throw std::length_error("Chunk is full and cannot accommodate more rows");
+	}
+
+	// Prepare rollback bookkeeping before any object is constructed.
+	constructedTypes_.reserve(chunk.componentTypes_.size());
+	std::byte* address = chunk.storage_ + chunk.layout_.entityOffset +
+		static_cast<std::size_t>(row_) * sizeof(Entity);
+	std::construct_at(reinterpret_cast<Entity*>(address), entity);
+	chunk_ = &chunk;
+}
+
+Chunk::PendingRow::~PendingRow() noexcept
+{
+	if (chunk_ == nullptr)
+	{
+		return;
+	}
+
+	// An abandoned row owns only the component objects listed here.
+	for (auto it = constructedTypes_.rbegin(); it != constructedTypes_.rend(); ++it)
+	{
+		const ComponentTypeInfo& info = chunk_->componentTypes_.at(*it);
+		const ChunkLayout::Column& column = chunk_->layout_.componentColumns.at(*it);
+		info.destroy(ComponentAddress(chunk_->storage_, column, row_));
+	}
+	std::destroy_at(EntityAddress(chunk_->storage_, chunk_->layout_, row_));
+}
+
+void Chunk::PendingRow::EnsureCanConstruct(ComponentTypeId typeId) const
+{
+	if (chunk_ == nullptr)
+	{
+		throw std::logic_error("Chunk row is no longer pending");
+	}
+	if (!chunk_->layout_.componentColumns.contains(typeId))
+	{
+		throw std::out_of_range("Chunk does not contain the requested component type");
+	}
+	if (std::find(constructedTypes_.begin(), constructedTypes_.end(), typeId) !=
+		constructedTypes_.end())
+	{
+		throw std::logic_error("Component was already constructed in this row");
+	}
+}
+
+void Chunk::PendingRow::MoveFrom(
+	ComponentTypeId typeId, Chunk& source, std::uint32_t sourceRow)
+{
+	EnsureCanConstruct(typeId);
+
+	// Resolve both cells before moving, since the registered move cannot throw.
+	void* sourceAddress = source.GetComponentAddress(typeId, sourceRow);
+	const ComponentTypeInfo& info = chunk_->componentTypes_.at(typeId);
+	const ChunkLayout::Column& column = chunk_->layout_.componentColumns.at(typeId);
+	void* destination = ComponentAddress(chunk_->storage_, column, row_);
+	constructedTypes_.push_back(typeId);
+	info.moveConstruct(destination, sourceAddress);
+}
+
+bool Chunk::PendingRow::IsComplete() const noexcept
+{
+	return chunk_ != nullptr &&
+		constructedTypes_.size() == chunk_->componentTypes_.size();
+}
+
+std::uint32_t Chunk::PendingRow::Commit() noexcept
+{
+	assert(IsComplete());
+	Chunk* chunk = std::exchange(chunk_, nullptr);
+	return chunk->count_++;
+}
+
+Chunk::PendingRow Chunk::BeginRow(Entity entity)
+{
+	return PendingRow(*this, entity);
 }
 
 Chunk::Chunk(const ChunkLayout& layout, const ComponentTypes& componentTypes)
@@ -129,4 +214,18 @@ std::optional<Entity> Chunk::Erase(std::uint32_t row)
 	std::destroy_at(lastEntity);
 	--count_;
 	return displaced;
+}
+
+void* Chunk::GetComponentAddress(ComponentTypeId typeId, std::uint32_t row)
+{
+	if (row >= count_)
+	{
+		throw std::out_of_range("Chunk row does not contain a live component");
+	}
+	const auto columnIt = layout_.componentColumns.find(typeId);
+	if (columnIt == layout_.componentColumns.end())
+	{
+		throw std::out_of_range("Chunk does not contain the requested component type");
+	}
+	return ComponentAddress(storage_, columnIt->second, row);
 }

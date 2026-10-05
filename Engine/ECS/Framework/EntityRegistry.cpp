@@ -45,9 +45,10 @@ bool EntityRegistry::Destroy(Entity entity)
 {
 	if (!IsValid(entity)) return false;
 
-	EntitySlot& slot = slots_[entity.index_];
+	// Component destructors may create handles, so do not retain a slot reference.
+	const EntitySlot source = slots_[entity.index_];
 	const bool canReuse =
-		slot.generation < std::numeric_limits<std::uint32_t>::max() - 1;
+		source.generation < std::numeric_limits<std::uint32_t>::max() - 1;
 
 	// Allocate free-list space before changing the entity's lifetime.
 	if (canReuse)
@@ -55,9 +56,17 @@ bool EntityRegistry::Destroy(Entity entity)
 		freeIndices_.reserve(freeIndices_.size() + 1);
 	}
 
-	// Archetype row removal must precede this step once component storage exists.
-	// There are no component rows while the archetype storage API is only declared.
+	// Erase the component row and repair the slot of a swapped-in entity.
+	if (source.chunk != nullptr)
+	{
+		if (const auto displaced = source.archetype->EraseRow(*source.chunk, source.row))
+		{
+			slots_[displaced->index_].row = source.row;
+		}
+	}
+
 	// Clear the location before the slot can be reused.
+	EntitySlot& slot = slots_[entity.index_];
 	slot.archetype = nullptr;
 	slot.chunk = nullptr;
 	slot.row = 0;
