@@ -19,12 +19,18 @@ struct Archetype
 	// Check whether this signature contains the requested component type.
 	bool HasComponent(ComponentTypeId typeId) const;
 
+	Chunk* FindOrCreateUsableChunk() const;
+
+	bool RemoveEntity(Entity entity);
+
 	// The exact set of component types shared by every entity in this archetype.
 	const ArchetypeSignature signature;
 	// Size and alignment metadata for each component type in the signature.
 	const ComponentTypes componentTypes;
 	// Layout metadata is shared by every chunk of this archetype.
 	const ChunkLayout layout;
+
+	std::vector<Chunk*> availableChunks;
 	// Chunks must be destroyed before the metadata they reference.
 	std::vector<std::unique_ptr<Chunk>> chunks;
 };

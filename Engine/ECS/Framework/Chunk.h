@@ -16,12 +16,15 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <new>
 #include <stdexcept>
 #include <typeinfo>
 #include <unordered_map>
+#include <utility>
 
 #include "ComponentType.h"
+#include "Engine/ECS/Entity/Entity.h"
 
 constexpr std::size_t CHUNK_SIZE = 16384;
 
@@ -59,6 +62,30 @@ public:
     Chunk& operator=(const Chunk&) = delete;
     Chunk(Chunk&&) = delete;
     Chunk& operator=(Chunk&&) = delete;
+
+    // Remove a live row and fill its gap with the last row when needed.
+    bool Erase(std::uint32_t row);
+
+    // Adds a new component to the chunk.
+    template <typename T, typename... Args>
+    T& InsertComponent(Args&&... args)
+    {
+        if (storage_ = nullptr || count_ >= layout_.capacity)
+        {
+            throw std::length_error("Chunk is full and cannot accommodate more rows");
+        }
+
+        // Find the cell for T at the requested row.
+        const auto it = layout_.componentColumns.find(ComponentTypeId{ typeid(T) });
+        if (it == layout_.componentColumns.end())
+        {
+            throw std::out_of_range("Chunk does not contain the requested component type");
+        }
+        const auto& column = it->second;
+        std::byte* address = storage_ + column.offset + count_ * column.stride;
+
+        return *std::construct_at(reinterpret_cast<T*>(address), std::forward<Args>(args)...);
+    }
 
     // Return an existing component in a live row of this chunk.
     template <typename T>

@@ -103,6 +103,24 @@ Archetype::Archetype(ArchetypeSignature inSignature, ComponentTypes inComponentT
 {
 }
 
+Chunk* Archetype::FindOrCreateUsableChunk() const
+{	
+	if (!availableChunks.empty())
+	{
+		return availableChunks.back();
+	}
+
+	std::unique_ptr<Chunk> newChunk = std::make_unique<Chunk>(layout);
+	availableChunks.push_back(std::move(newChunk.get()));
+
+	return availableChunks.back();
+}
+
+bool Archetype::RemoveEntity(Entity entity)
+{
+
+}
+
 bool Archetype::HasComponent(ComponentTypeId typeId) const
 {
 	return std::find(signature.begin(), signature.end(), typeId) != signature.end();

@@ -24,36 +24,57 @@ public:
 
 	[[nodiscard]] bool IsValid(Entity entity) const noexcept;
 
-	// Resolve the destination archetype before changing an entity's storage.
-	template <typename T>
-	void Add(Entity entity)
+	template <typename T, typename... Args>
+	T& Emplace(Entity entity, Args&&... args)
 	{
-		if (!IsValid(entity))
+		if (!IsValid(entity) || Has<T>(entity))
 		{
-			return;
-		}
-		if (Has<T>(entity))
-		{
-			return;
+			throw std::logic_error("Cannot emplace T on this entity");
 		}
 
-		// Register T while its concrete C++ type is available to this template.
 		archetypeManager_.RegisterComponent<T>();
 
-		// Add T to the current component set; the manager canonicalizes the result.
-		ArchetypeSignature signature;
-		const EntitySlot& slot = slots_[entity.index_];
-		if (slot.archetype != nullptr)
-		{
-			signature = slot.archetype->signature;
-		}
-		signature.push_back(ComponentTypeId{ typeid(T) });
+		// Keep the old location until migration finishes.
+		const EntitySlot source = slots_[entity.index_];
+		ArchetypeSignature signature =
+			source.archetype ? source.archetype->signature : ArchetypeSignature{};
+		signature.emplace_back(typeid(T));
 
-		// Create this signature's archetype once, or reuse it if it already exists.
-		// An archetype alone does not store this entity's component values.
-		(void)archetypeManager_.FindOrCreate(signature);
-		// Keep the slot unchanged until a destination chunk row is constructed.
-		throw std::logic_error("Destination archetype exists, but Add requires a chunk row");
+		Archetype& target = archetypeManager_.FindOrCreate(signature);
+		Chunk& destination = target.FindOrCreateUsableChunk(); // Planned API
+		auto pending = destination.BeginRow(entity);              // Planned API
+
+		// Construct T first: its constructor may throw while the source is intact.
+		T& value = pending.Construct<T>(std::forward<Args>(args)...);
+
+		// Construct every existing component in the destination row.
+		if (source.chunk != nullptr)
+		{
+			for (ComponentTypeId type : source.archetype->signature)
+			{
+				const auto& info = source.archetype->componentTypes.at(type);
+				info.moveConstruct(
+					pending.ComponentAddress(type),
+					source.chunk->ComponentAddress(type, source.row));
+				pending.MarkConstructed(type);
+			}
+		}
+
+		// Publish the complete row, then remove the old one.
+		const std::uint32_t newRow = pending.Commit();
+		if (source.chunk != nullptr)
+		{
+			if (const auto displaced = source.chunk->EraseSwap(source.row))
+			{
+				slots_[displaced->index_].row = source.row;
+			}
+		}
+
+		EntitySlot& slot = slots_[entity.index_];
+		slot.archetype = &target;
+		slot.chunk = &destination;
+		slot.row = newRow;
+		return value;
 	}
 
 	template <typename T>
@@ -123,9 +144,9 @@ private:
 	{
 		// The generation advances when an entity is destroyed, before reuse.
 		std::uint32_t generation = 0;
-		// The archetype owning this entity's row, or null before placement.
+		// The archetype owning this entity's row.
 		Archetype* archetype = nullptr;
-		// The chunk containing the row, or null before placement.
+		// The chunk containing the row.
 		Chunk* chunk = nullptr;
 		// The shared index into the chunk's Entity and component columns.
 		std::uint32_t row = 0;
