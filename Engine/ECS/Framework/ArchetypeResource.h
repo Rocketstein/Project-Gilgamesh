@@ -5,6 +5,18 @@
 #include <unordered_map>
 #include <vector>
 
+struct Archetype;
+
+// Remember matching archetypes and progress through the creation list.
+struct QueryCache
+{
+	// Existing archetypes selected by this component combination.
+	std::vector<Archetype*> matches;
+
+	// Number of created archetypes already checked against the combination.
+	std::size_t checkedArchetypeCount = 0;
+};
+
 // Describes a component's storage requirements and object lifetime operations.
 struct ComponentTypeInfo
 {

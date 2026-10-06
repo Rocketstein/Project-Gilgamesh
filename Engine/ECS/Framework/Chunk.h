@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-#include "ComponentType.h"
+#include "ArchetypeResource.h"
 #include "Engine/ECS/Entity/Entity.h"
 
 constexpr std::size_t CHUNK_SIZE = 16384;

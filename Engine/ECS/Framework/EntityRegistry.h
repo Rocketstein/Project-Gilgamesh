@@ -138,7 +138,10 @@ public:
 	template <class... Components, class Fn>
 	void ForEach(Fn&& fn)
 	{
+		static_assert(sizeof...(Components) > 0,
+			"ForEach requires at least one component type");
 
+		
 	}
 
 
@@ -202,6 +205,7 @@ private:
 		slot.row = newRow;
 	}
 
+private:
 	std::vector<std::uint32_t> freeIndices_;
 	std::vector<EntitySlot> slots_;
 	// Own the future component storage behind the registry's entity API.

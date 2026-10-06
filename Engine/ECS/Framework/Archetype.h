@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "Chunk.h"
-#include "ComponentType.h"
+#include "ArchetypeResource.h"
 
 // Groups chunks whose entities have the same component signature.
 struct Archetype

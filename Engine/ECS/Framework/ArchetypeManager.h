@@ -63,8 +63,12 @@ private:
 	[[nodiscard]] static ArchetypeSignature CanonicalizeSignature(
 		std::span<const ComponentTypeId> componentTypes);
 
+	// Cache query results for each unique canonical component combination.
+	std::map<ArchetypeSignature, QueryCache> queryCaches_;
+
 	// Map keys compare complete signatures; map nodes keep archetype addresses stable.
 	std::map<ArchetypeSignature, Archetype> archetypes_;
+
 	// Registered size and alignment information is shared by all archetypes.
 	ComponentTypes registeredComponentTypes_;
 };
