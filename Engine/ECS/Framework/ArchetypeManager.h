@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "Archetype.h"
-#include "Engine/ECS/Entity/Entity.h"
 
 // Owns one archetype for each distinct set of component types.
 class ArchetypeManager final
@@ -58,10 +57,6 @@ public:
 	// Return nullptr when this set of types has no archetype yet.
 	[[nodiscard]] Archetype* Find(std::span<const ComponentTypeId> componentTypes);
 	[[nodiscard]] const Archetype* Find(std::span<const ComponentTypeId> componentTypes) const;
-
-	// Erase an entity's row and repair the location of any entity moved into it.
-	// The registry calls this before invalidating a handle, once row storage exists.
-	void EraseEntity(Entity entity);
 
 private:
 	// Sort and remove duplicate types before looking up a signature.

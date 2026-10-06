@@ -479,6 +479,71 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "EmplaceMigratesAndRepairsSwappedRow
 		"registry destruction must not leave live components");
 }
 
+GILGAMESH_TEST("Engine.ECS.EntityRegistry", "RemoveRetainsValuesAndRepairsSwappedRows")
+{
+	TrackedComponent::liveCount = 0;
+	{
+		EntityRegistry registry;
+		const Entity first = registry.Create();
+		const Entity second = registry.Create();
+
+		// Place both entities in {TrackedComponent, int} before removing row zero.
+		registry.Emplace<TrackedComponent>(first, 10);
+		registry.Emplace<int>(first, 100);
+		registry.Emplace<TrackedComponent>(second, 20);
+		registry.Emplace<int>(second, 200);
+		GILGAMESH_CHECK_MESSAGE(TrackedComponent::liveCount == 2,
+			"both entities must own the component being removed");
+
+		// Removing the first row moves int and swaps the second source row into it.
+		registry.Remove<TrackedComponent>(first);
+		GILGAMESH_CHECK_MESSAGE(registry.IsValid(first) &&
+			!registry.Has<TrackedComponent>(first) &&
+			registry.Has<int>(first) && registry.Get<int>(first) == 100 &&
+			registry.Has<TrackedComponent>(second) &&
+			registry.Get<TrackedComponent>(second).value &&
+			*registry.Get<TrackedComponent>(second).value == 20 &&
+			registry.Get<int>(second) == 200 &&
+			TrackedComponent::liveCount == 1,
+			"Remove must destroy T, preserve U, and repair the swapped entity slot");
+
+		// Removing the last component leaves the handle valid but without a row.
+		registry.Remove<int>(first);
+		bool getRejected = false;
+		try
+		{
+			(void)registry.Get<int>(first);
+		}
+		catch (const std::out_of_range&)
+		{
+			getRejected = true;
+		}
+		GILGAMESH_CHECK_MESSAGE(registry.IsValid(first) &&
+			!registry.Has<int>(first) && !registry.Has<TrackedComponent>(first) &&
+			getRejected && TrackedComponent::liveCount == 1,
+			"removing the last component must clear the row without destroying the entity");
+
+		// Missing and stale removals leave the surviving entity untouched.
+		registry.Remove<TrackedComponent>(first);
+		registry.Remove<int>(first);
+		GILGAMESH_CHECK_MESSAGE(registry.Destroy(first),
+			"the componentless entity must remain destructible");
+		registry.Remove<int>(first);
+		GILGAMESH_CHECK_MESSAGE(registry.IsValid(second) &&
+			registry.Get<int>(second) == 200 &&
+			registry.Get<TrackedComponent>(second).value &&
+			*registry.Get<TrackedComponent>(second).value == 20 &&
+			TrackedComponent::liveCount == 1,
+			"no-op removals must not disturb a surviving entity");
+
+		GILGAMESH_CHECK_MESSAGE(registry.Destroy(second) &&
+			TrackedComponent::liveCount == 0,
+			"the remaining tracked component must be destroyed once");
+	}
+	GILGAMESH_CHECK_MESSAGE(TrackedComponent::liveCount == 0,
+		"registry teardown must leave no live tracked components");
+}
+
 GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")
 {
 	World firstWorld;

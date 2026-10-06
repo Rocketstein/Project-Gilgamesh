@@ -52,11 +52,6 @@ const Archetype* ArchetypeManager::Find(std::span<const ComponentTypeId> compone
 	return it != archetypes_.end() ? &it->second : nullptr;
 }
 
-void ArchetypeManager::EraseEntity(Entity entity)
-{
-
-}
-
 ArchetypeSignature ArchetypeManager::CanonicalizeSignature(
 	std::span<const ComponentTypeId> componentTypes)
 {
