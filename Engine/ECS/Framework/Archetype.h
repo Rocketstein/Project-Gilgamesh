@@ -24,6 +24,8 @@ struct Archetype
 	// Check whether this signature contains the requested component type.
 	bool HasComponent(ComponentTypeId typeId) const;
 
+	std::vector<std::unique_ptr<Chunk>>& GetChunks() { return chunks; }
+
 	// Open a row in an available chunk, populate every column, then publish it.
 	// The populate callback must not structurally mutate this archetype.
 	template <typename Populate>

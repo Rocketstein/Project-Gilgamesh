@@ -139,9 +139,10 @@ public:
 	void ForEach(Fn&& fn)
 	{
 		static_assert(sizeof...(Components) > 0,
-			"ForEach requires at least one component type");
+			"ForEach() requires at least one component type");
 
-		
+		auto& cache = archetypeManager_.GetQueryCache<Components...>();
+
 	}
 
 

@@ -49,6 +49,15 @@ public:
 			});
 	}
 
+	template <class... Components>
+	[[nodiscard]] QueryCache& GetQueryCache()
+	{
+		static_assert(sizeof...(Components) > 0,
+			"GetQueryCache() requires at least one component type");
+		const ArchetypeSignature& cache = GetQueryCombination<Components...>();
+		return queryCaches_[cache];
+	}
+
 	// Normalize the type set and return its existing archetype, or create it once.
 	// The order of input types and duplicate entries do not affect identity.
 	// Every type must be registered before a new archetype is created.
@@ -63,11 +72,30 @@ private:
 	[[nodiscard]] static ArchetypeSignature CanonicalizeSignature(
 		std::span<const ComponentTypeId> componentTypes);
 
+	// Return the normalized query key shared by this component type pack.
+	template <class... Components>
+	const ArchetypeSignature& GetQueryCombination()
+	{
+		// Build the immutable key once, on first use. Uses magic static.
+		static const std::array<ComponentTypeId, sizeof...(Components)> types{
+			ComponentTypeId{ typeid(Components) }...
+		};
+
+		static const ArchetypeSignature combination =
+			CanonicalizeSignature(types);
+
+		return combination;
+	}
+
+private:
 	// Cache query results for each unique canonical component combination.
 	std::map<ArchetypeSignature, QueryCache> queryCaches_;
 
 	// Map keys compare complete signatures; map nodes keep archetype addresses stable.
 	std::map<ArchetypeSignature, Archetype> archetypes_;
+
+	// Linear storage for archetypes.
+	std::vector<Archetype> arhcetypeStorage_;
 
 	// Registered size and alignment information is shared by all archetypes.
 	ComponentTypes registeredComponentTypes_;
