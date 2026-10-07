@@ -26,7 +26,7 @@ public:
 
 	[[nodiscard]] Entity Create();
 
-	[[nodiscard]] bool Destroy(Entity entity);
+	bool Destroy(Entity entity);
 
 	[[nodiscard]] bool IsValid(Entity entity) const noexcept;
 

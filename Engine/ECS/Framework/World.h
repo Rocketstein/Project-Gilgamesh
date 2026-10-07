@@ -10,12 +10,16 @@ class World final
 public:
 	World() = default;
 
-	//SceneHandle CreateScene(std::string name);
-	//bool DestroyScene(SceneHandle scene);
-	//const Scene* TryGetScene(SceneHandle scene) const noexcept;
+	[[nodiscard]] SceneHandle CreateScene(std::string name = "");
+	bool DestroyScene(SceneHandle handle);
+	[[nodiscard]] const Scene* TryGetScene(SceneHandle handle) const noexcept;
+	[[nodiscard]] bool IsSceneHandleValid(SceneHandle handle) const noexcept;
 
 	[[nodiscard]]
 	Entity CreateEntity();
+
+	[[nodiscard]]
+	Entity CreateEntity(SceneHandle handle);
 
 	[[nodiscard]]
 	bool DestroyEntity(Entity entity);
@@ -25,6 +29,16 @@ public:
 
 private:
 	EntityRegistry entityRegistry_;
-	//std::unordered_map<std::string, Scene> scenes_;
-	//std::vector<Scene*> activeScenes_;
+
+	// =============================================================================
+	// Scene Management
+	// =============================================================================
+	struct SceneItem
+	{
+		std::unique_ptr<Scene> scene;
+		std::uint32_t generation = 0;
+	};
+	std::vector<SceneItem> scenes_;
+	//std::vector<std::uint32_t> activeScenes_;
+	std::vector<std::uint32_t> freeSceneIndices_;
 };
