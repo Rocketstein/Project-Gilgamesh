@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "Engine/Render/Types/Vertex.h"
+#include "Engine/Render/Mesh/Vertex.h"
 
 // Should implement MeshAsset/SubMesh later on
 struct StaticMeshData

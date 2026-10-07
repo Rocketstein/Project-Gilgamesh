@@ -46,7 +46,7 @@ EditorViewportPanelFrame EditorViewportPanel::Draw(
             if (viewport.IsReady())
             {
                 ID3D11ShaderResourceView* srv =
-                    viewport.GetShaderResourceView();
+                    viewport.GetColorShaderResourceView();
 
                 const ImTextureRef texture{
                     static_cast<ImTextureID>(

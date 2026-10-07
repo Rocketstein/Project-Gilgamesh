@@ -16,8 +16,8 @@ namespace
 		float b,
 		float epsilon = 1e-4f) noexcept
 	{
-		const float normalizedA = RotatorUtils::ClampRotation(a);
-		const float normalizedB = RotatorUtils::ClampRotation(b);
+		const float normalizedA = RotatorUtils::WrapRotation(a);
+		const float normalizedB = RotatorUtils::WrapRotation(b);
 		const float difference = std::fabs(normalizedA - normalizedB);
 		return std::min(difference, 360.0f - difference) <= epsilon;
 	}
@@ -51,10 +51,10 @@ GILGAMESH_TEST("Core.Math.Rotator", "DegreeNormalization")
 	GILGAMESH_CHECK_MESSAGE(invalid == Rotator{},
 		"non-finite angles must safely become the neutral rotation");
 
-	const float huge = RotatorUtils::ClampRotation(std::numeric_limits<float>::max());
+	const float huge = RotatorUtils::WrapRotation(std::numeric_limits<float>::max());
 	GILGAMESH_CHECK_MESSAGE(huge >= 0.0f && huge < 360.0f,
 		"large finite angles must normalize without repeated subtraction");
-	GILGAMESH_CHECK_MESSAGE(!std::signbit(RotatorUtils::ClampRotation(-360.0f)),
+	GILGAMESH_CHECK_MESSAGE(!std::signbit(RotatorUtils::WrapRotation(-360.0f)),
 		"normalization must collapse negative zero");
 }
 

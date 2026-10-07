@@ -74,6 +74,7 @@ source_group (
 set (HLSL_SHADER_TARGET Gilgamesh)
 
 register_shader (Primitive)
+register_shader (EditorGrid SOURCE Shaders/Editor/EditorGrid.hlsl)
 
 # Engine Library
 add_subdirectory ("Engine")

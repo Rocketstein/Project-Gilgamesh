@@ -24,11 +24,8 @@ set (HLSL_STAGES
 
 # fxc 는 depfile 을 내보내지 않으므로 인클루드 추적이 불가능합니다.
 # 셰이더 디렉터리의 .hlsli 전체를 공통 의존성으로 걸어, 하나라도 바뀌면 다시 컴파일합니다.
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.12)
-  file (GLOB HLSL_INCLUDE_FILES CONFIGURE_DEPENDS "${HLSL_SHADER_DIR}/*.hlsli")
-else()
-  file (GLOB HLSL_INCLUDE_FILES "${HLSL_SHADER_DIR}/*.hlsli")
-endif()
+file(GLOB_RECURSE HLSL_INCLUDE_FILES CONFIGURE_DEPENDS
+    "${HLSL_SHADER_DIR}/*.hlsli")
 
 # add_hlsl_shader(<target> <source.hlsl> <entry> <profile> <output.cso>)
 # 단일 스테이지를 컴파일하는 하위 수준 명령입니다. 보통은 register_shader 를 사용하세요.

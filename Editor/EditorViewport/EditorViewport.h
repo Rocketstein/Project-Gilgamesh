@@ -21,13 +21,6 @@ public:
 	void RequestResize(Extent2D extent) noexcept;
 	bool ApplyPendingResize();
 
-	void Bind(ID3D11DeviceContext* context) const noexcept;
-
-	void BindAndClear(ID3D11DeviceContext* context) const noexcept;
-
-	void Unbind(
-		ID3D11DeviceContext* context) const noexcept;
-
 	[[nodiscard]]
 	bool IsReady() const noexcept;
 
@@ -35,10 +28,21 @@ public:
 	[[nodiscard]]
 	Extent2D GetExtent() const noexcept;
 
+	// Borrowed native pointers remain valid until the next resize or shutdown.
 	[[nodiscard]]
-	ID3D11ShaderResourceView*
-		GetShaderResourceView() const noexcept;
+	ID3D11Texture2D* GetColorTexture() const noexcept;
 
+	[[nodiscard]]
+	ID3D11RenderTargetView* GetColorRenderTargetView() const noexcept;
+
+	[[nodiscard]]
+	ID3D11ShaderResourceView* GetColorShaderResourceView() const noexcept;
+
+	[[nodiscard]]
+	ID3D11Texture2D* GetDepthTexture() const noexcept;
+
+	[[nodiscard]]
+	ID3D11DepthStencilView* GetDepthStencilView() const noexcept;
 
 private:
 	bool CreateResources(Extent2D extent);
@@ -61,8 +65,6 @@ private:
 		depthTexture_;
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> 
 		depthStencilView_;
-
-	D3D11_VIEWPORT viewport_{};
 
 	// Dimensions
 	Extent2D extent_{};

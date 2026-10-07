@@ -14,13 +14,16 @@ target_link_libraries(GilgameshTests
     d3d11
 )
 
-# Give renderer integration tests their own compiled copy of the fixed shaders.
+# Give renderer integration tests their own compiled copy of the primitive shader.
 register_shader(GilgameshTests Primitive)
 
 add_subdirectory(Core/Math)
 add_subdirectory(Editor/EditorScene)
+add_subdirectory(Engine/ECS)
 add_subdirectory(Engine/Input)
 add_subdirectory(Engine/Render/Mesh)
+add_subdirectory(Engine/Render/RenderGraph)
+add_subdirectory(Engine/Render/Shader)
 add_subdirectory(Engine/Render/Techniques)
 
 add_test(

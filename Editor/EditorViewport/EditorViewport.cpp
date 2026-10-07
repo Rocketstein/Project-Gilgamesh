@@ -1,13 +1,8 @@
 #include "EditorViewport.h"
 
-#include "Engine/Core/Color.h"
 #include "Engine/Core/Logging/Logger.h"
 
 #include <utility>
-
-namespace {
-	Color4 clearColor = Color4{ 0.1f, 0.12f, 0.16f };
-} // Anonymous Namespace
 
 void EditorViewport::Initialize(ID3D11Device* device)
 {
@@ -34,63 +29,19 @@ void EditorViewport::RequestResize(Extent2D extent) noexcept
 bool EditorViewport::ApplyPendingResize()
 {
 	if (!resizePending_)
+	{
 		return false;
-
-	// Revise needed
-	if (CreateResources(pendingExtent_))
-	{
-		extent_ = pendingExtent_;
-		resizePending_ = false;
-		return true;
-	}
-	return false;
-}
-
-void EditorViewport::Bind(ID3D11DeviceContext* context) const noexcept
-{
-	if (!context)
-	{
-		GILGAMESH_LOG(Core, Error, "EditorViewport::Bind called with null context");
-		return;
-	}
-	if (!IsReady())
-	{
-		GILGAMESH_LOG(Core, Error, "EditorViewport::Bind called when viewport is not ready");
-		return;
-	}
-	context->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), depthStencilView_.Get());
-	context->RSSetViewports(1, &viewport_);
-}
-
-void EditorViewport::BindAndClear(ID3D11DeviceContext* context) const noexcept
-{
-	if (!context)
-	{
-		GILGAMESH_LOG(Core, Error, "EditorViewport::BindAndClear called with null context");
-		return;
 	}
 
-	if (!IsReady())
+	// Keep the current resources alive if replacement allocation fails.
+	if (!CreateResources(pendingExtent_))
 	{
-		GILGAMESH_LOG(Core, Error, "EditorViewport::BindAndClear called when viewport is not ready");
-		return;
+		return false;
 	}
 
-	context->ClearRenderTargetView(renderTargetView_.Get(), clearColor.Data());
-	context->ClearDepthStencilView(depthStencilView_.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
-	context->OMSetRenderTargets(1, renderTargetView_.GetAddressOf(), depthStencilView_.Get());
-	context->RSSetViewports(1, &viewport_);
-}
-
-void EditorViewport::Unbind(ID3D11DeviceContext* context) const noexcept
-{
-	if (context == nullptr)
-	{
-		GILGAMESH_LOG(Core, Error, "EditorViewport::Unbind called with null context");
-		return;
-	}
-
-	context->OMSetRenderTargets(0, nullptr, nullptr);
+	extent_ = pendingExtent_;
+	resizePending_ = false;
+	return true;
 }
 
 bool EditorViewport::IsReady() const noexcept
@@ -110,10 +61,32 @@ Extent2D EditorViewport::GetExtent() const noexcept
 	return extent_;
 }
 
+ID3D11Texture2D* EditorViewport::GetColorTexture() const noexcept
+{
+	return colorTexture_.Get();
+}
+
+ID3D11RenderTargetView*
+EditorViewport::GetColorRenderTargetView() const noexcept
+{
+	return renderTargetView_.Get();
+}
+
 ID3D11ShaderResourceView*
-EditorViewport::GetShaderResourceView() const noexcept
+EditorViewport::GetColorShaderResourceView() const noexcept
 {
 	return shaderResourceView_.Get();
+}
+
+ID3D11Texture2D* EditorViewport::GetDepthTexture() const noexcept
+{
+	return depthTexture_.Get();
+}
+
+ID3D11DepthStencilView*
+EditorViewport::GetDepthStencilView() const noexcept
+{
+	return depthStencilView_.Get();
 }
 
 bool EditorViewport::CreateResources(Extent2D extent)
@@ -216,27 +189,16 @@ bool EditorViewport::CreateResources(Extent2D extent)
 	depthStencilView_ =
 		std::move(newDepthStencilView);
 
-	// Viewport
-	viewport_.TopLeftX = 0.0f;
-	viewport_.TopLeftY = 0.0f;
-	viewport_.Width =
-		static_cast<float>(extent.width);
-	viewport_.Height =
-		static_cast<float>(extent.height);
-	viewport_.MinDepth = 0.0f;
-	viewport_.MaxDepth = 1.0f;
-
 	return true;
 }
 
 void EditorViewport::ReleaseResources() noexcept
 {
-	colorTexture_.Reset();
 	renderTargetView_.Reset();
 	shaderResourceView_.Reset();
-	depthTexture_.Reset();
 	depthStencilView_.Reset();
-	viewport_ = {};
+	colorTexture_.Reset();
+	depthTexture_.Reset();
 	extent_ = {};
 	pendingExtent_ = {};
 	resizePending_ = false;

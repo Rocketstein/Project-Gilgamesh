@@ -7,9 +7,11 @@
 #include "EditorUI/Workspace/EditorWorkspace.h"
 #include "EditorViewport/EditorViewport.h"
 #include "EditorViewport/EditorViewportClient.h"
+#include "Engine/Core/Color.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Input/InputFrame.h"
 #include "Engine/Input/InputSystem.h"
+#include "Engine/Render/RenderGraph/RenderGraph.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Render/Renderer/StaticMeshDrawItem.h"
@@ -39,6 +41,7 @@ struct EditorProgram::Impl
 
     // Viewport
     EditorViewportClient viewportClient;
+    RenderGraph renderGraph;
 
     // Preview content
     EditorPreviewScene previewScene;
@@ -149,6 +152,10 @@ void EditorProgram::Update(const FrameContext& frame)
 void EditorProgram::Render(RenderContext& context)
 {
     Renderer& renderer = context.renderer;
+    RenderGraph& renderGraph = impl_->renderGraph;
+
+    // Drop last frame's imported pointers before the viewport may resize.
+    renderGraph.Reset();
 
     impl_->workspace.DrawDockSpace();
 
@@ -160,10 +167,60 @@ void EditorProgram::Render(RenderContext& context)
 
     if (viewportFrame.shouldRender)
     {
-        ID3D11DeviceContext* deviceContext =
-            renderer.GetDeviceContext();
+        ID3D11Texture2D* colorTexture =
+            viewport.GetColorTexture();
+        ID3D11Texture2D* depthTexture =
+            viewport.GetDepthTexture();
 
-        viewport.BindAndClear(deviceContext);
+        // Describe and import the viewport-owned native resources. The graph
+        // borrows these objects only until its next Reset().
+        D3D11_TEXTURE2D_DESC colorNativeDescription{};
+        D3D11_TEXTURE2D_DESC depthNativeDescription{};
+        colorTexture->GetDesc(&colorNativeDescription);
+        depthTexture->GetDesc(&depthNativeDescription);
+
+        RenderGraphTextureDesc colorDescription;
+        colorDescription.extent = {
+            colorNativeDescription.Width,
+            colorNativeDescription.Height
+        };
+        colorDescription.format = colorNativeDescription.Format;
+        colorDescription.mipLevels = colorNativeDescription.MipLevels;
+        colorDescription.sampleCount =
+            colorNativeDescription.SampleDesc.Count;
+
+        ImportedRenderGraphTexture importedColor;
+        importedColor.texture = colorTexture;
+        importedColor.renderTargetView =
+            viewport.GetColorRenderTargetView();
+        importedColor.shaderResourceView =
+            viewport.GetColorShaderResourceView();
+
+        RenderGraphTextureDesc depthDescription;
+        depthDescription.extent = {
+            depthNativeDescription.Width,
+            depthNativeDescription.Height
+        };
+        depthDescription.format = depthNativeDescription.Format;
+        depthDescription.mipLevels = depthNativeDescription.MipLevels;
+        depthDescription.sampleCount =
+            depthNativeDescription.SampleDesc.Count;
+
+        ImportedRenderGraphTexture importedDepth;
+        importedDepth.texture = depthTexture;
+        importedDepth.writableDepthStencilView =
+            viewport.GetDepthStencilView();
+
+        const RenderGraphTextureHandle colorTarget =
+            renderGraph.ImportTexture(
+                "EditorViewport.Color",
+                colorDescription,
+                importedColor);
+        const RenderGraphTextureHandle depthTarget =
+            renderGraph.ImportTexture(
+                "EditorViewport.Depth",
+                depthDescription,
+                importedDepth);
 
         const float aspectRatio =
             static_cast<float>(viewportFrame.renderExtent.width) /
@@ -172,7 +229,7 @@ void EditorProgram::Render(RenderContext& context)
                     ? viewportFrame.renderExtent.height
                     : 1u);
 
-        const auto camera = impl_->viewportClient.GetEditorCamera();
+        const auto& camera = impl_->viewportClient.GetEditorCamera();
         const RenderView renderView{
             .view = camera.GetViewMatrix(),
             .projection = camera.GetProjectionMatrix(aspectRatio)
@@ -183,23 +240,57 @@ void EditorProgram::Render(RenderContext& context)
             renderer.GetMeshManager(),
             drawItems);
 
-        renderer.GetSimpleMeshRenderer().Draw(
-            deviceContext,
-            renderView,
-            drawItems);
+        // The graph owns pass ordering and attachment state; the technique
+        // remains responsible for draw-local bindings and draw submission.
+        renderGraph.AddPass(
+            "EditorScene",
+            [colorTarget, depthTarget](GraphPassBuilder& builder)
+            {
+                builder.SetColorTarget(
+                    0,
+                    colorTarget,
+                    RenderGraphLoadOp::Clear,
+                    Color4{ 0.1f, 0.12f, 0.16f });
+                builder.SetDepthTarget(
+                    depthTarget,
+                    RenderGraphDepthAccess::ReadWrite,
+                    RenderGraphLoadOp::Clear,
+                    1.0f);
+            },
+            [
+                &renderer,
+                renderView,
+                drawItems = std::move(drawItems)
+            ](ID3D11DeviceContext& deviceContext)
+            {
+                renderer.GetSimpleMeshRenderer().Draw(
+                    &deviceContext,
+                    renderView,
+                    drawItems);
+            });
 
-        viewport.Unbind(deviceContext);
-
-        // Restore the swap-chain back buffer without clearing it so the
-        // queued ImGui draw data is submitted to the presentation output.
-        renderer.BindOutput();
+        const bool compiled =
+            renderGraph.Compile(renderer.GetDevice());
+        const bool executed = compiled
+            && renderGraph.Execute(renderer.GetDeviceContext());
+        if (!executed)
+        {
+            GILGAMESH_LOG(
+                Renderer,
+                Error,
+                "Failed to execute the editor scene render graph");
+        }
     }
 
 #if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     if (auto command = impl_->outputLogPanel->Draw())
+    {
         impl_->pendingCommand = std::move(*command);
+    }
 #endif
 
+    // RenderGraph leaves its attachments unbound; ImGui targets the swap chain.
+    renderer.BindOutput();
     impl_->imgui.Render();
 }
 
@@ -207,6 +298,7 @@ void EditorProgram::Shutdown()
 {
     if (impl_ && impl_->renderer)
     {
+        impl_->renderGraph.Reset();
         impl_->previewScene.Shutdown(
             impl_->renderer->GetMeshManager());
     }

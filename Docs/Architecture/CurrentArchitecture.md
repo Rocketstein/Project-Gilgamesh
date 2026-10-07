@@ -27,6 +27,7 @@ WinMain
       -> EditorProgram : IProgram
           -> EditorPreviewScene
           -> editor viewport and viewport client
+          -> frame-local RenderGraph orchestration
           -> ImGui integration and editor workspace
           -> developer console and Output Log (optional diagnostics)
 ```
@@ -79,6 +80,7 @@ placeholder.
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
 | Renderer-facing mesh resource management | `Engine/Render/Mesh/MeshManager.*` |
 | Fixed vertex-color mesh technique | `Engine/Render/Techniques/SimpleMeshRenderer.*` |
+| Texture dependency, pass-state, and execution orchestration | `Engine/Render/RenderGraph/` |
 | Editor implementation and mesh submission | `Editor/EditorProgram.*` |
 | Temporary preview content and mesh instances | `Editor/EditorScene/EditorPreviewScene.*` |
 | Editor viewport presentation | `Editor/EditorUI/Panels/EditorViewportPanel.*` |
@@ -124,7 +126,7 @@ destructor are defined in `EditorProgram.cpp`, where `Impl` is complete.
 
 The implementation owns:
 
-- The editor viewport client and temporary preview scene
+- The editor viewport client, temporary preview scene, and frame render graph
 - ImGui integration, the editor workspace, and the viewport panel
 - The console buffer, sink registration, configuration, Output Log panel,
   commands, and pending command state when editor diagnostics are enabled
@@ -244,12 +246,16 @@ and is not a frame limiter. No fixed-step simulation clock currently exists.
 console command submitted by the previous frame, and begins the new ImGui
 frame.
 
-`EditorProgram::Render()` submits the editor workspace and viewport panel,
-builds a `RenderView`, gathers `StaticMeshDrawItem` values from
-`EditorPreviewScene`, and passes them to `SimpleMeshRenderer` for the
-viewport's offscreen target. It then restores the swap-chain output, optionally
-submits the Output Log, and finally renders ImGui. The engine surrounds this
-work with renderer begin/end calls.
+`EditorProgram::Render()` submits the editor workspace and viewport panel, then
+rebuilds its frame-local render graph. It imports the viewport-owned color and
+depth textures and their native views, declares an `EditorScene` pass, builds a
+`RenderView`, and gathers `StaticMeshDrawItem` values from
+`EditorPreviewScene`. The pass callback invokes `SimpleMeshRenderer` after the
+graph has bound and cleared the viewport attachments. The swap chain and ImGui
+remain outside the graph: after graph execution, `Renderer::BindOutput()`
+restores the swap-chain target before the Output Log and the accumulated ImGui
+draw data are submitted. The engine surrounds this work with renderer
+begin/end calls.
 
 Deferring console execution until the next update prevents command handlers
 from mutating the console buffer while the previous frame's widgets are being
@@ -292,14 +298,41 @@ draws from a `RenderView` and a span of `StaticMeshDrawItem` values.
 
 The editor owns the offscreen viewport target and `EditorPreviewScene`. The
 preview scene owns the temporary cube handle and transform and resolves them
-into frame-local draw items. `EditorProgram` selects the target, constructs the
-view, gathers those items, and invokes the renderer-owned technique.
-`EditorViewportPanel` measures and presents the viewport texture but does not
-own scene rendering.
+into frame-local draw items. `EditorViewport` exposes borrowed pointers to its
+viewport-owned D3D11 color and depth resources without depending on
+`RenderGraph`; `EditorProgram` is the composition point that imports those
+resources into the graph each frame. Its `EditorScene` pass selects the target,
+constructs the view, gathers the draw items, and invokes the renderer-owned
+technique. `EditorViewportPanel` measures and presents the viewport texture but
+does not own scene rendering.
+
+`RenderGraph` declares texture attachments and shader reads. `Compile(device)`
+validates those declarations, derives a deterministic dependency order, and
+creates graph-owned D3D11 textures with only their required RTV, DSV, and SRV
+objects. Imported textures remain caller-owned and their native texture and
+views must remain alive through graph execution. Repeated writes to one texture
+retain declaration order, while independent passes may be reordered.
+
+`Execute(context)` visits that compiled order, resolves graph-owned or imported
+views, binds the RTV, DSV, and stage-specific SRV slots declared by each pass,
+applies requested clears, and establishes a full-attachment default viewport.
+It then invokes the pass callback and unbinds the pass outputs and declared
+shader-resource slots at the pass boundary. This keeps graph-declared D3D11
+read/write hazards and pass-level state transitions inside the graph. Callbacks
+must not bind graph textures through undeclared shader stages or slots. The
+callback remains responsible for applying `DrawSetup`, updating and binding
+constant buffers, binding meshes and other draw-local resources, and issuing
+draw calls. Depth clears currently affect only the depth plane; stencil access
+and stencil load/clear behavior are not modeled yet.
+
+The current graph boundary ends at the offscreen editor scene. Swap-chain
+presentation and ImGui composition are not graph passes: `EditorProgram`
+restores the presentation target with `Renderer::BindOutput()` and then submits
+the UI, whose viewport image samples the already rendered color texture.
 
 This is intentional prototype code, not a general scene renderer. There is no
-render graph, asset manager, material system, world renderer, or API-independent
-RHI.
+asset manager, material system, world renderer, render-command extraction
+system, or API-independent RHI.
 
 ## Current boundaries and non-features
 

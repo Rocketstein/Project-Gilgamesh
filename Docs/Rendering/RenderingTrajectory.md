@@ -13,8 +13,8 @@ interface remains out of scope until a second backend becomes a real
 requirement.
 
 The ECS direction changes the boundary through which scenes reach the
-renderer. It does not require mesh resources, graphics pipelines, or the
-renderer itself to know about entities or component storage.
+renderer. It does not require mesh resources, draw setups, or the renderer
+itself to know about entities or component storage.
 
 ## Target boundary
 
@@ -25,7 +25,7 @@ ECS world
   -> transform update, visibility, and render extraction
   -> frame-local RenderView + StaticMeshDrawItem[]
   -> rendering techniques and pass orchestration
-  -> GraphicsPipeline + D3D11 resources
+  -> DrawSetup + D3D11 resources
   -> GPU submission
 ```
 
@@ -40,29 +40,35 @@ also draw editor previews and tests that do not originate in an ECS world.
 
 ## Architectural principles
 
-### Graphics pipelines describe how a draw is processed
+### Draw setups describe how a draw is processed
 
-A graphics pipeline is treated as an immutable, reusable collection of
+A draw setup is treated as an immutable, reusable collection of
 draw-processing state after successful initialization. It does not own
 geometry, render targets, per-frame data, or the draw call.
 
-The current pipeline contains:
+The current draw setup contains:
 
 - A required vertex shader
 - An optional pixel shader, allowing depth-only draws
 - An optional input layout, allowing `SV_VertexID` full-screen draws
 - Primitive topology
+- Rasterizer state
 - Depth-stencil state
+- Blend state
 
-The static-mesh milestone is the concrete reason to add rasterizer state to
-the pipeline: it must make its front-face and culling convention explicit so
-its result cannot depend on state left behind by another rendering path.
-Blend state should join when a concrete feature requires non-default blending.
+The static-mesh path made rasterizer state explicit, while the editor-grid
+requirement made blend state configurable. Safe defaults remain solid,
+back-face-culled, and opaque; techniques opt into different behavior through
+the draw-state description so their result cannot depend on earlier draw state.
 
-The shader manager owns logical shader resources. A graphics pipeline resolves
+The shader manager owns logical shader resources. A draw setup resolves
 typed shader handles during initialization and retains shared COM references
 to the native shaders it requires. This keeps binding self-contained and gives
-an initialized pipeline a clear lifetime guarantee.
+an initialized draw setup a clear lifetime guarantee.
+
+`DrawSetup` is intentionally not called a pipeline. In this project, a
+future `RenderPipeline` will mean the coordinator that orders and executes
+render passes.
 
 ### Mesh data, GPU geometry, and drawing are separate concepts
 
@@ -76,14 +82,14 @@ StaticMesh
   -> immutable D3D11 vertex/index buffers and draw metadata
 
 SimpleMeshRenderer
-  -> shader, pipeline, per-draw constants, and DrawIndexed
+  -> shader, draw setup, per-draw constants, and DrawIndexed
 ```
 
 `StaticMeshData` is API-independent and suitable for procedural generation,
 asset import, validation, and unit tests. `StaticMesh` is a move-only GPU
 resource. `SimpleMeshRenderer` is the first fixed rendering technique.
 
-Neither `StaticMesh` nor a renderable component owns a graphics pipeline,
+Neither `StaticMesh` nor a renderable component owns a draw setup,
 camera, render target, or draw call. Here, *static* means non-deforming mesh
 topology; an entity using the mesh may move every frame.
 
@@ -134,8 +140,8 @@ StaticMeshComponent
   -> MaterialHandle, when materials exist
 ```
 
-Renderable components must never contain COM pointers, D3D11 buffers,
-graphics pipelines, cameras, or rendering code. Meshes are shared resources,
+Renderable components must never contain COM pointers, D3D11 buffers, draw
+setups, cameras, or rendering code. Meshes are shared resources,
 not duplicated component data. Transform hierarchy evaluation and
 local-to-world computation happen before extraction, outside the renderer.
 
@@ -145,13 +151,13 @@ unloading, stale-handle behavior, and fallback resources.
 
 ### Materials describe reusable appearance
 
-A future material should reference a graphics pipeline or rendering technique
-and supply textures, samplers, and parameter data. It should not expose D3D11
-objects to gameplay, tools, or ECS code.
+A future material should reference a rendering technique and supply textures,
+samplers, and parameter data. It should not expose D3D11 objects to gameplay,
+tools, or ECS code.
 
 ```text
 Material
-  -> pipeline or technique identity
+  -> technique identity
   -> texture and sampler handles
   -> parameter data
 ```
@@ -166,7 +172,7 @@ while one fixed mesh appearance is sufficient.
 A render pass owns an objective and its output context: render targets, clears,
 viewport, ordering, and any resource preparation around its draws.
 
-Pipelines and rendering techniques do not register passes. The dependency
+Draw setups and rendering techniques do not register passes. The dependency
 points in the other direction:
 
 ```text
@@ -175,17 +181,19 @@ Render pass or explicit orchestration
   -> selects draw items and invokes rendering techniques
 
 Rendering technique
-  -> binds its graphics pipeline
+  -> applies its draw setup
   -> binds geometry and resources
   -> issues draws
 ```
 
-One pass may invoke several techniques, and one pipeline may be reusable by
-several techniques or passes. The existing editor viewport is an offscreen
-target, but that alone does not justify a general pass framework. Introduce
-explicit passes when a second rendering objective creates real ordering or
-resource dependencies, such as an editor-selection ID target, shadows, or a
-depth-only prepass.
+One pass may invoke several techniques, and one draw setup may be reusable by
+several techniques or passes. `RenderGraph` now provides this pass boundary: it
+owns dependency ordering and declared texture binding, while execute callbacks
+perform the draw-local work. The editor viewport is the first concrete adopter.
+`EditorProgram` imports the viewport-owned native color and depth resources,
+declares an `EditorScene` pass, and invokes `SimpleMeshRenderer` from that
+pass's execute callback. The viewport does not depend on the graph; the editor
+program composes the two systems.
 
 ## Current baseline
 
@@ -199,17 +207,25 @@ implementation establishes these working pieces:
 - Renderer-owned static meshes addressed by generation-checked `MeshHandle`
   values through `MeshManager`
 - Frame-local `RenderView` and `StaticMeshDrawItem` submission data
-- `SimpleMeshRenderer` ownership of the fixed shaders, `GraphicsPipeline`,
+- `SimpleMeshRenderer` ownership of the fixed shaders, `DrawSetup`,
   model-view-projection constant buffer, and indexed draw loop
+- A `RenderGraph` that compiles texture dependencies, realizes graph-owned GPU
+  resources, and executes declared pass state in compiled order
+- Per-frame import of the editor viewport's existing color and depth resources
+  into an `EditorScene` graph pass
 - An editor-only `EditorPreviewScene` that owns temporary mesh handles and
   instance transforms
 
 `EditorProgram` owns the editor viewport and preview scene. It creates the
 `RenderView`, asks the preview scene to gather draw items, and invokes the
-renderer-owned technique. Cube creation, handle lifetime, and instance state
-stay in `EditorPreviewScene`; mesh upload, pipeline state, constants, binding,
-and `DrawIndexed()` stay on the renderer side. This is deliberately not yet a
-general scene graph or ECS extraction layer.
+renderer-owned technique from the `EditorScene` pass callback. The graph binds
+and clears the imported viewport attachments before that callback. Cube
+creation, handle lifetime, and instance state stay in `EditorPreviewScene`;
+mesh upload, draw state, constants, binding, and `DrawIndexed()` stay on the
+renderer side. The swap chain and ImGui remain outside the graph;
+`Renderer::BindOutput()` restores the presentation target before the editor
+submits its UI draw data. This is deliberately not yet a general scene graph or
+ECS extraction layer.
 
 ## Milestones
 
@@ -239,7 +255,7 @@ coordinates and tangents should wait until materials require them.
   buffers plus index count and format.
 - Make initialization atomic: failure must not leave a partially usable mesh.
 - Validate sizes before narrowing to D3D11's `UINT` fields.
-- Keep pipeline, material, transform, camera, and draw submission outside the
+- Keep draw setup, material, transform, camera, and draw submission outside the
   mesh.
 
 Do not introduce a generic buffer hierarchy for this milestone. A second real
@@ -248,11 +264,11 @@ geometry use case should determine whether one is valuable.
 #### Simple mesh rendering technique
 
 - Add a `SimpleMeshRenderer` that owns the fixed mesh shaders,
-  `GraphicsPipeline`, and constant-buffer updates.
+  `DrawSetup`, and constant-buffer updates.
 - Accept a `RenderView` and a span of `StaticMeshDrawItem` values.
 - Use local-to-world and view/projection data to compute per-draw transforms.
-- Bind the pipeline and mesh and issue `DrawIndexed()` without owning the view
-  target or clearing it.
+- Apply the draw setup, bind the mesh, and issue `DrawIndexed()` without owning
+  the view target or clearing it.
 
 Normal transforms, lighting, tint, and explicit rasterizer/culling policy are
 deferred until those systems have a concrete use case.
@@ -260,7 +276,7 @@ deferred until those systems have a concrete use case.
 `EditorProgram` remains responsible for editor viewport orchestration.
 `EditorPreviewScene` owns temporary demo handles and transforms, while
 `SimpleMeshRenderer` consumes the gathered draw items. The editor program no
-longer owns raw mesh buffers, primitive shaders, the primitive pipeline,
+longer owns raw mesh buffers, primitive shaders, the primitive draw setup,
 primitive constants, or cube-specific lifecycle code.
 
 This milestone deliberately does not require an ECS, asset importer, general
@@ -288,8 +304,8 @@ handle generation, stale-handle detection, and fallback behavior rather than
 exposing raw indexes or unvalidated identifiers.
 
 Introduce materials when textures, samplers, or shader parameters form
-reusable combinations. Introduce centralized pipeline lifetime or caching only
-when multiple rendering techniques need it.
+reusable combinations. Introduce centralized draw-setup lifetime or caching
+only when multiple rendering techniques need it.
 
 Likely relationships are:
 
@@ -304,7 +320,7 @@ Resolved StaticMeshDrawItem
   -> frame-local overrides
 ```
 
-If pipeline descriptions are retained for caching or hot reload, copy their
+If draw-setup descriptions are retained for caching or hot reload, copy their
 input-element data. Never retain a temporary `std::span` supplied during
 creation.
 
@@ -321,7 +337,7 @@ storage, and queries, add an extraction system that:
 
 The extraction system is an integration layer; it may depend on the ECS and
 renderer-facing data definitions. The low-level renderer, `StaticMesh`, and
-`GraphicsPipeline` must not depend on the ECS. The ECS storage model should
+`DrawSetup` must not depend on the ECS. The ECS storage model should
 likewise be chosen for general component workloads rather than around renderer
 submission details.
 
@@ -330,7 +346,7 @@ submission details.
 Add these only when scene scale makes them useful:
 
 - Per-view frustum culling using mesh bounds and world transforms
-- Sorting by pass, pipeline or technique, material, and mesh
+- Sorting by pass, draw setup or technique, material, and mesh
 - Instanced draws for measured high-volume repetition
 - A D3D11 state cache when redundant binding is observable
 - Parallel transform, visibility, or extraction work when profiling supports it
@@ -338,7 +354,7 @@ Add these only when scene scale makes them useful:
 These are extraction and submission concerns. They do not belong in generic
 ECS storage or in the mesh resource itself.
 
-### Milestone 6: explicit pass orchestration
+### Milestone 6: explicit pass orchestration — foundation implemented
 
 Introduce an explicit pass model when there are multiple rendering objectives
 or outputs with meaningful ordering. Likely generic triggers include:
@@ -349,9 +365,20 @@ or outputs with meaningful ordering. Likely generic triggers include:
 - Post-processing
 - Multiple views
 
-Start with explicit orchestration in the renderer. A registry, dependency
-solver, or render graph is unnecessary while the pass sequence is short and
-static.
+`RenderGraph` now implements declaration, dependency compilation, GPU resource
+realization, and execution. Execution follows the compiled pass order, binds
+the declared RTV, DSV, and shader-stage SRV slots, performs requested clears,
+sets a full-attachment default viewport, invokes the pass callback, and unbinds
+the relevant outputs and shader-resource slots at the pass boundary.
+
+The callback deliberately owns `DrawSetup`, constant-buffer, mesh, and draw
+submission work. The graph does not inspect techniques, ECS state, or future
+render commands. `EditorProgram` now exercises this boundary by importing the
+existing viewport color and depth resources and running `SimpleMeshRenderer`
+inside an `EditorScene` pass. Swap-chain presentation and ImGui composition
+remain deliberately outside the graph. The next orchestration work should come
+from a real second objective; editor selection, shadows, or a depth-only pass
+can reveal missing subresource, viewport, or command-submission requirements.
 
 ## Responsibility guide
 
@@ -363,8 +390,8 @@ Use the following rule when deciding where new state belongs:
 | Shared imported or procedural asset | Resource system |
 | Frame-local visible instance data | Render extraction output |
 | GPU geometry lifetime | `StaticMesh` |
-| Shader and fixed draw behavior | Rendering technique and `GraphicsPipeline` |
-| Output target, clears, and ordering | Render pass or current explicit orchestration |
+| Shader and fixed draw behavior | Rendering technique and `DrawSetup` |
+| Output target, clears, resource binding, and ordering | `RenderGraph` pass |
 | Window, swap chain, and D3D11 device | `Renderer` |
 
 ## Explicitly deferred
@@ -372,20 +399,20 @@ Use the following rule when deciding where new state belongs:
 The following remain deferred until a measured or feature-driven need appears:
 
 - Multiple graphics backends or a generic RHI
-- Render graph and automatic resource-dependency scheduling
 - A universal material or pass-definition language
 - General asset import, streaming, and hot reload
-- Pipeline descriptor hashing and caching
+- Draw-setup descriptor hashing and caching
 - Shader reflection as the sole input-layout source
 - Shader permutations and automatic variant management
 - Multithreaded D3D11 command recording
 - General state-change deduplication
+- Stencil-plane access and independent depth/stencil load and clear operations
 - Geometry, hull, and domain shader support
 
 ## Decision rule
 
 Prefer the smallest abstraction that completes the next visible feature. When
-a concept begins appearing in multiple call sites—resource creation, pipeline
+a concept begins appearing in multiple call sites—resource creation, draw-state
 setup, geometry binding, scene extraction, pass setup, or draw submission—that
 repetition is evidence for the next abstraction.
 

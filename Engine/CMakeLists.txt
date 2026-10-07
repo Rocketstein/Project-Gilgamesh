@@ -28,19 +28,44 @@ target_sources (GilgameshEngine
 		Platform/Windows/Logging/DebugOutputSink.cpp
 		Platform/Windows/Logging/DebugOutputSink.h
 
+		ECS/Entity/Entity.h
+		ECS/Framework/ArchetypeResource.h
+		ECS/Framework/ArchetypeManager.cpp
+		ECS/Framework/ArchetypeManager.h
+		ECS/Framework/Archetype.cpp
+		ECS/Framework/Archetype.h
+		ECS/Framework/Chunk.cpp
+		ECS/Framework/Chunk.h
+		ECS/Framework/EntityRegistry.cpp
+		ECS/Framework/EntityRegistry.h
+		ECS/Framework/Scene.cpp
+		ECS/Framework/Scene.h
+		ECS/Framework/World.cpp
+		ECS/Framework/World.h
+
 		Render/D3D11/D3D11Device.cpp
 		Render/D3D11/D3D11Device.h
 		Render/D3D11/PresentationSurface.cpp
 		Render/D3D11/PresentationSurface.h
-		Render/D3D11/Shader/D3D11Shader.cpp
-		Render/D3D11/Shader/D3D11Shader.h
-		Render/D3D11/Shader/D3D11ShaderManager.cpp
-		Render/D3D11/Shader/D3D11ShaderManager.h
-		Render/D3D11/Shader/ShaderTypes.h
+		Render/Shader/Shader.cpp
+		Render/Shader/Shader.h
+		Render/Shader/ShaderManager.cpp
+		Render/Shader/ShaderManager.h
+		Render/Shader/ShaderTypes.h
+		Render/Shader/ShaderReflection.cpp
+		Render/Shader/ShaderReflection.h
+		Render/Shader/ShaderConstants.h
 
-		Render/Pipeline/PipelineDesc.h
-		Render/Pipeline/GraphicsPipeline.h
-		Render/Pipeline/GraphicsPipeline.cpp
+		Render/DrawSetup/DrawSetupDesc.h
+		Render/DrawSetup/DrawSetup.h
+		Render/DrawSetup/DrawSetup.cpp
+
+		Render/RenderGraph/Resource/RenderGraphTexture.h
+		Render/RenderGraph/RenderGraph.cpp
+		Render/RenderGraph/RenderGraph.h
+		Render/RenderGraph/GraphPassBuilder.cpp
+		Render/RenderGraph/GraphPassBuilder.h
+
 
 		Render/Techniques/SimpleMeshRenderer.cpp
 		Render/Techniques/SimpleMeshRenderer.h
@@ -50,14 +75,12 @@ target_sources (GilgameshEngine
 		Render/Renderer/RenderView.h
 		Render/Renderer/StaticMeshDrawItem.h
 
-		Render/Types/Vertex.h
-		Render/Types/Buffers/BufferUsage.h
-		Render/Types/Buffers/ConstantBuffer.cpp
-		Render/Types/Buffers/ConstantBuffer.h
-		Render/Types/Buffers/IndexBuffer.h
-		Render/Types/Buffers/IndexBuffer.cpp
-		Render/Types/Buffers/VertexBuffer.h
-		Render/Types/Buffers/VertexBuffer.cpp
+		Render/Buffers/BufferUsage.h
+		Render/Buffers/ConstantBuffer.h
+		Render/Buffers/IndexBuffer.h
+		Render/Buffers/IndexBuffer.cpp
+		Render/Buffers/VertexBuffer.h
+		Render/Buffers/VertexBuffer.cpp
 
 		Render/Mesh/StaticMeshData.h
 		Render/Mesh/PrimitiveMeshes.cpp
@@ -67,6 +90,7 @@ target_sources (GilgameshEngine
 		Render/Mesh/MeshHandle.h
 		Render/Mesh/MeshManager.cpp
 		Render/Mesh/MeshManager.h
+		Render/Mesh/Vertex.h
 
 		Runtime/Engine.cpp
 		Runtime/Engine.h
@@ -111,6 +135,7 @@ target_link_libraries(GilgameshEngine
 	PRIVATE
 		user32
         d3d11
+        d3dcompiler
         dxgi
 		dxguid
 )

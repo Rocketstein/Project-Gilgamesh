@@ -1,26 +1,10 @@
 #include "SimpleMeshRenderer.h"
 
 #include <cstddef>
-#include <type_traits>
 #include <utility>
 
-#include <DirectXMath.h>
-
 #include "Engine/Render/Mesh/StaticMesh.h"
-#include "Engine/Render/Types/Vertex.h"
-
-namespace
-{
-	struct alignas(16) ObjectConstants
-	{
-		DirectX::XMFLOAT4X4 modelViewProjection;
-	};
-
-	static_assert(std::is_standard_layout_v<NormalVertex>,
-		"NormalVertex must support explicit input-layout offsets");
-	static_assert(sizeof(ObjectConstants) % 16 == 0,
-		"D3D11 constant buffers must be a multiple of 16 bytes");
-}
+#include "Engine/Render/Mesh/Vertex.h"
 
 bool SimpleMeshRenderer::Initialize(
 	ID3D11Device* device,
@@ -56,39 +40,31 @@ bool SimpleMeshRenderer::Initialize(
 		}
 	};
 
-	const GraphicsPipelineDesc pipelineDesc{
+	const DrawSetupDesc drawSetupDesc{
 		.vertexShader = vertexShader.resource,
 		.pixelShader = pixelShader.resource,
 		.inputElements = inputElements,
-		.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-		.depthStencil = {
+		.drawState = {
+			.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
 			.depthTestEnabled = true,
 			.depthWriteEnabled = true,
 			.depthComparison = D3D11_COMPARISON_LESS
 		}
 	};
 
-	GraphicsPipeline newPipeline;
-	const HRESULT pipelineResult = newPipeline.Initialize(
+	DrawSetup newDrawSetup;
+	const HRESULT drawSetupResult = newDrawSetup.Initialize(
 		device,
 		shaders,
-		pipelineDesc);
-	if (FAILED(pipelineResult)) return false;
+		drawSetupDesc);
+	if (FAILED(drawSetupResult)) return false;
 
-	D3D11_BUFFER_DESC constantBufferDesc{};
-	constantBufferDesc.ByteWidth = sizeof(ObjectConstants);
-	constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	ConstantBuffer<ObjectConstants> newObjectBuffer;
+	if (!(newObjectBuffer.Create(device))) return false;
 
-	Microsoft::WRL::ComPtr<ID3D11Buffer> newObjectConstantBuffer;
-	const HRESULT bufferResult = device->CreateBuffer(
-		&constantBufferDesc,
-		nullptr,
-		newObjectConstantBuffer.GetAddressOf());
-	if (FAILED(bufferResult)) return false;
+	drawSetup_ = std::move(newDrawSetup);
+	objectCB_ = std::move(newObjectBuffer);
 
-	pipeline_ = std::move(newPipeline);
-	objectConstantBuffer_ = std::move(newObjectConstantBuffer);
 	return true;
 }
 
@@ -99,34 +75,24 @@ void SimpleMeshRenderer::Draw(
 {
 	if (!context || !IsInitialized() || drawItems.empty()) return;
 
-	pipeline_.Bind(context);
+	drawSetup_.Apply(context);
 
-	ID3D11Buffer* objectConstantBuffer =
-		objectConstantBuffer_.Get();
-	context->VSSetConstantBuffers(
-		0,
-		1,
-		&objectConstantBuffer);
+	ID3D11Buffer* objectBuffer = objectCB_.GetBuffer();
+	context->VSSetConstantBuffers(2, 1, &objectBuffer);
 
 	for (const StaticMeshDrawItem& drawItem : drawItems)
 	{
 		if (!drawItem.mesh) continue;
 
+		// Keep the primitive shader's current MVP contract until frame constants
+		// are prepared and bound separately at the view level.
 		ObjectConstants constants{};
-		DirectX::XMStoreFloat4x4(
-			&constants.modelViewProjection,
-			ToDirectX(Transpose(
-				drawItem.localToWorld *
-				renderView.view *
-				renderView.projection)));
+		constants.model = Transpose(
+			drawItem.localToWorld *
+			renderView.view *
+			renderView.projection);
 
-		context->UpdateSubresource(
-			objectConstantBuffer_.Get(),
-			0,
-			nullptr,
-			&constants,
-			0,
-			0);
+		if (!objectCB_.Update(context, constants)) return;
 
 		drawItem.mesh->Bind(context);
 		context->DrawIndexed(
@@ -138,5 +104,5 @@ void SimpleMeshRenderer::Draw(
 
 bool SimpleMeshRenderer::IsInitialized() const noexcept
 {
-	return pipeline_.IsInitialized() && objectConstantBuffer_ != nullptr;
+	return drawSetup_.IsInitialized() && objectCB_.IsInitialized();
 }
