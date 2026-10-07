@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <new>
@@ -55,6 +57,7 @@ public:
 		static_assert(sizeof...(Components) > 0,
 			"GetQueryCache() requires at least one component type");
 		const ArchetypeSignature& cache = GetQueryCombination<Components...>();
+		UpdateQueryCache(cache, queryCaches_[cache]);
 		return queryCaches_[cache];
 	}
 
@@ -68,9 +71,17 @@ public:
 	[[nodiscard]] const Archetype* Find(std::span<const ComponentTypeId> componentTypes) const;
 
 private:
+	// Resolve a stored archetype with a checked index access.
+	[[nodiscard]] Archetype& GetArchetype(std::size_t index);
+	[[nodiscard]] const Archetype& GetArchetype(std::size_t index) const;
+
 	// Sort and remove duplicate types before looking up a signature.
 	[[nodiscard]] static ArchetypeSignature CanonicalizeSignature(
 		std::span<const ComponentTypeId> componentTypes);
+
+	void UpdateQueryCache(
+		const ArchetypeSignature& required,
+		QueryCache& cache);
 
 	// Return the normalized query key shared by this component type pack.
 	template <class... Components>
@@ -91,11 +102,11 @@ private:
 	// Cache query results for each unique canonical component combination.
 	std::map<ArchetypeSignature, QueryCache> queryCaches_;
 
-	// Map keys compare complete signatures; map nodes keep archetype addresses stable.
-	std::map<ArchetypeSignature, Archetype> archetypes_;
+	// Canonical signatures locate their archetypes in the owning storage.
+	std::map<ArchetypeSignature, std::size_t> archetypeIndices_;
 
-	// Linear storage for archetypes.
-	std::vector<Archetype> arhcetypeStorage_;
+	// Append-only ownership preserves creation order and stable archetype addresses.
+	std::vector<std::unique_ptr<Archetype>> archetypeStorage_;
 
 	// Registered size and alignment information is shared by all archetypes.
 	ComponentTypes registeredComponentTypes_;

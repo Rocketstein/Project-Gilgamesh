@@ -12,8 +12,8 @@ Archetype& ArchetypeManager::FindOrCreate(std::span<const ComponentTypeId> compo
 	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
 
 	// Existing archetypes already own the metadata for their signatures.
-	if (const auto existing = archetypes_.find(signature); existing != archetypes_.end())
-		return existing->second;
+	if (const auto existing = archetypeIndices_.find(signature); existing != archetypeIndices_.end())
+		return GetArchetype(existing->second);
 
 	// Resolve every component before inserting
 	ComponentTypes componentMetadata;
@@ -30,26 +30,52 @@ Archetype& ArchetypeManager::FindOrCreate(std::span<const ComponentTypeId> compo
 		componentMetadata.emplace(typeId, registered->second);
 	}
 
-	// The first argument is the map key; later arguments construct Archetype in place.
-	const auto result = archetypes_.try_emplace(
-		signature, signature, std::move(componentMetadata));
-	return result.first->second;
+	// Finish construction before publishing the signature's storage index.
+	auto archetype = std::make_unique<Archetype>(signature, std::move(componentMetadata));
+	const std::size_t index = archetypeStorage_.size();
+	const auto [entry, inserted] = archetypeIndices_.try_emplace(std::move(signature), index);
+	if (!inserted)
+		return GetArchetype(entry->second);
+
+	// Roll back the index if the owning vector cannot accept the new archetype.
+	try
+	{
+		archetypeStorage_.push_back(std::move(archetype));
+	}
+	catch (...)
+	{
+		archetypeIndices_.erase(entry);
+		throw;
+	}
+	return GetArchetype(index);
 }
 
 Archetype* ArchetypeManager::Find(std::span<const ComponentTypeId> componentTypes)
 {
 	// Use the same canonical key as FindOrCreate without requiring a default constructor.
 	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
-	const auto it = archetypes_.find(signature);
-	return it != archetypes_.end() ? &it->second : nullptr;
+	const auto it = archetypeIndices_.find(signature);
+	return it != archetypeIndices_.end() ? &GetArchetype(it->second) : nullptr;
 }
 
 const Archetype* ArchetypeManager::Find(std::span<const ComponentTypeId> componentTypes) const
 {
 	// Look up the stored archetype without calling this const overload again.
 	ArchetypeSignature signature = CanonicalizeSignature(componentTypes);
-	const auto it = archetypes_.find(signature);
-	return it != archetypes_.end() ? &it->second : nullptr;
+	const auto it = archetypeIndices_.find(signature);
+	return it != archetypeIndices_.end() ? &GetArchetype(it->second) : nullptr;
+}
+
+Archetype& ArchetypeManager::GetArchetype(std::size_t index)
+{
+	// Invalid indices are rejected instead of accessing outside the vector.
+	return *archetypeStorage_.at(index);
+}
+
+const Archetype& ArchetypeManager::GetArchetype(std::size_t index) const
+{
+	// Keep read-only lookups subject to the same bounds check.
+	return *archetypeStorage_.at(index);
 }
 
 ArchetypeSignature ArchetypeManager::CanonicalizeSignature(
@@ -63,4 +89,31 @@ ArchetypeSignature ArchetypeManager::CanonicalizeSignature(
 		signature.end());
 
 	return signature;
+}
+
+void ArchetypeManager::UpdateQueryCache(
+	const ArchetypeSignature& required,
+	QueryCache& cache)
+{
+	const std::size_t totalCount = archetypeStorage_.size();
+
+	// The saved count is also the index of the next unchecked archetype.
+	while (cache.checkedArchetypeCount < totalCount)
+	{
+		Archetype* archetype =
+			archetypeStorage_[cache.checkedArchetypeCount].get();
+
+		// Match archetypes containing every required component.
+		if (std::includes(
+			archetype->signature.begin(),
+			archetype->signature.end(),
+			required.begin(),
+			required.end()))
+		{
+			cache.matches.push_back(archetype);
+		}
+
+		// Count rejected archetypes as examined too.
+		++cache.checkedArchetypeCount;
+	}
 }

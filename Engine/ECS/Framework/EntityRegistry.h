@@ -142,7 +142,20 @@ public:
 			"ForEach() requires at least one component type");
 
 		auto& cache = archetypeManager_.GetQueryCache<Components...>();
-
+		auto& archetypes = cache.matches;
+		for (auto* archetype : archetypes)
+		{
+			// Iterate chunks
+			for (auto& chunkPtr : archetype->GetChunks())
+			{
+				Chunk& chunk = *chunkPtr;
+				const std::uint32_t count = chunk.Count();
+				for (std::uint32_t row = 0; row < count; ++row)
+				{
+					fn(chunk.Get<Components>(row)...);
+				}
+			}
+		}
 	}
 
 

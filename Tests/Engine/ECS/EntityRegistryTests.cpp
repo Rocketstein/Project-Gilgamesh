@@ -103,6 +103,55 @@ GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "ReusesCanonicalSignature")
 	}
 }
 
+GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "PreservesLiveRowsAfterStorageGrowth")
+{
+	EntityRegistry registry;
+	ArchetypeManager manager;
+	manager.RegisterComponent<int>();
+	manager.RegisterComponent<float>();
+	manager.RegisterComponent<double>();
+	manager.RegisterComponent<char>();
+
+	// Retain an archetype and a live chunk before adding more component combinations.
+	const std::array<ComponentTypeId, 1> initialSignature{ ComponentTypeId{ typeid(int) } };
+	Archetype& initial = manager.FindOrCreate(initialSignature);
+	const auto [initialChunk, initialRow] = initial.InsertRow(
+		registry.Create(), [](Chunk::PendingRow& pending) { pending.Construct<int>(42); });
+
+	// Exercise storage growth with every nonempty subset of these component types.
+	const std::array<ComponentTypeId, 4> types{
+		ComponentTypeId{ typeid(int) }, ComponentTypeId{ typeid(float) },
+		ComponentTypeId{ typeid(double) }, ComponentTypeId{ typeid(char) }
+	};
+	for (std::size_t mask = 1; mask < (std::size_t{ 1 } << types.size()); ++mask)
+	{
+		ArchetypeSignature signature;
+		for (std::size_t index = 0; index < types.size(); ++index)
+		{
+			if ((mask & (std::size_t{ 1 } << index)) != 0)
+				signature.push_back(types[index]);
+		}
+		(void)manager.FindOrCreate(signature);
+	}
+
+	// Both lookup overloads must still resolve the original object.
+	Archetype* found = manager.Find(initialSignature);
+	const ArchetypeManager& readOnlyManager = manager;
+	GILGAMESH_CHECK_MESSAGE(found == &initial && readOnlyManager.Find(initialSignature) == &initial,
+		"adding archetypes must preserve existing archetype addresses");
+	if (found != &initial)
+		return;
+
+	// The existing chunk's metadata must remain valid for reads and further insertion.
+	GILGAMESH_CHECK_MESSAGE(initialChunk->Get<int>(initialRow) == 42,
+		"storage growth must preserve live component values");
+	const auto [reusedChunk, nextRow] = found->InsertRow(
+		registry.Create(), [](Chunk::PendingRow& pending) { pending.Construct<int>(84); });
+	GILGAMESH_CHECK_MESSAGE(reusedChunk == initialChunk && nextRow == initialRow + 1 &&
+		reusedChunk->Get<int>(nextRow) == 84,
+		"existing chunks must remain usable after archetype storage grows");
+}
+
 GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "RequiresRegisteredComponents")
 {
 	ArchetypeManager manager;
