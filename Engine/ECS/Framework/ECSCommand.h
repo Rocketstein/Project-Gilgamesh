@@ -23,10 +23,17 @@ struct ECSAddComponentCommandPayload
 	Entity entity;
 	Component component;
 
+	// Forward execution to the payload at its actual member address.
 	static void Execute(void* commandData, EntityRegistry& registry)
 	{
 		auto* self = static_cast<ECSAddComponentCommandPayload*>(commandData);
 		registry.Emplace<Component>(self->entity, std::move(self->component));
+	}
+
+	// Destroy the complete object while leaving storage owned by the arena.
+	static void Destroy(void* commandData) noexcept
+	{
+		std::destroy_at(static_cast<ECSCommand*>(commandData));
 	}
 };
 

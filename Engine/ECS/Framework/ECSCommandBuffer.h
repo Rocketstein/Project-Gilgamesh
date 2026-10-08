@@ -42,7 +42,7 @@ public:
 
 		// Construct the complete record directly in arena storage.
 		auto* command = new (writePtr) Command{
-			{ &Payload::Execute, sizeof(Command) },
+			{ &Payload::Execute, &Payload::Destroy, sizeof(Command) },
 			{ entity, std::move(component) }
 		};
 	}
@@ -62,10 +62,12 @@ public:
 
 private:
 	using DispatchFn = void(*)(void* commandData, EntityRegistry& registry);
+	using DestroyFn = void(*)(void* commandData) noexcept;
 
 	struct ECSCommandHeader
 	{
 		DispatchFn dispatch;
+		DestroyFn destroy;
 		uint32_t size;
 	};
 
