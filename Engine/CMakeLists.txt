@@ -37,6 +37,7 @@ target_sources (GilgameshEngine
 		ECS/Framework/Chunk.cpp
 		ECS/Framework/Chunk.h
 		ECS/Framework/ECSCommand.h
+		ECS/Framework/ECSCOmmandBuffer.cpp
 		ECS/Framework/ECSCommandBuffer.h
 		ECS/Framework/EntityRegistry.cpp
 		ECS/Framework/EntityRegistry.h

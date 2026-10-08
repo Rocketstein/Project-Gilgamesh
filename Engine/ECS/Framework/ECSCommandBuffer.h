@@ -1,15 +1,20 @@
 #pragma once
 
 #include <memory>
+#include <new>
 #include <utility>
 #include <vector>
 
 #include "ArchetypeResource.h"
 #include "ECSCommand.h"
+#include "MemoryArena.h"
 
 class ECSCommandBuffer final
 {
 public:
+	ECSCommandBuffer();
+
+	// flush...
 	// sort...
 
 	void AddEntity(Entity entity)
@@ -26,25 +31,25 @@ public:
 	template <typename Component>
 	void AddComponent(Entity entity, Component component)
 	{
-		using CommandType = ECSAddComponentCommand<Component>;
+		using Payload = ECSAddComponentCommandPayload<Component>;
+		using Command = ECSCommand<Payload>;
 
-		uint32_t headerSize = sizeof(ECSCommandHeader);
-		uint32_t commandSize = sizeof(CommandType);
-		size_t oldSize = commandBuffer_.size();
+		// Allocate storage aligned for both metadata and payload.
+		void* writePtr = commandBuffer_.Allocate(
+			sizeof(Command), alignof(Command));
 
-		commandBuffer_.resize(oldSize + headerSize + commandSize);
-		uint8_t* writePtr = commandBuffer_.data() + oldSize;
+		if (!writePtr) return;
 
-		auto* header = reinterpret_cast<ECSCommandHeader*>(writePtr);
-		header->dispatch = //execute;
-		header->size = commandSize;
-
-		new (writePtr + headerSize) CommandType{ entity, std::move(component) };
+		// Construct the complete record directly in arena storage.
+		auto* command = new (writePtr) Command{
+			{ &Payload::Execute, sizeof(Command) },
+			{ entity, std::move(component) }
+		};
 	}
 
 	// Deferred component construction
 	template <typename Component, typename... Args>
-	void AddComponent(Entity entity, Args&&... args)
+	void EmplaceComponent(Entity entity, Args&&... args)
 	{
 
 	}
@@ -56,16 +61,20 @@ public:
 	}
 
 private:
-	using DispatchFn = void(*)(void* commandDataPtr, EntityRegistry& registry);
+	using DispatchFn = void(*)(void* commandData, EntityRegistry& registry);
 
-	template <typename Component>
 	struct ECSCommandHeader
 	{
 		DispatchFn dispatch;
 		uint32_t size;
 	};
 
-	std::vector<std::byte> commandBuffer_;
+	template <typename CommandPayload>
+	struct ECSCommand
+	{
+		ECSCommandHeader header;
+		CommandPayload commandPayload;
+	};
 
-
+	MemoryArena commandBuffer_;
 };
