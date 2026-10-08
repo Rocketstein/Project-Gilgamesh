@@ -12,6 +12,7 @@ struct Entity final
 	constexpr bool IsNull() const noexcept { return index_ == InvalidIndex; }
 
 	friend constexpr bool operator==(Entity, Entity) noexcept = default;
+	friend constexpr auto operator<=>(Entity, Entity) noexcept = default;
 
 private:
 	static constexpr std::uint32_t InvalidIndex = 

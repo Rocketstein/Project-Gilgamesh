@@ -21,8 +21,7 @@ public:
 	[[nodiscard]]
 	Entity CreateEntity(SceneHandle handle);
 
-	[[nodiscard]]
-	bool DestroyEntity(Entity entity);
+	void DestroyEntity(Entity entity);
 
 	[[nodiscard]]
 	bool IsAlive(Entity entity) const noexcept;
@@ -52,7 +51,7 @@ public:
 	}
 
 	template <typename... Components, typename Fn>
-	void ForEach(Fn&& fn) const
+	void ForEach(Fn&& fn)
 	{
 		entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
 	}
@@ -60,6 +59,8 @@ public:
 
 private:
 	EntityRegistry entityRegistry_;
+	// Track scene ownership without adding scene concepts to ECS storage.
+	std::map<Entity, SceneHandle> entityScenes_;
 
 	// =============================================================================
 	// Scene Management

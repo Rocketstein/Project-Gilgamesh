@@ -2,38 +2,59 @@
 
 SceneHandle World::CreateScene(std::string name)
 {
-	SceneHandle handle = {};
-	std::uint32_t id = !freeSceneIndices_.empty() ? freeSceneIndices_.back() : scenes_.size();
-	if (id >= scenes_.size())
+	// Reserve the null index and narrow only after checking the slot capacity.
+	const bool reuseSlot = !freeSceneIndices_.empty();
+	if (!reuseSlot && scenes_.size() >= std::numeric_limits<std::uint32_t>::max())
 	{
-		scenes_.reserve(id);
+		throw std::length_error("World scene handle capacity exceeded");
 	}
+	const std::uint32_t id = reuseSlot
+		? freeSceneIndices_.back()
+		: static_cast<std::uint32_t>(scenes_.size());
 
+	// Construct the scene before changing either the slots or the free list.
 	std::string sceneName = name.empty() ? "Scene_" + std::to_string(id) : std::move(name);
 	auto scene = std::make_unique<Scene>(std::move(sceneName));
-	scenes_[id] = SceneItem{ std::move(scene), scenes_[id].generation };
+	if (reuseSlot)
+	{
+		scenes_[id].scene = std::move(scene);
+		freeSceneIndices_.pop_back();
+	}
+	else
+	{
+		scenes_.push_back(SceneItem{ std::move(scene), 0 });
+	}
 
-	handle.id = id;
-	handle.generation = scenes_[id].generation;
-
-	freeSceneIndices_.pop_back();
-	return handle;
+	return SceneHandle{ id, scenes_[id].generation };
 }
 
 bool World::DestroyScene(SceneHandle handle)
 {
 	if (!IsSceneHandleValid(handle)) return false;
-	SceneItem& item = scenes_[handle.id];
-	Scene* scenePtr = item.scene.get();
+	Scene* scene = scenes_[handle.id].scene.get();
 
-	// Remove scene specefic entities
-	for (Entity entity : scenePtr->entities_)
+	// Allocate recycling space before destroying any scene content.
+	const bool canReuse = scenes_[handle.id].generation <
+		std::numeric_limits<std::uint32_t>::max() - 1;
+	if (canReuse)
 	{
-		entityRegistry_.Destroy(entity);
+		freeSceneIndices_.reserve(freeSceneIndices_.size() + 1);
 	}
 
-	item.generation++;
-	freeSceneIndices_.push_back(handle.id);
+	// DestroyEntity erases membership, so drain rather than iterate the vector.
+	while (!scene->entities_.empty())
+	{
+		DestroyEntity(scene->entities_.back());
+	}
+
+	// Reacquire the slot after component destruction and retire exhausted slots.
+	SceneItem& item = scenes_[handle.id];
+	item.scene.reset();
+	++item.generation;
+	if (canReuse)
+	{
+		freeSceneIndices_.push_back(handle.id);
+	}
 	return true;
 }
 
@@ -70,21 +91,39 @@ Entity World::CreateEntity()
 
 Entity World::CreateEntity(SceneHandle handle)
 {
-	if (!IsSceneHandleValid(handle))
-	{
-		Entity entity;
-		return entity;
-	}
+	if (!IsSceneHandleValid(handle)) return {};
 
 	Scene* scene = scenes_[handle.id].scene.get();
-	Entity entity = entityRegistry_.Create();
-	scene->entities_.push_back(entity);
+	const Entity entity = entityRegistry_.Create();
+	// Publish both membership directions, retiring the entity if tracking fails.
+	try
+	{
+		entityScenes_.emplace(entity, handle);
+		scene->entities_.push_back(entity);
+	}
+	catch (...)
+	{
+		entityScenes_.erase(entity);
+		entityRegistry_.Destroy(entity);
+		throw;
+	}
 	return entity;
 }
 
-bool World::DestroyEntity(Entity entity)
+void World::DestroyEntity(Entity entity)
 {
-	return entityRegistry_.Destroy(entity);
+	// Copy the owner before component destruction can create other entities.
+	const auto membership = entityScenes_.find(entity);
+	const SceneHandle owner = membership != entityScenes_.end()
+		? membership->second : SceneHandle{};
+	if (!entityRegistry_.Destroy(entity)) return;
+
+	// World-owned entities have no scene, while scene members leave both indices.
+	if (IsSceneHandleValid(owner))
+	{
+		std::erase(scenes_[owner.id].scene->entities_, entity);
+	}
+	entityScenes_.erase(entity);
 }
 
 bool World::IsAlive(Entity entity) const noexcept

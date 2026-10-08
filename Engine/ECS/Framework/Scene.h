@@ -27,7 +27,13 @@ public:
     bool Contains(Entity entity) const noexcept;
 
     template<class Fn>
-    void ForEachEntity(Fn&& fn) const;
+    void ForEachEntity(Fn&& fn) const
+    {
+        for (Entity entity : entities_)
+        {
+            fn(entity);
+        }
+    }
 
 private:
     friend class World;
