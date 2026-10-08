@@ -27,6 +27,37 @@ public:
 	[[nodiscard]]
 	bool IsAlive(Entity entity) const noexcept;
 
+	template <typename Component, typename... Args>
+	Component& Emplace(Entity entity, Args&&... args)
+	{
+		return entityRegistry_.Emplace<Component>(entity, std::forward<Args>(args)...);
+	}
+
+	template <typename Component>
+	[[nodiscard]] bool Has(Entity entity) const
+	{
+		return entityRegistry_.Has<Component>(entity);
+	}
+
+	template <typename Component>
+	[[nodiscard]] Component& Get(Entity entity)
+	{
+		return entityRegistry_.Get<Component>(entity);
+	}
+
+	template <typename Component>
+	[[nodiscard]] const Component& Get(Entity entity) const
+	{
+		return entityRegistry_.Get<Component>(entity);
+	}
+
+	template <typename... Components, typename Fn>
+	void ForEach(Fn&& fn) const
+	{
+		entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
+	}
+
+
 private:
 	EntityRegistry entityRegistry_;
 
