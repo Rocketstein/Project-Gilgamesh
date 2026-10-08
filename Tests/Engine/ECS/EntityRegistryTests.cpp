@@ -609,10 +609,35 @@ GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")
 		"another world must reject the entity");
 	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(Entity{}),
 		"the null handle must not refer to a live entity");
-	GILGAMESH_CHECK_MESSAGE(!secondWorld.DestroyEntity(first),
+	secondWorld.DestroyEntity(first);
+	GILGAMESH_CHECK_MESSAGE(firstWorld.IsAlive(first) && secondWorld.IsAlive(second),
 		"another world must not destroy the entity");
-	GILGAMESH_CHECK_MESSAGE(firstWorld.DestroyEntity(first),
-		"the creating world must be able to destroy the entity");
+
+	// Destruction through the owning world must end the entity's lifetime.
+	firstWorld.DestroyEntity(first);
 	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(first),
 		"a destroyed world entity must no longer be alive");
+}
+
+GILGAMESH_TEST("Engine.ECS.World", "RejectsVacantSceneSlots")
+{
+	World world;
+	const SceneHandle original = world.CreateScene();
+	GILGAMESH_CHECK_MESSAGE(world.DestroyScene(original),
+		"a live scene must be destructible");
+
+	// Even the slot's new generation cannot refer to a scene before reuse.
+	SceneHandle vacant = original;
+	++vacant.generation;
+	GILGAMESH_CHECK_MESSAGE(!world.IsSceneHandleValid(vacant) &&
+		world.TryGetScene(vacant) == nullptr &&
+		world.CreateEntity(vacant).IsNull() && !world.DestroyScene(vacant),
+		"all scene operations must reject an unoccupied slot");
+
+	// Reusing the slot accepts the new handle and keeps the original invalid.
+	const SceneHandle reused = world.CreateScene();
+	GILGAMESH_CHECK_MESSAGE(reused.id == original.id &&
+		reused.generation == vacant.generation && world.IsSceneHandleValid(reused) &&
+		world.TryGetScene(reused) != nullptr && !world.IsSceneHandleValid(original),
+		"a recycled scene must use the new generation without reviving the old handle");
 }

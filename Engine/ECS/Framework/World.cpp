@@ -76,6 +76,12 @@ bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 		return false;
 	}
 
+	// A recycled slot has no scene until it is reused.
+	if (scenes_[handle.id].scene == nullptr)
+	{
+		return false;
+	}
+
 	if (scenes_[handle.id].generation != handle.generation)
 	{
 		return false;
