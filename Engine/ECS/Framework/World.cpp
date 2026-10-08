@@ -66,6 +66,7 @@ const Scene* World::TryGetScene(SceneHandle handle) const noexcept
 
 bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 {
+	// Reject null or out-of-range handles before accessing the slot.
 	if (handle.IsNull())
 	{
 		return false;
@@ -82,6 +83,7 @@ bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 		return false;
 	}
 
+	// A matching index alone does not identify the same scene after slot reuse.
 	if (scenes_[handle.id].generation != handle.generation)
 	{
 		return false;
