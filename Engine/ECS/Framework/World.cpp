@@ -2,7 +2,7 @@
 
 #include "IDGenerator.h"
 
-World::World() : worldID_(IDGenerator<WorldTag>::Next())
+World::World() : worldID_(IDGenerator<WorldTag>::Next()), entityRegistry_(worldID_)
 {
 
 }
@@ -32,7 +32,7 @@ SceneHandle World::CreateScene(std::string name)
 		scenes_.push_back(SceneItem{ std::move(scene), 0 });
 	}
 
-	return SceneHandle{ id, scenes_[id].generation };
+	return SceneHandle{ id, scenes_[id].generation, worldID_ };
 }
 
 bool World::DestroyScene(SceneHandle handle)
@@ -73,8 +73,8 @@ const Scene* World::TryGetScene(SceneHandle handle) const noexcept
 
 bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 {
-	// Reject null or out-of-range handles before accessing the slot.
-	if (handle.IsNull())
+	// Reject foreign, null, or out-of-range handles before accessing the slot.
+	if (handle.owningWorldID_ != worldID_ || handle.IsNull())
 	{
 		return false;
 	}

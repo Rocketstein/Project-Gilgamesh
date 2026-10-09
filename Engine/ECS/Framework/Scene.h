@@ -10,6 +10,7 @@ struct SceneHandle
 {
     std::uint32_t id = InvalidIndex; // Index into the owning World's scene slots.
     std::uint32_t generation = 0; // Distinguishes a scene from later occupants of its slot.
+    std::uint32_t owningWorldID_ = 0; // World that issued this handle.
 
     [[nodiscard]]
 	bool IsNull() const noexcept { return id == InvalidIndex; }

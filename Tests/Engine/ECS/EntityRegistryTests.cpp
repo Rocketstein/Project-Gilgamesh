@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "Engine/ECS/Framework/ArchetypeManager.h"
+#include "Engine/ECS/Framework/ECSCommandBuffer.h"
 #include "Engine/ECS/Framework/EntityRegistry.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Tests/TestFramework.h"
@@ -640,4 +641,72 @@ GILGAMESH_TEST("Engine.ECS.World", "RejectsVacantSceneSlots")
 		reused.generation == vacant.generation && world.IsSceneHandleValid(reused) &&
 		world.TryGetScene(reused) != nullptr && !world.IsSceneHandleValid(original),
 		"a recycled scene must use the new generation without reviving the old handle");
+}
+
+// Scene ownership must distinguish identical slot and generation values across worlds.
+GILGAMESH_TEST("Engine.ECS.World", "RejectsForeignSceneHandles")
+{
+	World firstWorld;
+	World secondWorld;
+	const SceneHandle firstScene = firstWorld.CreateScene();
+	const SceneHandle secondScene = secondWorld.CreateScene();
+	const Entity first = firstWorld.CreateEntity(firstScene);
+	const Entity second = secondWorld.CreateEntity(secondScene);
+
+	// Both scenes occupy the same local slot, but belong to different worlds.
+	GILGAMESH_CHECK_MESSAGE(firstScene.id == secondScene.id &&
+		firstScene.generation == secondScene.generation &&
+		firstScene.owningWorldID_ == firstWorld.GetWorldID() &&
+		secondScene.owningWorldID_ == secondWorld.GetWorldID() &&
+		firstScene.owningWorldID_ != secondScene.owningWorldID_,
+		"scene handles must retain the identity of their owning world");
+
+	// Every immediate scene operation must reject another world's handle.
+	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsSceneHandleValid(secondScene) &&
+		firstWorld.TryGetScene(secondScene) == nullptr &&
+		firstWorld.CreateEntity(secondScene).IsNull() &&
+		!firstWorld.DestroyScene(secondScene),
+		"matching local slot values must not authorize foreign scene operations");
+
+	// Rejected operations must preserve both scenes and their existing members.
+	const Scene* localScene = firstWorld.TryGetScene(firstScene);
+	const Scene* foreignScene = secondWorld.TryGetScene(secondScene);
+	GILGAMESH_CHECK_MESSAGE(localScene != nullptr && foreignScene != nullptr &&
+		localScene->Contains(first) && foreignScene->Contains(second) &&
+		firstWorld.IsAlive(first) && secondWorld.IsAlive(second),
+		"rejecting a foreign scene handle must leave both worlds unchanged");
+}
+
+// Deferred creation must enforce the same ownership rules when the buffer is played back.
+GILGAMESH_TEST("Engine.ECS.World", "RejectsForeignSceneDuringCommit")
+{
+	World firstWorld;
+	World secondWorld;
+	const SceneHandle firstScene = firstWorld.CreateScene();
+	const SceneHandle secondScene = secondWorld.CreateScene();
+	const Entity second = secondWorld.CreateEntity(secondScene);
+
+	// A reservation cannot become a member of another world's scene.
+	const Entity reservation = firstWorld.ReserveEntity();
+	firstWorld.CommitEntity(reservation, secondScene);
+	firstWorld.CommitEntity(reservation, firstScene);
+	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(reservation),
+		"a foreign scene must cancel the reservation rather than allow later activation");
+
+	// Reject foreign creation and destruction without interrupting valid commands.
+	ECSCommandBuffer buffer(firstWorld);
+	const Entity rejected = buffer.CreateEntity(secondScene);
+	const Entity accepted = buffer.CreateEntity(firstScene);
+	buffer.RemoveEntity(second);
+	buffer.EmplaceComponent<int>(accepted, 42);
+	buffer.Flush();
+
+	const Scene* localScene = firstWorld.TryGetScene(firstScene);
+	const Scene* foreignScene = secondWorld.TryGetScene(secondScene);
+	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(rejected) &&
+		firstWorld.IsAlive(accepted) && firstWorld.Get<int>(accepted) == 42 &&
+		localScene != nullptr && localScene->Contains(accepted) &&
+		!localScene->Contains(rejected) && foreignScene != nullptr &&
+		foreignScene->Contains(second) && secondWorld.IsAlive(second),
+		"playback must reject foreign handles and preserve valid scene membership");
 }

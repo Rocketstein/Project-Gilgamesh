@@ -15,7 +15,8 @@
 class EntityRegistry final
 {
 public:
-	EntityRegistry() noexcept;
+	// Bind issued handles to a world while retaining a distinct registry identity.
+	explicit EntityRegistry(std::uint32_t owningWorldID = 0) noexcept;
 	EntityRegistry(const EntityRegistry&) = delete;
 	EntityRegistry& operator=(const EntityRegistry&) = delete;
 	EntityRegistry(EntityRegistry&&) = delete;
@@ -223,4 +224,5 @@ private:
 	// Own the future component storage behind the registry's entity API.
 	ArchetypeManager archetypeManager_;
 	std::uint64_t ownerId_ = 0;
+	std::uint32_t owningWorldID_ = 0; // World identity copied into every issued entity.
 };

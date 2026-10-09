@@ -6,8 +6,7 @@
 
 namespace
 {
-	// Give each registry a distinct identity so handles cannot cross worlds.
-	// Deferred world ID usage until implementing world manager
+	// Keep registries distinct even when they share the same world identity.
 	std::uint64_t AcquireEntityRegistryOwnerId() noexcept
 	{
 		static std::atomic<std::uint64_t> nextOwnerId{ 1 };
@@ -15,8 +14,8 @@ namespace
 	}
 } // Anonymous namespace
 
-EntityRegistry::EntityRegistry() noexcept
-	: ownerId_(AcquireEntityRegistryOwnerId())
+EntityRegistry::EntityRegistry(std::uint32_t owningWorldID) noexcept
+	: ownerId_(AcquireEntityRegistryOwnerId()), owningWorldID_(owningWorldID)
 {
 }
 
@@ -34,7 +33,7 @@ Entity EntityRegistry::Create()
 		const std::uint32_t index = freeIndices_.back();
 		freeIndices_.pop_back();
 		slots_[index].state = EntityState::Alive;
-		return Entity(index, slots_[index].generation, ownerId_);
+		return Entity(index, slots_[index].generation, ownerId_, owningWorldID_);
 	}
 
 	// The maximum index is reserved for the null entity handle.
@@ -48,7 +47,7 @@ Entity EntityRegistry::Create()
 	const auto index = static_cast<std::uint32_t>(slots_.size());
 	slots_.emplace_back();
 	slots_.back().state = EntityState::Alive;
-	return Entity(index, slots_.back().generation, ownerId_);
+	return Entity(index, slots_.back().generation, ownerId_, owningWorldID_);
 }
 
 Entity EntityRegistry::Reserve()
@@ -59,7 +58,7 @@ Entity EntityRegistry::Reserve()
 		const std::uint32_t index = freeIndices_.back();
 		freeIndices_.pop_back();
 		slots_[index].state = EntityState::Reserved;
-		return Entity(index, slots_[index].generation, ownerId_);
+		return Entity(index, slots_[index].generation, ownerId_, owningWorldID_);
 	}
 	// The maximum index is reserved for the null entity handle.
 	if (slots_.size() >= Entity::InvalidIndex)
@@ -71,7 +70,7 @@ Entity EntityRegistry::Reserve()
 	const auto index = static_cast<std::uint32_t>(slots_.size());
 	slots_.emplace_back();
 	slots_.back().state = EntityState::Reserved;
-	return Entity(index, slots_.back().generation, ownerId_);
+	return Entity(index, slots_.back().generation, ownerId_, owningWorldID_);
 }
 
 void EntityRegistry::Commit(Entity entity)
@@ -135,7 +134,9 @@ bool EntityRegistry::Destroy(Entity entity)
 
 EntityState EntityRegistry::GetEntityState(Entity entity) const noexcept
 {
-	if (entity.ownerId_ != ownerId_ || entity.index_ >= slots_.size())
+	// Reject foreign handles before accessing the registry's slots.
+	if (entity.ownerId_ != ownerId_ || entity.owningWorldID_ != owningWorldID_ ||
+		entity.index_ >= slots_.size())
 	{
 		return EntityState::Invalid;
 	}
