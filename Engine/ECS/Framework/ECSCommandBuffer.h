@@ -63,7 +63,7 @@ public:
 		}
 		catch (...)
 		{
-			Payload::Destroy(payload);
+			Payload::Destroy(payload, world_);
 			throw;
 		}
 	}
@@ -96,7 +96,7 @@ public:
 		}
 		catch (...)
 		{
-			Payload::Destroy(payload);
+			Payload::Destroy(payload, world_);
 			throw;
 		}
 	}
@@ -125,14 +125,14 @@ public:
 		}
 		catch (...)
 		{
-			Payload::Destroy(payload);
+			Payload::Destroy(payload, world_);
 			throw;
 		}
 	}
 
 private:
 	using DispatchFn = void(*)(void* payload, EntityRegistry& registry, World& world);
-	using DestroyFn  = void(*)(void* commandData) noexcept;
+	using DestroyFn  = void(*)(void* commandData, World& world) noexcept;
 
 	// Describes a concrete payload without owning its arena storage.
 	struct ECSCommandHeader

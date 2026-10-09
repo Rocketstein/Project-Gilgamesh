@@ -167,6 +167,8 @@ public:
 
 
 private:
+	bool CanReuse(Entity entity) const noexcept;
+
 	// Populate new columns, move shared columns, then publish the new row location.
 	// The target must differ from the source; populate only constructs new values.
 	template <typename Populate>

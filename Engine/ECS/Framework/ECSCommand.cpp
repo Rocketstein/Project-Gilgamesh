@@ -8,7 +8,9 @@ void ECSAddEntityCommandPayload::Execute(void* commandData, EntityRegistry& regi
 	world.CommitEntity(payload->entity, payload->handle);
 }
 
-void ECSAddEntityCommandPayload::Destroy(void* commandData) noexcept
+void ECSAddEntityCommandPayload::Destroy(void* commandData, World& world) noexcept
 {
-	std::destroy_at(static_cast<ECSAddEntityCommandPayload*>(commandData));
+	auto* payload = static_cast<ECSAddEntityCommandPayload*>(commandData);
+	world.CancelEntityReservation(payload->entity);
+	std::destroy_at(payload);
 }

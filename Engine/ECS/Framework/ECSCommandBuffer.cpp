@@ -12,38 +12,42 @@ ECSCommandBuffer::~ECSCommandBuffer() noexcept
 	// Arena storage alone cannot invoke concrete payload destructors.
 	for (const auto& command : commands_)
 	{
-		command.destroy(command.payload);
+		command.destroy(command.payload, world_);
 	}
 }
 
+// Record a reserved entity and cancel it if allocation or registration fails.
 Entity ECSCommandBuffer::CreateEntity(SceneHandle handle)
 {
     const Entity entity = world_.ReserveEntity();
 
 	using Payload = ECSAddEntityCommandPayload;
-
-    // Keep the concrete payload at a stable, correctly aligned address.
-    void* writePtr = commandBuffer_.Allocate(
-        sizeof(Payload), alignof(Payload));
-
-    if (!writePtr)
-    {
-        throw std::bad_alloc{};
-    }
-
-    // Construct the payload before publishing its metadata.
-    auto* payload = new (writePtr) Payload{
-        entity, handle
-    };
-
-    // Registration failure must not leave an untracked live payload.
+    Payload* payload = nullptr;
     try
     {
+        // Keep the concrete payload at a stable, correctly aligned address.
+        void* writePtr = commandBuffer_.Allocate(
+            sizeof(Payload), alignof(Payload));
+        if (!writePtr)
+        {
+            throw std::bad_alloc{};
+        }
+
+        // Construct the payload before publishing its metadata.
+        payload = new (writePtr) Payload{ entity, handle };
         commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });
     }
     catch (...)
     {
-        Payload::Destroy(payload);
+        // Destroy a constructed payload, or cancel an unpublished reservation.
+        if (payload)
+        {
+            Payload::Destroy(payload, world_);
+        }
+        else
+        {
+            world_.CancelEntityReservation(entity);
+        }
         throw;
     }
 
@@ -59,7 +63,7 @@ void ECSCommandBuffer::Clear()
 {
     for (auto& command : commands_)
     {
-        command.destroy(command.payload);
+        command.destroy(command.payload, world_);
     }
 
 	commands_.clear();

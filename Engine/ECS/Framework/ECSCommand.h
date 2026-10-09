@@ -14,7 +14,7 @@ struct ECSAddEntityCommandPayload
 {
 public:
 	static void Execute(void* commandData, EntityRegistry& registry, World& world);
-	static void Destroy(void* commandData) noexcept;
+	static void Destroy(void* commandData, World& world) noexcept;
 
 public:
 	Entity entity;
@@ -39,7 +39,7 @@ public:
 	}
 
 	// Destroy the payload while leaving storage owned by the arena.
-	static void Destroy(void* commandData) noexcept
+	static void Destroy(void* commandData, World& world) noexcept
 	{
 		std::destroy_at(static_cast<ECSAddComponentCommandPayload*>(commandData));
 	}
@@ -68,7 +68,7 @@ public:
 	}
 
 	// Destroy the arguments while leaving storage owned by the arena.
-	static void Destroy(void* commandData) noexcept
+	static void Destroy(void* commandData, World&) noexcept
 	{
 		std::destroy_at(static_cast<ECSEmplaceComponentCommandPayload*>(commandData));
 	}
@@ -88,7 +88,7 @@ public:
 		registry.Remove<Component>(self->entity);
 	}
 
-	static void Destroy(void* commandData) noexcept
+	static void Destroy(void* commandData, World&) noexcept
 	{
 		std::destroy_at(static_cast<ECSRemoveComponentCommandPayload*>(commandData));
 	}

@@ -20,6 +20,12 @@ EntityRegistry::EntityRegistry() noexcept
 {
 }
 
+bool EntityRegistry::CanReuse(Entity entity) const noexcept
+{
+	const EntitySlot source = slots_[entity.index_];
+	return source.generation < std::numeric_limits<std::uint32_t>::max() - 1;
+}
+
 Entity EntityRegistry::Create()
 {
 	// Reuse an index whose generation was advanced during destruction.
@@ -76,6 +82,13 @@ void EntityRegistry::CancelEntityReservation(Entity entity)
 	if (GetEntityState(entity) != EntityState::Reserved) return;
 
 	slots_[entity.index_].state = EntityState::Canceled;
+
+	if (CanReuse(entity))
+	{
+		slots_[entity.index_].generation++;
+		freeIndices_.reserve(freeIndices_.size() + 1);
+		freeIndices_.push_back(entity.index_);
+	}
 }
 
 bool EntityRegistry::Destroy(Entity entity)
@@ -84,8 +97,7 @@ bool EntityRegistry::Destroy(Entity entity)
 
 	// Component destructors may create handles, so do not retain a slot reference.
 	const EntitySlot source = slots_[entity.index_];
-	const bool canReuse =
-		source.generation < std::numeric_limits<std::uint32_t>::max() - 1;
+	const bool canReuse = CanReuse(entity);
 
 	// Allocate free-list space before changing the entity's lifetime.
 	if (canReuse)
