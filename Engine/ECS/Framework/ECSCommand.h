@@ -4,15 +4,21 @@
 #include <tuple>
 #include <utility>
 
-#include "Engine/ECS/Entity/Entity.h"
 #include "EntityRegistry.h"
+#include "Engine/ECS/Entity/Entity.h"
+#include "Engine/ECS/Framework/Scene.h"
 
 class World;
 
 struct ECSAddEntityCommandPayload
 {
+public:
+	static void Execute(void* commandData, EntityRegistry& registry, World& world);
+	static void Destroy(void* commandData) noexcept;
 
-
+public:
+	Entity entity;
+	SceneHandle handle;
 };
 
 struct ECSRemoveEntityCommandPayload
@@ -24,6 +30,7 @@ struct ECSRemoveEntityCommandPayload
 template <typename Component>
 struct ECSAddComponentCommandPayload
 {
+public:
 	// Forward execution to the payload at its actual member address.
 	static void Execute(void* commandData, EntityRegistry& registry, World& world)
 	{

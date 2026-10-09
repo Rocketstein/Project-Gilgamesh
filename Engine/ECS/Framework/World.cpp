@@ -118,6 +118,28 @@ Entity World::CreateEntity(SceneHandle handle)
 	return entity;
 }
 
+Entity World::ReserveEntity()
+{
+	return entityRegistry_.Reserve();
+}
+
+void World::CancelEntityReservation(Entity entity)
+{
+	if (entity.IsNull()) return;
+	entityRegistry_.CancelEntityReservation(entity);
+}
+
+void World::CommitEntity(Entity entity, SceneHandle handle)
+{
+	if (entity.IsNull() || !IsSceneHandleValid(handle))
+	{
+		CancelEntityReservation(entity);
+		return;
+	}
+
+	entityRegistry_.Commit(entity);
+}
+
 void World::DestroyEntity(Entity entity)
 {
 	// Copy the owner before component destruction can create other entities.
@@ -136,5 +158,5 @@ void World::DestroyEntity(Entity entity)
 
 bool World::IsAlive(Entity entity) const noexcept
 {
-	return entityRegistry_.IsValid(entity);
+	return entityRegistry_.GetEntityState(entity) == EntityState::Alive;
 }

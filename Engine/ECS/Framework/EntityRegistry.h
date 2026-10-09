@@ -7,8 +7,9 @@
 #include <utility>
 #include <vector>
 
+#include "ArchetypeManager.h"
+#include "EntitySlot.h"
 #include "Engine/ECS/Entity/Entity.h"
-#include "Engine/ECS/Framework/ArchetypeManager.h"
 
 // Issues entity handles and owns the generations used to validate them.
 class EntityRegistry final
@@ -26,9 +27,15 @@ public:
 
 	[[nodiscard]] Entity Create();
 
+	[[nodiscard]] Entity Reserve();
+
+	void CancelEntityReservation(Entity entity);
+
+	void Commit(Entity entity);
+
 	bool Destroy(Entity entity);
 
-	[[nodiscard]] bool IsValid(Entity entity) const noexcept;
+	[[nodiscard]] EntityState GetEntityState(Entity entity) const noexcept;
 
 	// =============================================================================
 	// Component Operations
@@ -38,7 +45,7 @@ public:
 	template <typename T, typename... Args>
 	T& Emplace(Entity entity, Args&&... args)
 	{
-		if (!IsValid(entity) || Has<T>(entity))
+		if (GetEntityState(entity) != EntityState::Alive || Has<T>(entity))
 		{
 			throw std::logic_error("Cannot emplace T on this entity");
 		}
@@ -69,7 +76,7 @@ public:
 	bool Has(Entity entity) const
 	{
 		// A stale or foreign handle cannot refer to a component row.
-		if (!IsValid(entity))
+		if (GetEntityState(entity) != EntityState::Alive)
 		{
 			return false;
 		}
@@ -160,19 +167,6 @@ public:
 
 
 private:
-	// Tracks one handle generation and its optional archetype row location.
-	struct EntitySlot
-	{
-		// The generation advances when an entity is destroyed, before reuse.
-		std::uint32_t generation = 0;
-		// The archetype owning this entity's row.
-		Archetype* archetype = nullptr;
-		// The chunk containing the row.
-		Chunk* chunk = nullptr;
-		// The shared index into the chunk's Entity and component columns.
-		std::uint32_t row = 0;
-	};
-
 	// Populate new columns, move shared columns, then publish the new row location.
 	// The target must differ from the source; populate only constructs new values.
 	template <typename Populate>

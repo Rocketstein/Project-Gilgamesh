@@ -27,6 +27,7 @@ Entity EntityRegistry::Create()
 	{
 		const std::uint32_t index = freeIndices_.back();
 		freeIndices_.pop_back();
+		slots_[index].state = EntityState::Alive;
 		return Entity(index, slots_[index].generation, ownerId_);
 	}
 
@@ -38,12 +39,48 @@ Entity EntityRegistry::Create()
 
 	const auto index = static_cast<std::uint32_t>(slots_.size());
 	slots_.emplace_back();
+	slots_.back().state = EntityState::Alive;
 	return Entity(index, slots_.back().generation, ownerId_);
+}
+
+Entity EntityRegistry::Reserve()
+{
+	// Reuse an index whose generation was advanced during destruction.
+	if (!freeIndices_.empty())
+	{
+		const std::uint32_t index = freeIndices_.back();
+		freeIndices_.pop_back();
+		slots_[index].state = EntityState::Reserved;
+		return Entity(index, slots_[index].generation, ownerId_);
+	}
+	// The maximum index is reserved for the null entity handle.
+	if (slots_.size() >= Entity::InvalidIndex)
+	{
+		throw std::length_error("EntityRegistry handle capacity exceeded");
+	}
+	const auto index = static_cast<std::uint32_t>(slots_.size());
+	slots_.emplace_back();
+	slots_.back().state = EntityState::Reserved;
+	return Entity(index, slots_.back().generation, ownerId_);
+}
+
+void EntityRegistry::Commit(Entity entity)
+{
+	if (GetEntityState(entity) != EntityState::Reserved) return;
+
+	slots_[entity.index_].state = EntityState::Alive;
+}
+
+void EntityRegistry::CancelEntityReservation(Entity entity)
+{
+	if (GetEntityState(entity) != EntityState::Reserved) return;
+
+	slots_[entity.index_].state = EntityState::Canceled;
 }
 
 bool EntityRegistry::Destroy(Entity entity)
 {
-	if (!IsValid(entity)) return false;
+	if (GetEntityState(entity) != EntityState::Alive) return false;
 
 	// Component destructors may create handles, so do not retain a slot reference.
 	const EntitySlot source = slots_[entity.index_];
@@ -70,6 +107,7 @@ bool EntityRegistry::Destroy(Entity entity)
 	slot.archetype = nullptr;
 	slot.chunk = nullptr;
 	slot.row = 0;
+	slot.state = EntityState::Free;
 
 	// Invalidate the old handle and never recycle an exhausted slot.
 	++slot.generation;
@@ -80,16 +118,21 @@ bool EntityRegistry::Destroy(Entity entity)
 	return true;
 }
 
-bool EntityRegistry::IsValid(Entity entity) const noexcept
+EntityState EntityRegistry::GetEntityState(Entity entity) const noexcept
 {
 	if (entity.ownerId_ != ownerId_ || entity.index_ >= slots_.size())
 	{
-		return false;
+		return EntityState::Invalid;
 	}
 
 	// Only Create issues handles, so a freed slot's next generation has no
 	// matching handle until that slot is reused.
 	const std::uint32_t generation = slots_[entity.index_].generation;
-	return generation != std::numeric_limits<std::uint32_t>::max()
-		&& generation == entity.generation_;
+
+	if (generation == std::numeric_limits<std::uint32_t>::max() || generation != entity.generation_)
+	{
+		return EntityState::Invalid;
+	}
+
+	return slots_[entity.index_].state;
 }

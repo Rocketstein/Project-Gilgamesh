@@ -22,6 +22,13 @@ public:
 	[[nodiscard]]
 	Entity CreateEntity();
 
+	[[nodiscard]]
+	Entity ReserveEntity();
+
+	void CancelEntityReservation(Entity entity);
+
+	void CommitEntity(Entity entity, SceneHandle handle);
+
 	// Register an entity in a scene, or return a null entity for an invalid handle.
 	[[nodiscard]]
 	Entity CreateEntity(SceneHandle handle);

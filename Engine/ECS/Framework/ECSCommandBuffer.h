@@ -11,6 +11,8 @@
 #include "ECSCommand.h"
 #include "MemoryArena.h"
 
+struct SceneHandle;
+
 class World;
 
 // Owns deferred ECS payloads and the metadata needed to execute them.
@@ -30,15 +32,9 @@ public:
 
 	void Clear();
 
-	void AddEntity(Entity entity)
-	{
+	Entity CreateEntity(SceneHandle handle);
 
-	}
-
-	void RemoveEntity(Entity entity)
-	{
-
-	}
+	void RemoveEntity(Entity entity);
 
 	// Record a preconstructed component for later attachment.
 	template <typename Component>

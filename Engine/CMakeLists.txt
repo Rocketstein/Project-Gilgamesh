@@ -42,6 +42,7 @@ target_sources (GilgameshEngine
 		ECS/Framework/ECSCommandBuffer.h
 		ECS/Framework/EntityRegistry.cpp
 		ECS/Framework/EntityRegistry.h
+		ECS/Framework/EntitySlot.h
 		ECS/Framework/MemoryArena.cpp
 		ECS/Framework/MemoryArena.h
 		ECS/Framework/Scene.cpp
