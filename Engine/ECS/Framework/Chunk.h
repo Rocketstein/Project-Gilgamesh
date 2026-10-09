@@ -146,6 +146,27 @@ public:
         return *std::launder(reinterpret_cast<T*>(address));
     }
 
+    template <typename T>
+    const T& Get(std::uint32_t row) const
+    {
+        // Only committed rows contain constructed component objects.
+        if (storage_ == nullptr || row >= count_)
+        {
+            throw std::out_of_range("Chunk row does not contain a live component");
+        }
+
+        // Locate T's column, then advance to the requested row within it.
+        const auto columnIt = layout_.componentColumns.find(ComponentTypeId{ typeid(T) });
+        if (columnIt == layout_.componentColumns.end())
+        {
+            throw std::out_of_range("Chunk does not contain the requested component type");
+        }
+
+        const ChunkLayout::Column& column = columnIt->second;
+        std::byte* address = storage_ + column.offset + row * column.stride;
+        return *std::launder(reinterpret_cast<T*>(address));
+    }
+
 private:
     friend struct Archetype;
 

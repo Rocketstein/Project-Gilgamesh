@@ -109,6 +109,24 @@ public:
 	}
 
 	template <typename T>
+	const T& Get(Entity entity) const
+	{
+		// A reference can only be returned for a live entity that owns T.
+		if (!Has<T>(entity))
+		{
+			throw std::out_of_range("Entity does not have the requested component");
+		}
+
+		// The slot supplies the chunk and the shared row index for all columns.
+		const EntitySlot& slot = slots_[entity.index_];
+		if (slot.chunk == nullptr)
+		{
+			throw std::logic_error("Entity has an archetype but no chunk row");
+		}
+		return slot.chunk->Get<T>(slot.row);
+	}
+
+	template <typename T>
 	void Remove(Entity entity)
 	{
 		if (!Has<T>(entity))
