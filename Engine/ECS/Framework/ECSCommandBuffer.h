@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <new>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -70,11 +72,37 @@ public:
 		}
 	}
 
-	// Deferred component construction
+	// Store argument values and defer component construction until playback.
 	template <typename Component, typename... Args>
 	void EmplaceComponent(Entity entity, Args&&... args)
 	{
+		using Payload = ECSEmplaceComponentCommandPayload<
+			Component, std::decay_t<Args>...>;
 
+		// Keep the concrete payload at a stable, correctly aligned address.
+		void* writePtr = commandBuffer_.Allocate(
+			sizeof(Payload), alignof(Payload));
+
+		if (!writePtr)
+		{
+			throw std::bad_alloc{};
+		}
+
+		// Construct the payload before publishing its metadata.
+		auto* payload = new (writePtr) Payload{
+			entity, std::tuple<std::decay_t<Args>...>{std::forward<Args>(args)...}
+		};
+
+		// Registration failure must not leave an untracked live payload.
+		try
+		{
+			commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });
+		}
+		catch (...)
+		{
+			Payload::Destroy(payload);
+			throw;
+		}
 	}
 
 	template <typename Component>

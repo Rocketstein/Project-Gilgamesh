@@ -41,12 +41,33 @@ struct ECSAddComponentCommandPayload
 	}
 };
 
+// Owns constructor arguments until the component is created during playback.
 template <typename Component, typename... Args>
 struct ECSEmplaceComponentCommandPayload
 {
+public:
+	// Expand the stored arguments and consume their values during construction.
+	static void Execute(void* commandData, EntityRegistry& registry, World&)
+	{
+		auto* self = static_cast<ECSEmplaceComponentCommandPayload*>(commandData);
+		std::apply(
+			[self, &registry](auto&&... values)
+			{
+				registry.Emplace<Component>(
+					self->entity, std::forward<decltype(values)>(values)...);
+			},
+			std::move(self->args));
+	}
+
+	// Destroy the arguments while leaving storage owned by the arena.
+	static void Destroy(void* commandData) noexcept
+	{
+		std::destroy_at(static_cast<ECSEmplaceComponentCommandPayload*>(commandData));
+	}
+
+public:
 	Entity entity;
-	Component component;
-	std::tuple<Args...> args;
+	std::tuple<Args...> args; // Stores the constructor arguments by value.
 };
 
 
