@@ -1,5 +1,12 @@
 #include "World.h"
 
+#include "IDGenerator.h"
+
+World::World() : worldID_(IDGenerator<WorldTag>::Next())
+{
+
+}
+
 SceneHandle World::CreateScene(std::string name)
 {
 	// Reserve the null index and narrow only after checking the slot capacity.

@@ -9,7 +9,7 @@
 class World final
 {
 public:
-	World() = default;
+	World();
 
 	// Create a scene, generating a name when none is supplied.
 	[[nodiscard]] SceneHandle CreateScene(std::string name = "");
@@ -73,10 +73,10 @@ public:
 		entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
 	}
 
+	std::uint32_t GetWorldID() const noexcept { return worldID_; }
 
 private:
-	friend class ECSCommandBuffer;
-
+	std::uint32_t worldID_ = 0;
 	// Owns entity handles, component storage, and archetype queries.
 	EntityRegistry entityRegistry_;
 	// Reverse scene membership; entities without a scene have no entry.
@@ -98,4 +98,6 @@ private:
 	//std::vector<std::uint32_t> activeScenes_;
 	// Vacant slots available for reuse; exhausted generations are excluded.
 	std::vector<std::uint32_t> freeSceneIndices_;
+
+	friend class ECSCommandBuffer;
 };
