@@ -43,6 +43,8 @@ Entity EntityRegistry::Create()
 		throw std::length_error("EntityRegistry handle capacity exceeded");
 	}
 
+	// Reserve recycling space before issuing a slot, following slot capacity growth.
+	freeIndices_.reserve(slots_.capacity() + 1);
 	const auto index = static_cast<std::uint32_t>(slots_.size());
 	slots_.emplace_back();
 	slots_.back().state = EntityState::Alive;
@@ -64,6 +66,8 @@ Entity EntityRegistry::Reserve()
 	{
 		throw std::length_error("EntityRegistry handle capacity exceeded");
 	}
+	// Reserve recycling space before issuing a slot, following slot capacity growth.
+	freeIndices_.reserve(slots_.capacity() + 1);
 	const auto index = static_cast<std::uint32_t>(slots_.size());
 	slots_.emplace_back();
 	slots_.back().state = EntityState::Reserved;
@@ -77,7 +81,7 @@ void EntityRegistry::Commit(Entity entity)
 	slots_[entity.index_].state = EntityState::Alive;
 }
 
-void EntityRegistry::CancelEntityReservation(Entity entity)
+void EntityRegistry::CancelEntityReservation(Entity entity) noexcept
 {
 	if (GetEntityState(entity) != EntityState::Reserved) return;
 
@@ -86,7 +90,6 @@ void EntityRegistry::CancelEntityReservation(Entity entity)
 	if (CanReuse(entity))
 	{
 		slots_[entity.index_].generation++;
-		freeIndices_.reserve(freeIndices_.size() + 1);
 		freeIndices_.push_back(entity.index_);
 	}
 }

@@ -123,7 +123,7 @@ Entity World::ReserveEntity()
 	return entityRegistry_.Reserve();
 }
 
-void World::CancelEntityReservation(Entity entity)
+void World::CancelEntityReservation(Entity entity) noexcept
 {
 	if (entity.IsNull()) return;
 	entityRegistry_.CancelEntityReservation(entity);

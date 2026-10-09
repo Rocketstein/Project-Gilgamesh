@@ -29,7 +29,8 @@ public:
 
 	[[nodiscard]] Entity Reserve();
 
-	void CancelEntityReservation(Entity entity);
+	// Cancel a reservation and recycle its slot without allocating.
+	void CancelEntityReservation(Entity entity) noexcept;
 
 	void Commit(Entity entity);
 
@@ -216,6 +217,7 @@ private:
 	}
 
 private:
+	// Capacity covers all issued slots so cancellation never allocates.
 	std::vector<std::uint32_t> freeIndices_;
 	std::vector<EntitySlot> slots_;
 	// Own the future component storage behind the registry's entity API.

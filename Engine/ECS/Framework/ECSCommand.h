@@ -23,8 +23,12 @@ public:
 
 struct ECSRemoveEntityCommandPayload
 {
+public:
+	static void Execute(void* commandData, EntityRegistry& registry, World& world);
+	static void Destroy(void* commandData, World& world) noexcept;
 
-
+public:
+	Entity entity;
 };
 
 template <typename Component>

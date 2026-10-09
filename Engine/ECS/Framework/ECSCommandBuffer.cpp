@@ -28,6 +28,7 @@ Entity ECSCommandBuffer::CreateEntity(SceneHandle handle)
         // Keep the concrete payload at a stable, correctly aligned address.
         void* writePtr = commandBuffer_.Allocate(
             sizeof(Payload), alignof(Payload));
+
         if (!writePtr)
         {
             throw std::bad_alloc{};
@@ -56,7 +57,31 @@ Entity ECSCommandBuffer::CreateEntity(SceneHandle handle)
 
 void ECSCommandBuffer::RemoveEntity(Entity entity)
 {
+    using Payload = ECSRemoveEntityCommandPayload;
+    Payload* payload = nullptr;
 
+    // Keep the concrete payload at a stable, correctly aligned address.
+    void* writePtr = commandBuffer_.Allocate(
+        sizeof(Payload), alignof(Payload));
+
+    if (!writePtr)
+    {
+        throw std::bad_alloc{};
+    }
+
+    // Construct the payload before publishing its metadata.
+    payload = new (writePtr) Payload{ entity };
+
+    // Registration failure must not leave an untracked live payload.
+    try
+    {
+        commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });
+    }
+    catch (...)
+    {
+        Payload::Destroy(payload, world_);
+        throw;
+    }
 }
 
 void ECSCommandBuffer::Clear()

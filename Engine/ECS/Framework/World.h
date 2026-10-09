@@ -25,7 +25,8 @@ public:
 	[[nodiscard]]
 	Entity ReserveEntity();
 
-	void CancelEntityReservation(Entity entity);
+	// Cancel a pending entity without allocating.
+	void CancelEntityReservation(Entity entity) noexcept;
 
 	void CommitEntity(Entity entity, SceneHandle handle);
 
