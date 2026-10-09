@@ -7,14 +7,14 @@
 #include "Engine/ECS/Entity/Entity.h"
 #include "EntityRegistry.h"
 
-template <typename Component>
+class World;
+
 struct ECSAddEntityCommandPayload
 {
 
 
 };
 
-template <typename Component>
 struct ECSRemoveEntityCommandPayload
 {
 
@@ -28,7 +28,7 @@ struct ECSAddComponentCommandPayload
 	Component component;
 
 	// Forward execution to the payload at its actual member address.
-	static void Execute(void* commandData, EntityRegistry& registry)
+	static void Execute(void* commandData, EntityRegistry& registry, World& world)
 	{
 		auto* self = static_cast<ECSAddComponentCommandPayload*>(commandData);
 		registry.Emplace<Component>(self->entity, std::move(self->component));

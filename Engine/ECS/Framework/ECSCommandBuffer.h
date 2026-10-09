@@ -9,11 +9,13 @@
 #include "ECSCommand.h"
 #include "MemoryArena.h"
 
+class World;
+
 // Owns deferred ECS payloads and the metadata needed to execute them.
 class ECSCommandBuffer final
 {
 public:
-	ECSCommandBuffer();
+	explicit ECSCommandBuffer(World& world);
 	// Destroy recorded payloads before releasing their arena storage.
 	~ECSCommandBuffer() noexcept;
 
@@ -25,8 +27,6 @@ public:
 	void Flush();
 
 	void Clear();
-
-	// sort...
 
 	void AddEntity(Entity entity)
 	{
@@ -84,8 +84,8 @@ public:
 	}
 
 private:
-	using DispatchFn = void(*)(void* commandData, EntityRegistry& registry);
-	using DestroyFn = void(*)(void* commandData) noexcept;
+	using DispatchFn = void(*)(void* payload, EntityRegistry& registry, World& world);
+	using DestroyFn  = void(*)(void* commandData) noexcept;
 
 	// Describes a concrete payload without owning its arena storage.
 	struct ECSCommandHeader
@@ -97,5 +97,6 @@ private:
 
 private:
 	std::vector<ECSCommandHeader> commands_; // Metadata in recording order.
-	MemoryArena commandBuffer_; // Stable storage for the owned payload objects.
+	MemoryArena commandBuffer_;				 // Stable storage for the owned payload objects.
+	World& world_;							 // The world to which the commands will be applied.
 };

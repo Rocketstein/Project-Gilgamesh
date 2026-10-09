@@ -67,6 +67,8 @@ public:
 
 
 private:
+	friend class ECSCommandBuffer;
+
 	// Owns entity handles, component storage, and archetype queries.
 	EntityRegistry entityRegistry_;
 	// Reverse scene membership; entities without a scene have no entry.
