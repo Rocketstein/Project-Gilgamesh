@@ -9,12 +9,23 @@
 #include "ECSCommand.h"
 #include "MemoryArena.h"
 
+// Owns deferred ECS payloads and the metadata needed to execute them.
 class ECSCommandBuffer final
 {
 public:
 	ECSCommandBuffer();
+	// Destroy recorded payloads before releasing their arena storage.
+	~ECSCommandBuffer() noexcept;
 
-	// flush...
+	ECSCommandBuffer(const ECSCommandBuffer&) = delete;
+	ECSCommandBuffer& operator=(const ECSCommandBuffer&) = delete;
+	ECSCommandBuffer(ECSCommandBuffer&&) = delete;
+	ECSCommandBuffer& operator=(ECSCommandBuffer&&) = delete;
+
+	void Flush();
+
+	void Clear();
+
 	// sort...
 
 	void AddEntity(Entity entity)
@@ -27,24 +38,36 @@ public:
 
 	}
 
-	// Premade component attachment
+	// Record a preconstructed component for later attachment.
 	template <typename Component>
 	void AddComponent(Entity entity, Component component)
 	{
 		using Payload = ECSAddComponentCommandPayload<Component>;
-		using Command = ECSCommand<Payload>;
 
-		// Allocate storage aligned for both metadata and payload.
+		// Keep the concrete payload at a stable, correctly aligned address.
 		void* writePtr = commandBuffer_.Allocate(
-			sizeof(Command), alignof(Command));
+			sizeof(Payload), alignof(Payload));
 
-		if (!writePtr) return;
+		if (!writePtr)
+		{
+			throw std::bad_alloc{};
+		}
 
-		// Construct the complete record directly in arena storage.
-		auto* command = new (writePtr) Command{
-			{ &Payload::Execute, &Payload::Destroy, sizeof(Command) },
-			{ entity, std::move(component) }
+		// Construct the payload before publishing its metadata.
+		auto* payload = new (writePtr) Payload{
+			entity, std::move(component)
 		};
+
+		// Registration failure must not leave an untracked live payload.
+		try
+		{
+			commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });
+		}
+		catch (...)
+		{
+			Payload::Destroy(payload);
+			throw;
+		}
 	}
 
 	// Deferred component construction
@@ -64,19 +87,15 @@ private:
 	using DispatchFn = void(*)(void* commandData, EntityRegistry& registry);
 	using DestroyFn = void(*)(void* commandData) noexcept;
 
+	// Describes a concrete payload without owning its arena storage.
 	struct ECSCommandHeader
 	{
 		DispatchFn dispatch;
 		DestroyFn destroy;
-		uint32_t size;
+		void* payload;
 	};
 
-	template <typename CommandPayload>
-	struct ECSCommand
-	{
-		ECSCommandHeader header;
-		CommandPayload commandPayload;
-	};
-
-	MemoryArena commandBuffer_;
+private:
+	std::vector<ECSCommandHeader> commands_; // Metadata in recording order.
+	MemoryArena commandBuffer_; // Stable storage for the owned payload objects.
 };

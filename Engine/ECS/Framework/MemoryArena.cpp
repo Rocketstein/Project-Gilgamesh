@@ -23,28 +23,52 @@ void* MemoryArena::Allocate(std::size_t size, std::size_t alignment)
 		throw std::invalid_argument("MemoryArena alignment must be a nonzero power of two");
 	}
 
-	Page* currentPage = &pages_.back();
-
-	void* currentAddress = currentPage->data.get() + currentPage->offset;
-	std::size_t remainingSize = currentPage->capacity - currentPage->offset;
-
-	// Allocate new page
-	if (!std::align(alignment, size, currentAddress, remainingSize))
+	// Reject oversized requests before advancing through retained pages.
+	if (size > pageSize_)
 	{
-		AllocateNewPage();
-		currentPage = &pages_.back();
-		currentAddress = currentPage->data.get();
-		remainingSize = currentPage->capacity;
-
-		if (!std::align(alignment, size, currentAddress, remainingSize))
-		{
-			// Failed to allocate new page
-			return nullptr;
-		}
+		return nullptr;
 	}
 
-	currentPage->offset = currentPage->capacity - remainingSize + size;
+	// Reuse retained pages before allocating additional storage.
+	while (pageIndex_ < pages_.size())
+	{
+		Page& page = pages_[pageIndex_];
+		void* currentAddress = page.data.get() + page.offset;
+		std::size_t remainingSize = page.capacity - page.offset;
+
+		if (std::align(alignment, size, currentAddress, remainingSize))
+		{
+			page.offset = page.capacity - remainingSize + size;
+			return currentAddress;
+		}
+
+		++pageIndex_;
+	}
+
+	// Add only one page and stop if the request still cannot be aligned.
+	AllocateNewPage();
+	pageIndex_ = pages_.size() - 1;
+	Page& page = pages_[pageIndex_];
+	void* currentAddress = page.data.get();
+	std::size_t remainingSize = page.capacity;
+
+	if (!std::align(alignment, size, currentAddress, remainingSize))
+	{
+		return nullptr;
+	}
+
+	page.offset = page.capacity - remainingSize + size;
 	return currentAddress;
+}
+
+void MemoryArena::Reset()
+{
+	for (auto& page : pages_)
+	{
+		page.offset = 0;
+	}
+
+	pageIndex_ = 0;
 }
 
 void MemoryArena::AllocateNewPage()

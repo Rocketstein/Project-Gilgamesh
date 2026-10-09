@@ -1,5 +1,9 @@
 #pragma once
 
+#include <memory>
+#include <tuple>
+#include <utility>
+
 #include "Engine/ECS/Entity/Entity.h"
 #include "EntityRegistry.h"
 
@@ -30,10 +34,10 @@ struct ECSAddComponentCommandPayload
 		registry.Emplace<Component>(self->entity, std::move(self->component));
 	}
 
-	// Destroy the complete object while leaving storage owned by the arena.
+	// Destroy the payload while leaving storage owned by the arena.
 	static void Destroy(void* commandData) noexcept
 	{
-		std::destroy_at(static_cast<ECSCommand*>(commandData));
+		std::destroy_at(static_cast<ECSAddComponentCommandPayload*>(commandData));
 	}
 };
 

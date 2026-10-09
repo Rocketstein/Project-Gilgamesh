@@ -12,6 +12,9 @@ public:
 	// Allocate raw storage with a nonzero power-of-two alignment.
 	void* Allocate(std::size_t size, std::size_t alignment);
 
+	// Rewind pages after the caller has destroyed their objects.
+	void Reset();
+
 private:
 	void AllocateNewPage();
 
@@ -24,5 +27,6 @@ private:
 	};
 
 	std::vector<Page> pages_;
+	std::size_t pageIndex_ = 0; // Current allocation page, rewound by Reset.
 	std::size_t pageSize_ = 0; // Bytes allocated for each new page.
 };
