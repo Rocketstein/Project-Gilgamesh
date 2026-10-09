@@ -5,7 +5,6 @@
 #include <utility>
 
 #include "Engine/ECS/Framework/ArchetypeManager.h"
-#include "Engine/ECS/Framework/ECSCommandBuffer.h"
 #include "Engine/ECS/Framework/EntityRegistry.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Tests/TestFramework.h"
@@ -639,21 +638,75 @@ GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")
 	GILGAMESH_CHECK_MESSAGE(firstWorld.Get<int>(first) == 99,
 		"completed commands must be discarded before the next Update");
 
-	// The public command buffer supplies deferred removal until World exposes a removal request.
-	ECSCommandBuffer foreignRemoval(secondWorld);
-	foreignRemoval.RemoveEntity(first);
-	foreignRemoval.Flush();
+	// Removal through another world must reject the foreign entity during playback.
+	secondWorld.RemoveEntity(first);
+	secondWorld.Update(0.0f);
 	GILGAMESH_CHECK_MESSAGE(firstWorld.IsAlive(first) && secondWorld.IsAlive(second),
 		"another world must not destroy the entity");
 
 	// Destruction through the owning world must end the entity's lifetime.
-	ECSCommandBuffer removal(firstWorld);
-	removal.RemoveEntity(first);
+	firstWorld.RemoveEntity(first);
 	GILGAMESH_CHECK_MESSAGE(firstWorld.IsAlive(first),
 		"recording removal must leave the entity alive until playback");
-	removal.Flush();
+	firstWorld.Update(0.0f);
 	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(first),
 		"a destroyed world entity must no longer be alive");
+
+	// Creation, component insertion, and removal recorded together must execute in that order.
+	const Entity transient = firstWorld.CreateEntity();
+	firstWorld.Emplace<int>(transient, 7);
+	firstWorld.RemoveEntity(transient);
+	firstWorld.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(transient) && !firstWorld.Has<int>(transient),
+		"removal in the same Update must retire the entity created by earlier commands");
+}
+
+// Deferred component removal must preserve entity lifetime and scene membership until entity removal.
+GILGAMESH_TEST("Engine.ECS.World", "DefersRemovalAndPreservesSceneMembership")
+{
+	World world;
+	const SceneHandle sceneHandle = world.CreateScene();
+	const Entity first = world.CreateEntity(sceneHandle);
+	const Entity survivor = world.CreateEntity(sceneHandle);
+	world.Emplace<int>(first, 100);
+	world.Emplace<float>(first, 1.5f);
+	world.Emplace<int>(survivor, 200);
+	world.Emplace<float>(survivor, 2.5f);
+	world.Update(0.0f);
+	const Scene* scene = world.TryGetScene(sceneHandle);
+
+	// Recording removal must leave both components accessible until the next Update.
+	world.RemoveComponent<float>(first);
+	GILGAMESH_CHECK_MESSAGE(world.IsAlive(first) && world.Has<float>(first) &&
+		world.Get<float>(first) == 1.5f && world.Get<int>(first) == 100 &&
+		scene != nullptr && scene->Contains(first),
+		"recording component removal must preserve current values and scene membership");
+	world.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(world.IsAlive(first) && !world.Has<float>(first) &&
+		world.Get<int>(first) == 100 && world.Get<int>(survivor) == 200 &&
+		world.Get<float>(survivor) == 2.5f && scene != nullptr &&
+		scene->Contains(first) && scene->Contains(survivor),
+		"component removal must preserve the remaining value, swapped row, and both memberships");
+
+	// Removing the last component must leave an alive scene member without a component row.
+	world.RemoveComponent<int>(first);
+	GILGAMESH_CHECK_MESSAGE(world.Has<int>(first) && world.Get<int>(first) == 100,
+		"the last component must remain accessible before Update");
+	world.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(world.IsAlive(first) && !world.Has<int>(first) &&
+		!world.Has<float>(first) && scene != nullptr && scene->Contains(first),
+		"removing the last component must preserve entity lifetime and scene membership");
+
+	// Entity removal must clear membership during playback, and duplicate removal must be harmless.
+	world.RemoveEntity(first);
+	world.RemoveEntity(first);
+	GILGAMESH_CHECK_MESSAGE(world.IsAlive(first) && scene != nullptr && scene->Contains(first),
+		"recording entity removal must leave membership intact before Update");
+	world.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(!world.IsAlive(first) && world.IsAlive(survivor) &&
+		world.Get<int>(survivor) == 200 && world.Get<float>(survivor) == 2.5f &&
+		scene != nullptr && !scene->Contains(first) && scene->Contains(survivor),
+		"entity removal must clear its membership without disturbing the surviving entity");
 }
 
 // Deferred creation must reject vacant scene slots even when their next generation is known.
@@ -720,9 +773,8 @@ GILGAMESH_TEST("Engine.ECS.World", "RejectsForeignSceneHandles")
 	firstWorld.Update(0.0f);
 
 	// Removing a foreign entity must also leave its owning world unchanged.
-	ECSCommandBuffer removal(firstWorld);
-	removal.RemoveEntity(second);
-	removal.Flush();
+	firstWorld.RemoveEntity(second);
+	firstWorld.Update(0.0f);
 
 	// Rejected operations must preserve both scenes and their existing members.
 	GILGAMESH_CHECK_MESSAGE(localScene != nullptr && foreignScene != nullptr &&
@@ -761,9 +813,8 @@ GILGAMESH_TEST("Engine.ECS.World", "CancelsRejectedReservationsBeforeSlotReuse")
 		"slot reuse must not revive the cancelled entity or its scene membership");
 
 	// A stale removal command must not destroy the replacement occupying the recycled slot.
-	ECSCommandBuffer removal(world);
-	removal.RemoveEntity(rejected);
-	removal.Flush();
+	world.RemoveEntity(rejected);
+	world.Update(0.0f);
 	GILGAMESH_CHECK_MESSAGE(world.IsAlive(replacement) && world.Get<int>(replacement) == 84,
 		"a cancelled handle must not address a later occupant of its slot");
 }
