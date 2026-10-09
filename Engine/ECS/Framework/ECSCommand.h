@@ -24,9 +24,6 @@ struct ECSRemoveEntityCommandPayload
 template <typename Component>
 struct ECSAddComponentCommandPayload
 {
-	Entity entity;
-	Component component;
-
 	// Forward execution to the payload at its actual member address.
 	static void Execute(void* commandData, EntityRegistry& registry, World& world)
 	{
@@ -39,6 +36,10 @@ struct ECSAddComponentCommandPayload
 	{
 		std::destroy_at(static_cast<ECSAddComponentCommandPayload*>(commandData));
 	}
+
+public:
+	Entity entity;
+	Component component;
 };
 
 // Owns constructor arguments until the component is created during playback.
@@ -70,12 +71,23 @@ public:
 	std::tuple<Args...> args; // Stores the constructor arguments by value.
 };
 
-
 template <typename Component>
 struct ECSRemoveComponentCommandPayload
 {
+public:
+	static void Execute(void* commandData, EntityRegistry& registry, World&)
+	{
+		auto* self = static_cast<ECSRemoveComponentCommandPayload*>(commandData);
+		registry.Remove<Component>(self->entity);
+	}
 
+	static void Destroy(void* commandData) noexcept
+	{
+		std::destroy_at(static_cast<ECSRemoveComponentCommandPayload*>(commandData));
+	}
 
+public:
+	Entity entity;
 };
 
 template <typename Component>
