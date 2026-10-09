@@ -10,6 +10,17 @@
 
 class World;
 
+struct ECSAddWorldEntityCommandPayload
+{
+public:
+	static void Execute(void* commandData, EntityRegistry& registry, World& world);
+	static void Destroy(void* commandData, World& world) noexcept;
+
+public:
+	Entity entity;
+};
+
+
 struct ECSAddEntityCommandPayload
 {
 public:

@@ -5,6 +5,21 @@
 // ===============================================================================================
 // Add Entity Command Payload
 // ===============================================================================================
+void ECSAddWorldEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world)
+{
+	// Access the world-only payload through its concrete type.
+	auto* payload = static_cast<ECSAddWorldEntityCommandPayload*>(commandData);
+	world.CommitEntity(payload->entity);
+}
+
+void ECSAddWorldEntityCommandPayload::Destroy(void* commandData, World& world) noexcept
+{
+	// Cancel the reservation before destroying the concrete payload.
+	auto* payload = static_cast<ECSAddWorldEntityCommandPayload*>(commandData);
+	world.CancelEntityReservation(payload->entity);
+	std::destroy_at(payload);
+}
+
 void ECSAddEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world)
 {
 	auto* payload = static_cast<ECSAddEntityCommandPayload*>(commandData);
@@ -24,7 +39,7 @@ void ECSAddEntityCommandPayload::Destroy(void* commandData, World& world) noexce
 void ECSRemoveEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world)
 {
 	auto* payload = static_cast<ECSRemoveEntityCommandPayload*>(commandData);
-	world.DestroyEntity(payload->entity);
+	world.DestroyEntityNow(payload->entity);
 }
 
 void ECSRemoveEntityCommandPayload::Destroy(void* commandData, World& world) noexcept

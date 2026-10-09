@@ -56,7 +56,7 @@ struct ThrowingComponent
 	ThrowingComponent(ThrowingComponent&&) noexcept = default;
 };
 
-}
+} // Anonymous namespace
 
 GILGAMESH_TEST("Engine.ECS.ArchetypeManager", "ReusesCanonicalSignature")
 {
@@ -408,21 +408,23 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "DestroyInvalidatesOldHandle")
 		"created entities must have non-null handles");
 	GILGAMESH_CHECK_MESSAGE(first != survivor,
 		"concurrently live entities must have distinct handles");
-	GILGAMESH_CHECK_MESSAGE(registry.IsValid(first) && registry.IsValid(survivor),
+	GILGAMESH_CHECK_MESSAGE(registry.GetEntityState(first) == EntityState::Alive &&
+		registry.GetEntityState(survivor) == EntityState::Alive,
 		"newly created entities must be alive");
 
 	// Destruction changes the generation before the index can be reused.
 	GILGAMESH_CHECK_MESSAGE(registry.Destroy(first),
 		"the first destruction must succeed");
-	GILGAMESH_CHECK_MESSAGE(!registry.IsValid(first),
+	GILGAMESH_CHECK_MESSAGE(registry.GetEntityState(first) != EntityState::Alive,
 		"destruction must immediately invalidate the old handle");
 	GILGAMESH_CHECK_MESSAGE(!registry.Destroy(first),
 		"a stale handle must not destroy an entity twice");
 
 	const Entity replacement = registry.Create();
-	GILGAMESH_CHECK_MESSAGE(replacement != first && registry.IsValid(replacement),
+	GILGAMESH_CHECK_MESSAGE(replacement != first &&
+		registry.GetEntityState(replacement) == EntityState::Alive,
 		"reusing a slot must issue a new, live handle");
-	GILGAMESH_CHECK_MESSAGE(registry.IsValid(survivor),
+	GILGAMESH_CHECK_MESSAGE(registry.GetEntityState(survivor) == EntityState::Alive,
 		"reusing another slot must not disturb a live entity");
 }
 
@@ -512,7 +514,7 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "EmplaceMigratesAndRepairsSwappedRow
 
 		// Destroying the third entity swaps the second into its row.
 		GILGAMESH_CHECK_MESSAGE(registry.Destroy(third) &&
-			!registry.IsValid(third) &&
+			registry.GetEntityState(third) != EntityState::Alive &&
 			registry.Get<TrackedComponent>(second).value &&
 			*registry.Get<TrackedComponent>(second).value == 20 &&
 			TrackedComponent::liveCount == 2,
@@ -547,7 +549,7 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "RemoveRetainsValuesAndRepairsSwappe
 
 		// Removing the first row moves int and swaps the second source row into it.
 		registry.Remove<TrackedComponent>(first);
-		GILGAMESH_CHECK_MESSAGE(registry.IsValid(first) &&
+		GILGAMESH_CHECK_MESSAGE(registry.GetEntityState(first) == EntityState::Alive &&
 			!registry.Has<TrackedComponent>(first) &&
 			registry.Has<int>(first) && registry.Get<int>(first) == 100 &&
 			registry.Has<TrackedComponent>(second) &&
@@ -568,7 +570,7 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "RemoveRetainsValuesAndRepairsSwappe
 		{
 			getRejected = true;
 		}
-		GILGAMESH_CHECK_MESSAGE(registry.IsValid(first) &&
+		GILGAMESH_CHECK_MESSAGE(registry.GetEntityState(first) == EntityState::Alive &&
 			!registry.Has<int>(first) && !registry.Has<TrackedComponent>(first) &&
 			getRejected && TrackedComponent::liveCount == 1,
 			"removing the last component must clear the row without destroying the entity");
@@ -579,7 +581,7 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "RemoveRetainsValuesAndRepairsSwappe
 		GILGAMESH_CHECK_MESSAGE(registry.Destroy(first),
 			"the componentless entity must remain destructible");
 		registry.Remove<int>(first);
-		GILGAMESH_CHECK_MESSAGE(registry.IsValid(second) &&
+		GILGAMESH_CHECK_MESSAGE(registry.GetEntityState(second) == EntityState::Alive &&
 			registry.Get<int>(second) == 200 &&
 			registry.Get<TrackedComponent>(second).value &&
 			*registry.Get<TrackedComponent>(second).value == 20 &&
@@ -594,12 +596,32 @@ GILGAMESH_TEST("Engine.ECS.EntityRegistry", "RemoveRetainsValuesAndRepairsSwappe
 		"registry teardown must leave no live tracked components");
 }
 
+// World-owned commands must publish entities and their component values only during Update.
 GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")
 {
 	World firstWorld;
 	World secondWorld;
 	const Entity first = firstWorld.CreateEntity();
 	const Entity second = secondWorld.CreateEntity();
+	using PairComponent = std::pair<int, int>;
+
+	// Recording must accept multiple arguments and transfer move-only values without publishing rows.
+	firstWorld.Emplace<int>(first, 42);
+	firstWorld.Emplace<PairComponent>(first, 3, 7);
+	firstWorld.Emplace<std::unique_ptr<int>>(first, std::make_unique<int>(84));
+	GILGAMESH_CHECK_MESSAGE(!first.IsNull() && !second.IsNull() &&
+		!firstWorld.IsAlive(first) && !secondWorld.IsAlive(second) &&
+		!firstWorld.Has<int>(first),
+		"recorded creation must return reserved handles without publishing components");
+
+	// Update must commit creation before applying later component commands.
+	firstWorld.Update(0.0f);
+	secondWorld.Update(0.0f);
+	const PairComponent& pair = firstWorld.Get<PairComponent>(first);
+	GILGAMESH_CHECK_MESSAGE(firstWorld.Get<int>(first) == 42 &&
+		pair.first == 3 && pair.second == 7 &&
+		*firstWorld.Get<std::unique_ptr<int>>(first) == 84,
+		"world playback must preserve multiple constructor arguments and move-only values");
 
 	// A world must reject handles issued by another world or the null handle.
 	GILGAMESH_CHECK_MESSAGE(first != second,
@@ -610,16 +632,31 @@ GILGAMESH_TEST("Engine.ECS.World", "OwnsEntityLifetime")
 		"another world must reject the entity");
 	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(Entity{}),
 		"the null handle must not refer to a live entity");
-	secondWorld.DestroyEntity(first);
+
+	// A second Update must not replay creation or overwrite a component's current value.
+	firstWorld.Get<int>(first) = 99;
+	firstWorld.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(firstWorld.Get<int>(first) == 99,
+		"completed commands must be discarded before the next Update");
+
+	// The public command buffer supplies deferred removal until World exposes a removal request.
+	ECSCommandBuffer foreignRemoval(secondWorld);
+	foreignRemoval.RemoveEntity(first);
+	foreignRemoval.Flush();
 	GILGAMESH_CHECK_MESSAGE(firstWorld.IsAlive(first) && secondWorld.IsAlive(second),
 		"another world must not destroy the entity");
 
 	// Destruction through the owning world must end the entity's lifetime.
-	firstWorld.DestroyEntity(first);
+	ECSCommandBuffer removal(firstWorld);
+	removal.RemoveEntity(first);
+	GILGAMESH_CHECK_MESSAGE(firstWorld.IsAlive(first),
+		"recording removal must leave the entity alive until playback");
+	removal.Flush();
 	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(first),
 		"a destroyed world entity must no longer be alive");
 }
 
+// Deferred creation must reject vacant scene slots even when their next generation is known.
 GILGAMESH_TEST("Engine.ECS.World", "RejectsVacantSceneSlots")
 {
 	World world;
@@ -630,10 +667,13 @@ GILGAMESH_TEST("Engine.ECS.World", "RejectsVacantSceneSlots")
 	// Even the slot's new generation cannot refer to a scene before reuse.
 	SceneHandle vacant = original;
 	++vacant.generation;
+	const Entity rejected = world.CreateEntity(vacant);
 	GILGAMESH_CHECK_MESSAGE(!world.IsSceneHandleValid(vacant) &&
-		world.TryGetScene(vacant) == nullptr &&
-		world.CreateEntity(vacant).IsNull() && !world.DestroyScene(vacant),
+		world.TryGetScene(vacant) == nullptr && !world.DestroyScene(vacant),
 		"all scene operations must reject an unoccupied slot");
+	world.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(!world.IsAlive(rejected),
+		"playback must cancel an entity whose scene slot is unoccupied");
 
 	// Reusing the slot accepts the new handle and keeps the original invalid.
 	const SceneHandle reused = world.CreateScene();
@@ -653,6 +693,16 @@ GILGAMESH_TEST("Engine.ECS.World", "RejectsForeignSceneHandles")
 	const Entity first = firstWorld.CreateEntity(firstScene);
 	const Entity second = secondWorld.CreateEntity(secondScene);
 
+	// Reserved entities must not enter their scenes before their world's Update.
+	const Scene* localScene = firstWorld.TryGetScene(firstScene);
+	const Scene* foreignScene = secondWorld.TryGetScene(secondScene);
+	GILGAMESH_CHECK_MESSAGE(localScene != nullptr && foreignScene != nullptr &&
+		!localScene->Contains(first) && !foreignScene->Contains(second) &&
+		!firstWorld.IsAlive(first) && !secondWorld.IsAlive(second),
+		"scene membership must remain unpublished while creation is recorded");
+	firstWorld.Update(0.0f);
+	secondWorld.Update(0.0f);
+
 	// Both scenes occupy the same local slot, but belong to different worlds.
 	GILGAMESH_CHECK_MESSAGE(firstScene.id == secondScene.id &&
 		firstScene.generation == secondScene.generation &&
@@ -661,52 +711,134 @@ GILGAMESH_TEST("Engine.ECS.World", "RejectsForeignSceneHandles")
 		firstScene.owningWorldID_ != secondScene.owningWorldID_,
 		"scene handles must retain the identity of their owning world");
 
-	// Every immediate scene operation must reject another world's handle.
+	// Scene operations must reject another world's handle during lookup and playback.
+	const Entity rejected = firstWorld.CreateEntity(secondScene);
 	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsSceneHandleValid(secondScene) &&
 		firstWorld.TryGetScene(secondScene) == nullptr &&
-		firstWorld.CreateEntity(secondScene).IsNull() &&
 		!firstWorld.DestroyScene(secondScene),
 		"matching local slot values must not authorize foreign scene operations");
+	firstWorld.Update(0.0f);
+
+	// Removing a foreign entity must also leave its owning world unchanged.
+	ECSCommandBuffer removal(firstWorld);
+	removal.RemoveEntity(second);
+	removal.Flush();
 
 	// Rejected operations must preserve both scenes and their existing members.
-	const Scene* localScene = firstWorld.TryGetScene(firstScene);
-	const Scene* foreignScene = secondWorld.TryGetScene(secondScene);
 	GILGAMESH_CHECK_MESSAGE(localScene != nullptr && foreignScene != nullptr &&
 		localScene->Contains(first) && foreignScene->Contains(second) &&
+		!localScene->Contains(rejected) && !firstWorld.IsAlive(rejected) &&
 		firstWorld.IsAlive(first) && secondWorld.IsAlive(second),
 		"rejecting a foreign scene handle must leave both worlds unchanged");
 }
 
-// Deferred creation must enforce the same ownership rules when the buffer is played back.
-GILGAMESH_TEST("Engine.ECS.World", "RejectsForeignSceneDuringCommit")
+// Cancelled reservations must remain stale when a later creation reuses their storage.
+GILGAMESH_TEST("Engine.ECS.World", "CancelsRejectedReservationsBeforeSlotReuse")
 {
-	World firstWorld;
-	World secondWorld;
-	const SceneHandle firstScene = firstWorld.CreateScene();
-	const SceneHandle secondScene = secondWorld.CreateScene();
-	const Entity second = secondWorld.CreateEntity(secondScene);
+	World world;
+	const SceneHandle sceneHandle = world.CreateScene();
 
-	// A reservation cannot become a member of another world's scene.
-	const Entity reservation = firstWorld.ReserveEntity();
-	firstWorld.CommitEntity(reservation, secondScene);
-	firstWorld.CommitEntity(reservation, firstScene);
-	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(reservation),
-		"a foreign scene must cancel the reservation rather than allow later activation");
+	// An invalid scene must cancel its reservation without interrupting a valid creation.
+	const Entity rejected = world.CreateEntity(SceneHandle{});
+	const Entity accepted = world.CreateEntity(sceneHandle);
+	world.Emplace<int>(accepted, 42);
+	world.Update(0.0f);
+	const Scene* scene = world.TryGetScene(sceneHandle);
+	GILGAMESH_CHECK_MESSAGE(!world.IsAlive(rejected) && world.IsAlive(accepted) &&
+		world.Get<int>(accepted) == 42 && scene != nullptr &&
+		scene->Contains(accepted) && !scene->Contains(rejected),
+		"cancelling invalid creation must preserve later valid commands and scene membership");
 
-	// Reject foreign creation and destruction without interrupting valid commands.
-	ECSCommandBuffer buffer(firstWorld);
-	const Entity rejected = buffer.CreateEntity(secondScene);
-	const Entity accepted = buffer.CreateEntity(firstScene);
-	buffer.RemoveEntity(second);
-	buffer.EmplaceComponent<int>(accepted, 42);
-	buffer.Flush();
+	// A later creation may reuse the cancelled slot but must issue a distinct handle.
+	const Entity replacement = world.CreateEntity(sceneHandle);
+	world.Emplace<int>(replacement, 84);
+	GILGAMESH_CHECK_MESSAGE(replacement != rejected && !world.IsAlive(replacement),
+		"a recycled reservation must return a distinct handle that remains pending");
+	world.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(!world.IsAlive(rejected) && world.IsAlive(replacement) &&
+		world.Get<int>(replacement) == 84 && scene != nullptr &&
+		scene->Contains(replacement) && !scene->Contains(rejected),
+		"slot reuse must not revive the cancelled entity or its scene membership");
 
-	const Scene* localScene = firstWorld.TryGetScene(firstScene);
-	const Scene* foreignScene = secondWorld.TryGetScene(secondScene);
-	GILGAMESH_CHECK_MESSAGE(!firstWorld.IsAlive(rejected) &&
-		firstWorld.IsAlive(accepted) && firstWorld.Get<int>(accepted) == 42 &&
-		localScene != nullptr && localScene->Contains(accepted) &&
-		!localScene->Contains(rejected) && foreignScene != nullptr &&
-		foreignScene->Contains(second) && secondWorld.IsAlive(second),
-		"playback must reject foreign handles and preserve valid scene membership");
+	// A stale removal command must not destroy the replacement occupying the recycled slot.
+	ECSCommandBuffer removal(world);
+	removal.RemoveEntity(rejected);
+	removal.Flush();
+	GILGAMESH_CHECK_MESSAGE(world.IsAlive(replacement) && world.Get<int>(replacement) == 84,
+		"a cancelled handle must not address a later occupant of its slot");
+}
+
+// Destroying a scene must retire live members and reject pending creation for its old generation.
+GILGAMESH_TEST("Engine.ECS.World", "CancelsCreationForDestroyedScene")
+{
+	World world;
+	const SceneHandle original = world.CreateScene();
+	const Entity live = world.CreateEntity(original);
+	world.Emplace<int>(live, 42);
+	world.Update(0.0f);
+
+	// DestroyScene must immediately drain live membership while pending creation stays unpublished.
+	const Entity pending = world.CreateEntity(original);
+	GILGAMESH_CHECK_MESSAGE(world.DestroyScene(original) && !world.IsAlive(live) &&
+		!world.IsAlive(pending) && !world.IsSceneHandleValid(original),
+		"destroying a scene must retire its members and invalidate its handle");
+
+	// Reuse before playback must not redirect the pending entity into the replacement scene.
+	const SceneHandle replacementHandle = world.CreateScene();
+	world.Update(0.0f);
+	const Scene* replacementScene = world.TryGetScene(replacementHandle);
+	GILGAMESH_CHECK_MESSAGE(replacementHandle.id == original.id &&
+		replacementHandle.generation != original.generation &&
+		!world.IsAlive(pending) && replacementScene != nullptr &&
+		!replacementScene->Contains(pending),
+		"playback must reject the destroyed scene's generation after its slot is reused");
+
+	// A new request for the replacement scene must still create a live member normally.
+	const Entity replacement = world.CreateEntity(replacementHandle);
+	world.Emplace<int>(replacement, 84);
+	world.Update(0.0f);
+	GILGAMESH_CHECK_MESSAGE(replacement != pending && world.IsAlive(replacement) &&
+		world.Get<int>(replacement) == 84 && replacementScene != nullptr &&
+		replacementScene->Contains(replacement) && !world.IsAlive(pending),
+		"cancelled creation must leave the replacement scene usable without reviving old handles");
+}
+
+// Structural requests made during traversal must become visible only after the next Update.
+GILGAMESH_TEST("Engine.ECS.World", "DefersStructuralChangesDuringTraversal")
+{
+	World world;
+	const Entity first = world.CreateEntity();
+	const Entity second = world.CreateEntity();
+	world.Emplace<int>(first, 1);
+	world.Emplace<int>(second, 2);
+	world.Update(0.0f);
+
+	// Recording creation during traversal must not extend or invalidate the current component rows.
+	std::array<Entity, 2> pending{};
+	std::size_t visits = 0;
+	world.ForEach<int>([&](int& value)
+	{
+		if (visits < pending.size())
+		{
+			pending[visits] = world.CreateEntity();
+			world.Emplace<int>(pending[visits], value + 10);
+		}
+		++visits;
+	});
+	GILGAMESH_CHECK_MESSAGE(visits == 2 &&
+		!world.IsAlive(pending[0]) && !world.IsAlive(pending[1]),
+		"traversal must visit only existing rows while recorded creations remain reserved");
+
+	// The next barrier must publish both recorded entities for subsequent queries.
+	world.Update(0.0f);
+	visits = 0;
+	int total = 0;
+	world.ForEach<int>([&](int& value)
+	{
+		++visits;
+		total += value;
+	});
+	GILGAMESH_CHECK_MESSAGE(visits == 4 && total == 26 &&
+		world.IsAlive(pending[0]) && world.IsAlive(pending[1]),
+		"queries after Update must include the entities recorded during the earlier traversal");
 }

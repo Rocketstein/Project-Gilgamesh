@@ -16,6 +16,44 @@ ECSCommandBuffer::~ECSCommandBuffer() noexcept
 	}
 }
 
+Entity ECSCommandBuffer::CreateEntity()
+{
+    const Entity entity = world_.ReserveEntity();
+
+    using Payload = ECSAddWorldEntityCommandPayload;
+    Payload* payload = nullptr;
+    try
+    {
+        // Keep the concrete payload at a stable, correctly aligned address.
+        void* writePtr = commandBuffer_.Allocate(
+            sizeof(Payload), alignof(Payload));
+
+        if (!writePtr)
+        {
+            throw std::bad_alloc{};
+        }
+
+        // Construct the payload before publishing its metadata.
+        payload = new (writePtr) Payload{ entity };
+        commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });
+    }
+    catch (...)
+    {
+        // Destroy a constructed payload, or cancel an unpublished reservation.
+        if (payload)
+        {
+            Payload::Destroy(payload, world_);
+        }
+        else
+        {
+            world_.CancelEntityReservation(entity);
+        }
+        throw;
+    }
+
+    return entity;
+}
+
 // Record a reserved entity and cancel it if allocation or registration fails.
 Entity ECSCommandBuffer::CreateEntity(SceneHandle handle)
 {

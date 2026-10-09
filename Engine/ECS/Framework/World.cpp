@@ -2,9 +2,15 @@
 
 #include "IDGenerator.h"
 
-World::World() : worldID_(IDGenerator<WorldTag>::Next()), entityRegistry_(worldID_)
+World::World() : worldID_(IDGenerator<WorldTag>::Next()), entityRegistry_(worldID_), commandBuffer_(*this)
 {
 
+}
+
+void World::Update(float deltaTime)
+{
+
+	commandBuffer_.Flush();
 }
 
 SceneHandle World::CreateScene(std::string name)
@@ -51,7 +57,7 @@ bool World::DestroyScene(SceneHandle handle)
 	// DestroyEntity erases membership, so drain rather than iterate the vector.
 	while (!scene->entities_.empty())
 	{
-		DestroyEntity(scene->entities_.back());
+		DestroyEntityNow(scene->entities_.back());
 	}
 
 	// Reacquire the slot after component destruction and retire exhausted slots.
@@ -101,10 +107,25 @@ bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 
 Entity World::CreateEntity()
 {
-	return entityRegistry_.Create();
+	return commandBuffer_.CreateEntity();
 }
 
 Entity World::CreateEntity(SceneHandle handle)
+{
+	return commandBuffer_.CreateEntity(handle);
+}
+
+void World::RemoveEntity(Entity entity)
+{
+	commandBuffer_.RemoveEntity(entity);
+}
+
+Entity World::CreateEntityNow()
+{
+	return entityRegistry_.Create();
+}
+
+Entity World::CreateEntityNow(SceneHandle handle)
 {
 	if (!IsSceneHandleValid(handle)) return {};
 
@@ -136,6 +157,12 @@ void World::CancelEntityReservation(Entity entity) noexcept
 	entityRegistry_.CancelEntityReservation(entity);
 }
 
+void World::CommitEntity(Entity entity)
+{
+	if (entityRegistry_.GetEntityState(entity) != EntityState::Reserved) return;
+	entityRegistry_.Commit(entity);
+}
+
 // Activate a reserved entity after registering its scene membership.
 void World::CommitEntity(Entity entity, SceneHandle handle)
 {
@@ -165,7 +192,7 @@ void World::CommitEntity(Entity entity, SceneHandle handle)
 	entityRegistry_.Commit(entity);
 }
 
-void World::DestroyEntity(Entity entity)
+void World::DestroyEntityNow(Entity entity)
 {
 	// Copy the owner before component destruction can create other entities.
 	const auto membership = entityScenes_.find(entity);

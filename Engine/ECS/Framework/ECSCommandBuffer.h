@@ -32,6 +32,8 @@ public:
 
 	void Clear();
 
+	Entity CreateEntity();
+
 	Entity CreateEntity(SceneHandle handle);
 
 	void RemoveEntity(Entity entity);
