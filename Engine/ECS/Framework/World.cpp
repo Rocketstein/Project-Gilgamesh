@@ -129,12 +129,30 @@ void World::CancelEntityReservation(Entity entity)
 	entityRegistry_.CancelEntityReservation(entity);
 }
 
+// Activate a reserved entity after registering its scene membership.
 void World::CommitEntity(Entity entity, SceneHandle handle)
 {
-	if (entity.IsNull() || !IsSceneHandleValid(handle))
+	// Only a pending reservation can acquire scene membership.
+	if (entityRegistry_.GetEntityState(entity) != EntityState::Reserved) return;
+	if (!IsSceneHandleValid(handle))
 	{
 		CancelEntityReservation(entity);
 		return;
+	}
+
+	// Publish both membership directions before making the entity alive.
+	Scene* scene = scenes_[handle.id].scene.get();
+	try
+	{
+		entityScenes_.emplace(entity, handle);
+		scene->entities_.push_back(entity);
+	}
+	catch (...)
+	{
+		// Roll back tracking and cancel the reservation if allocation fails.
+		entityScenes_.erase(entity);
+		CancelEntityReservation(entity);
+		throw;
 	}
 
 	entityRegistry_.Commit(entity);
