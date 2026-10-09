@@ -23,12 +23,12 @@ void ECSAddEntityCommandPayload::Destroy(void* commandData, World& world) noexce
 // ===============================================================================================
 void ECSRemoveEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world)
 {
-	auto* payload = static_cast<ECSAddEntityCommandPayload*>(commandData);
+	auto* payload = static_cast<ECSRemoveEntityCommandPayload*>(commandData);
 	world.DestroyEntity(payload->entity);
 }
 
-void ECSRemoveEntityCommandPayload::Destroy(void* commandData, World& world)
+void ECSRemoveEntityCommandPayload::Destroy(void* commandData, World& world) noexcept
 {
-	auto* payload = static_cast<ECSAddEntityCommandPayload*>(commandData);
+	auto* payload = static_cast<ECSRemoveEntityCommandPayload*>(commandData);
 	std::destroy_at(payload);
 }
