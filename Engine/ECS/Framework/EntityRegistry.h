@@ -7,14 +7,16 @@
 #include <utility>
 #include <vector>
 
+#include "ArchetypeManager.h"
+#include "EntitySlot.h"
 #include "Engine/ECS/Entity/Entity.h"
-#include "Engine/ECS/Framework/ArchetypeManager.h"
 
 // Issues entity handles and owns the generations used to validate them.
 class EntityRegistry final
 {
 public:
-	EntityRegistry() noexcept;
+	// Bind issued handles to a world while retaining a distinct registry identity.
+	explicit EntityRegistry(std::uint32_t owningWorldID = 0) noexcept;
 	EntityRegistry(const EntityRegistry&) = delete;
 	EntityRegistry& operator=(const EntityRegistry&) = delete;
 	EntityRegistry(EntityRegistry&&) = delete;
@@ -26,9 +28,16 @@ public:
 
 	[[nodiscard]] Entity Create();
 
-	[[nodiscard]] bool Destroy(Entity entity);
+	[[nodiscard]] Entity Reserve();
 
-	[[nodiscard]] bool IsValid(Entity entity) const noexcept;
+	// Cancel a reservation and recycle its slot without allocating.
+	void CancelEntityReservation(Entity entity) noexcept;
+
+	void Commit(Entity entity);
+
+	bool Destroy(Entity entity);
+
+	[[nodiscard]] EntityState GetEntityState(Entity entity) const noexcept;
 
 	// =============================================================================
 	// Component Operations
@@ -38,7 +47,7 @@ public:
 	template <typename T, typename... Args>
 	T& Emplace(Entity entity, Args&&... args)
 	{
-		if (!IsValid(entity) || Has<T>(entity))
+		if (GetEntityState(entity) != EntityState::Alive || Has<T>(entity))
 		{
 			throw std::logic_error("Cannot emplace T on this entity");
 		}
@@ -69,7 +78,7 @@ public:
 	bool Has(Entity entity) const
 	{
 		// A stale or foreign handle cannot refer to a component row.
-		if (!IsValid(entity))
+		if (GetEntityState(entity) != EntityState::Alive)
 		{
 			return false;
 		}
@@ -83,6 +92,24 @@ public:
 	// Return T from the entity's chunk row, or reject a missing component.
 	template <typename T>
 	T& Get(Entity entity)
+	{
+		// A reference can only be returned for a live entity that owns T.
+		if (!Has<T>(entity))
+		{
+			throw std::out_of_range("Entity does not have the requested component");
+		}
+
+		// The slot supplies the chunk and the shared row index for all columns.
+		const EntitySlot& slot = slots_[entity.index_];
+		if (slot.chunk == nullptr)
+		{
+			throw std::logic_error("Entity has an archetype but no chunk row");
+		}
+		return slot.chunk->Get<T>(slot.row);
+	}
+
+	template <typename T>
+	const T& Get(Entity entity) const
 	{
 		// A reference can only be returned for a live entity that owns T.
 		if (!Has<T>(entity))
@@ -160,18 +187,7 @@ public:
 
 
 private:
-	// Tracks one handle generation and its optional archetype row location.
-	struct EntitySlot
-	{
-		// The generation advances when an entity is destroyed, before reuse.
-		std::uint32_t generation = 0;
-		// The archetype owning this entity's row.
-		Archetype* archetype = nullptr;
-		// The chunk containing the row.
-		Chunk* chunk = nullptr;
-		// The shared index into the chunk's Entity and component columns.
-		std::uint32_t row = 0;
-	};
+	bool CanReuse(Entity entity) const noexcept;
 
 	// Populate new columns, move shared columns, then publish the new row location.
 	// The target must differ from the source; populate only constructs new values.
@@ -220,9 +236,11 @@ private:
 	}
 
 private:
+	// Capacity covers all issued slots so cancellation never allocates.
 	std::vector<std::uint32_t> freeIndices_;
 	std::vector<EntitySlot> slots_;
 	// Own the future component storage behind the registry's entity API.
 	ArchetypeManager archetypeManager_;
 	std::uint64_t ownerId_ = 0;
+	std::uint32_t owningWorldID_ = 0; // World identity copied into every issued entity.
 };

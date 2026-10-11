@@ -36,8 +36,16 @@ target_sources (GilgameshEngine
 		ECS/Framework/Archetype.h
 		ECS/Framework/Chunk.cpp
 		ECS/Framework/Chunk.h
+		ECS/Framework/ECSCommand.cpp
+		ECS/Framework/ECSCommand.h
+		ECS/Framework/ECSCommandBuffer.cpp
+		ECS/Framework/ECSCommandBuffer.h
 		ECS/Framework/EntityRegistry.cpp
 		ECS/Framework/EntityRegistry.h
+		ECS/Framework/EntitySlot.h
+		ECS/Framework/IDGenerator.h
+		ECS/Framework/MemoryArena.cpp
+		ECS/Framework/MemoryArena.h
 		ECS/Framework/Scene.cpp
 		ECS/Framework/Scene.h
 		ECS/Framework/World.cpp

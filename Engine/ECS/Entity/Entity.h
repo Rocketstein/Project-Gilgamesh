@@ -12,6 +12,7 @@ struct Entity final
 	constexpr bool IsNull() const noexcept { return index_ == InvalidIndex; }
 
 	friend constexpr bool operator==(Entity, Entity) noexcept = default;
+	friend constexpr auto operator<=>(Entity, Entity) noexcept = default;
 
 private:
 	static constexpr std::uint32_t InvalidIndex = 
@@ -20,12 +21,15 @@ private:
 	constexpr Entity(
 		std::uint32_t index,
 		std::uint32_t generation,
-		std::uint64_t ownerId) noexcept
-		: index_(index), generation_(generation), ownerId_(ownerId) {}
+		std::uint64_t ownerId,
+		std::uint32_t owningWorldID) noexcept
+		: index_(index), generation_(generation), ownerId_(ownerId),
+		  owningWorldID_(owningWorldID) {}
 
 	std::uint32_t index_	  = InvalidIndex;
 	std::uint32_t generation_ = 0;
 	std::uint64_t ownerId_	  = 0;
+	std::uint32_t owningWorldID_ = 0; // World identity supplied by the issuing registry.
 
 	friend class EntityRegistry;
 };
