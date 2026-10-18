@@ -66,10 +66,6 @@ typed shader handles during initialization and retains shared COM references
 to the native shaders it requires. This keeps binding self-contained and gives
 an initialized draw setup a clear lifetime guarantee.
 
-`DrawSetup` is intentionally not called a pipeline. In this project, a
-future `RenderPipeline` will mean the coordinator that orders and executes
-render passes.
-
 ### Mesh data, GPU geometry, and drawing are separate concepts
 
 Static-mesh support should have three boundaries:

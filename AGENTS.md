@@ -59,9 +59,7 @@ These instructions apply to the entire repository.
   - Draw state setup: `Engine/Render/DrawSetup/`
   - Mesh resources and vertex formats: `Engine/Render/Mesh/`
   - D3D11 device/presentation backend: `Engine/Render/D3D11/`
-- `DrawSetup` is the reusable shader/fixed-state bundle. `RenderPipeline` is the
-  coordinator that orders and executes passes; do not use those names
-  interchangeably.
+- `DrawSetup` is the reusable shader/fixed-state bundle.
 - Use repository-root-qualified includes across directories, for example
   `#include "Engine/Render/Shader/ShaderManager.h"`. A source file may include
   its own header, or another header in the same directory, by basename.
