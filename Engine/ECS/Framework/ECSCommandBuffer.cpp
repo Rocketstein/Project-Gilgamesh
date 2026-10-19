@@ -133,14 +133,30 @@ void ECSCommandBuffer::Clear()
 	commandBuffer_.Reset();
 }
 
+// Failed recording must not leave an issued scene identity reserved forever.
+SceneHandle ECSCommandBuffer::CreateScene(std::string name)
+{
+    const SceneHandle scene = world_.ReserveScene();
+    try
+    {
+        RecordSceneCommand(ECSSceneCommandType::Create, scene, std::move(name));
+    }
+    catch (...)
+    {
+        world_.CancelSceneReservation(scene);
+        throw;
+    }
+    return scene;
+}
+
 // Publish an arena-owned scene operation only after its payload is complete.
-void ECSCommandBuffer::RecordSceneCommand(ECSSceneCommandType type, SceneHandle scene)
+void ECSCommandBuffer::RecordSceneCommand(ECSSceneCommandType type, SceneHandle scene, std::string name)
 {
     using Payload = ECSSceneCommandPayload;
     void* storage = commandBuffer_.Allocate(sizeof(Payload), alignof(Payload));
     if (!storage) throw std::bad_alloc{};
 
-    auto* payload = new (storage) Payload{ type, scene };
+    auto* payload = new (storage) Payload{ type, scene, std::move(name) };
     try
     {
         commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });

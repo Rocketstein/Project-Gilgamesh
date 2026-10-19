@@ -5,14 +5,17 @@
 // Apply scene changes through the same FIFO as entity structural commands.
 void ECSSceneCommandPayload::Execute(void* commandData, EntityRegistry&, World& world)
 {
-	const auto* payload = static_cast<ECSSceneCommandPayload*>(commandData);
-	world.ApplySceneCommand(payload->type, payload->scene);
+	auto* payload = static_cast<ECSSceneCommandPayload*>(commandData);
+	world.ApplySceneCommand(payload->type, payload->scene, std::move(payload->name));
 }
 
-// Scene handles own no resources, but their arena payload still has a lifetime.
-void ECSSceneCommandPayload::Destroy(void* commandData, World&) noexcept
+// Discarded creation commands must retire their unpublished identities as well.
+void ECSSceneCommandPayload::Destroy(void* commandData, World& world) noexcept
 {
-	std::destroy_at(static_cast<ECSSceneCommandPayload*>(commandData));
+	auto* payload = static_cast<ECSSceneCommandPayload*>(commandData);
+	if (payload->type == ECSSceneCommandType::Create)
+		world.CancelSceneReservation(payload->scene);
+	std::destroy_at(payload);
 }
 
 // ===============================================================================================

@@ -337,6 +337,15 @@ is implemented independently and is not yet connected to the editor viewport.
 
 ## ECS scheduling and render extraction
 
+Application composition code owns `World` directly and passes borrowed `World&`
+access to systems. The world's simulation and presentation entry points are
+public. Callers must execute them at the application boundary, outside entity
+and scene traversals; the world phase guard rejects nested execution while a
+scheduled phase is already running.
+
+Command-buffer construction and playback are private to `World`; payload callbacks
+are private to the buffer, so they do not expose another playback entry point.
+
 `World` owns three generic `SystemGroup` roots: simulation, transform, and
 extraction. Each root is initialized and enabled by the world. Concrete systems
 are registered by composition code through `AddSystem(unique_ptr<ISystem>)`,
@@ -346,7 +355,7 @@ world storage remains alive. Callers may retain borrowed system references but
 must discard them before removal or world destruction.
 
 `World::Update(deltaTime)` replays structural commands, runs simulation unless
-paused, then replays simulation requests. `PreparePresentation(realDeltaTime)`
+paused, then replays simulation requests. `World::PreparePresentation(realDeltaTime)`
 replays the latest editor requests, runs transform systems, and finally runs
 extraction systems. It is a separate entry point so presentation can run once
 per render submission, including while simulation is paused. There is no
@@ -356,13 +365,23 @@ system registration are rejected during the phases where they would invalidate
 storage or scheduling. A system exception restores the world to its idle phase.
 
 The world retains one full generation-checked active `SceneHandle`, initially
-null. Scene creation does not activate a scene. `RequestSetActiveScene`,
+null. Scene creation does not activate a scene. `RequestCreateScene` reserves a
+full scene identity immediately and records an owned name in the entity command
+FIFO. The reservation is usable by subsequent entity, activation, and destruction
+requests, but `TryGetScene` and `IsSceneHandleValid` expose only committed scenes.
+Creation is published at playback, before later dependent commands.
+`RequestSetActiveScene`,
 `RequestClearActiveScene`, and `RequestDestroyScene` enter the same FIFO as
 entity commands and are applied at playback boundaries. Requests are validated
 again at playback. Destroying the selected scene clears selection without
 choosing a fallback. The synchronous `CreateScene` and `DestroyScene` APIs are
-available only outside world execution for setup and existing callers. Active
-scene selection identifies the default render source; `World::ForEach` retains
+public for tests, initialization, and other controlled setup outside execution
+and traversal. They are not the normal mutation path. Immediate destruction can
+also cancel a reserved scene. Cancelled or discarded creation payloads retire
+their reserved generation without allocating and cannot affect a reused slot.
+The world no longer tracks traversal depth; callers must keep immediate setup
+operations and world execution outside active traversals. Active scene selection
+identifies the default render source; `World::ForEach` retains
 its whole-world query semantics.
 
 `RenderExtractionSystem : public ISystem` traverses the active scene's entity

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <new>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -19,7 +20,6 @@ class World;
 class ECSCommandBuffer final
 {
 public:
-	explicit ECSCommandBuffer(World& world);
 	// Destroy recorded payloads before releasing their arena storage.
 	~ECSCommandBuffer() noexcept;
 
@@ -28,18 +28,16 @@ public:
 	ECSCommandBuffer(ECSCommandBuffer&&) = delete;
 	ECSCommandBuffer& operator=(ECSCommandBuffer&&) = delete;
 
-	void Flush();
-
-	void Clear();
-
 	Entity CreateEntity();
 
 	Entity CreateEntity(SceneHandle handle);
 
 	void RemoveEntity(Entity entity);
 
-	// Records scene selection or destruction in the entity command FIFO.
-	void RecordSceneCommand(ECSSceneCommandType type, SceneHandle scene);
+	// Reserves a scene identity before publishing its owned creation payload.
+	[[nodiscard]] SceneHandle CreateScene(std::string name);
+	// Records scene operations and owned creation names in the entity command FIFO.
+	void RecordSceneCommand(ECSSceneCommandType type, SceneHandle scene, std::string name = "");
 
 	// Record a preconstructed component for later attachment.
 	template <typename Component>
@@ -136,6 +134,14 @@ public:
 	}
 
 private:
+	friend class World;
+
+	// Only the owning world may create a buffer or advance command playback.
+	explicit ECSCommandBuffer(World& world);
+	void Flush();
+	void Clear();
+
+	// Preserve concrete command dispatch and destruction without virtual payloads.
 	using DispatchFn = void(*)(void* payload, EntityRegistry& registry, World& world);
 	using DestroyFn  = void(*)(void* commandData, World& world) noexcept;
 

@@ -12,6 +12,7 @@ These instructions apply to the entire repository.
 - Add a brief, readable comment for each logical block and function/class/struct headers with reasonable complexity.
 - Also add a short description of member variables unless the variable is trivial.
 - Use English comments regardless of conversation language.
+- Trivial function declarations can be packed. Otherwise, keep a spacing between each function in header file. 
 - Namespace should have a trailing comment with the namespace name, e.g. `} // namespace SomeNamespace, // Anonymous namespace`.
 
 ## Platform and build

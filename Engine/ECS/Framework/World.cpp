@@ -57,7 +57,7 @@ void World::SetSchedulingMutationAllowed(bool allowed) noexcept
 // Immediate scene operations and nested world updates would invalidate traversal.
 void World::RequireIdle() const
 {
-	if (phase_ == ExecutionPhase::Idle && traversalDepth_ == 0) return;
+	if (phase_ == ExecutionPhase::Idle) return;
 	GILGAMESH_LOG(Runtime, Error, "This world operation requires an idle execution phase");
 	throw std::logic_error("World operation requires an idle execution phase");
 }
@@ -136,36 +136,83 @@ void World::PreparePresentation(float realDeltaTime)
 	SetSchedulingMutationAllowed(true);
 }
 
-// Preserve synchronous scene construction for setup outside running systems.
+// Synchronous creation is reserved for tests and controlled initialization.
 SceneHandle World::CreateScene(std::string name)
 {
 	RequireIdle();
-	// Reserve the null index and narrow only after checking the slot capacity.
-	const bool reuseSlot = !freeSceneIndices_.empty();
-	if (!reuseSlot && scenes_.size() >= std::numeric_limits<std::uint32_t>::max())
+	const SceneHandle handle = ReserveScene();
+	try
 	{
-		throw std::length_error("World scene handle capacity exceeded");
+		CommitScene(handle, std::move(name));
 	}
-	const std::uint32_t id = reuseSlot
-		? freeSceneIndices_.back()
-		: static_cast<std::uint32_t>(scenes_.size());
-
-	// Construct the scene before changing either the slots or the free list.
-	std::string sceneName = name.empty() ? "Scene_" + std::to_string(id) : std::move(name);
-	auto scene = std::make_unique<Scene>(std::move(sceneName));
-	if (reuseSlot)
+	catch (...)
 	{
-		scenes_[id].scene = std::move(scene);
-		freeSceneIndices_.pop_back();
+		CancelSceneReservation(handle);
+		throw;
 	}
-	else
-	{
-		scenes_.push_back(SceneItem{ std::move(scene), 0 });
-	}
-
-	return SceneHandle{ id, scenes_[id].generation, worldID_ };
+	return handle;
 }
 
+// Allocate an unpublished identity with capacity for allocation-free cancellation.
+SceneHandle World::ReserveScene()
+{
+	const bool reuseSlot = !freeSceneIndices_.empty();
+	if (!reuseSlot)
+	{
+		if (scenes_.size() >= std::numeric_limits<std::uint32_t>::max())
+			throw std::length_error("World scene handle capacity exceeded");
+
+		// Every issued slot can return here from noexcept payload cleanup.
+		freeSceneIndices_.reserve(scenes_.size() + 1);
+		const auto id = static_cast<std::uint32_t>(scenes_.size());
+		scenes_.push_back(SceneItem{ nullptr, 0, true });
+		return SceneHandle{ id, 0, worldID_ };
+	}
+
+	const std::uint32_t id = freeSceneIndices_.back();
+	freeSceneIndices_.pop_back();
+	SceneItem& item = scenes_[id];
+	item.reserved = true;
+	return SceneHandle{ id, item.generation, worldID_ };
+}
+
+// Publish only after constructing the scene and its owned name successfully.
+void World::CommitScene(SceneHandle handle, std::string name)
+{
+	if (!IsSceneHandleAllocated(handle) || !scenes_[handle.id].reserved)
+	{
+		GILGAMESH_LOG(Runtime, Warning, "Discarded creation for a cancelled scene reservation");
+		return;
+	}
+	std::string sceneName = name.empty() ? "Scene_" + std::to_string(handle.id) : std::move(name);
+	auto scene = std::make_unique<Scene>(std::move(sceneName));
+	SceneItem& item = scenes_[handle.id];
+	item.scene = std::move(scene);
+	item.reserved = false;
+}
+
+// Advance generation so an aborted creation cannot address a later slot occupant.
+void World::CancelSceneReservation(SceneHandle handle) noexcept
+{
+	if (!IsSceneHandleAllocated(handle) || !scenes_[handle.id].reserved) return;
+	SceneItem& item = scenes_[handle.id];
+	item.reserved = false;
+	if (item.generation < std::numeric_limits<std::uint32_t>::max())
+	{
+		++item.generation;
+		if (item.generation < std::numeric_limits<std::uint32_t>::max())
+			freeSceneIndices_.push_back(handle.id);
+	}
+}
+
+// Return an identity now while deferring the actual object until command playback.
+SceneHandle World::RequestCreateScene(std::string name)
+{
+	RequireStructuralRequestsAllowed();
+	return commandBuffer_.CreateScene(std::move(name));
+}
+
+// Synchronous destruction is reserved for tests and controlled initialization.
 bool World::DestroyScene(SceneHandle handle)
 {
 	RequireIdle();
@@ -190,6 +237,12 @@ bool World::DestroyScene(SceneHandle handle)
 // Systems request destruction through the command buffer instead of this helper.
 bool World::DestroySceneNow(SceneHandle handle)
 {
+	// An unpublished reservation can be cancelled without constructing a scene.
+	if (IsSceneHandleAllocated(handle) && scenes_[handle.id].reserved)
+	{
+		CancelSceneReservation(handle);
+		return true;
+	}
 	if (!IsSceneHandleValid(handle)) return false;
 	Scene* scene = scenes_[handle.id].scene.get();
 
@@ -225,7 +278,7 @@ bool World::DestroySceneNow(SceneHandle handle)
 bool World::RequestSetActiveScene(SceneHandle handle)
 {
 	RequireStructuralRequestsAllowed();
-	if (!IsSceneHandleValid(handle))
+	if (!IsSceneHandleAllocated(handle))
 	{
 		GILGAMESH_LOG(Runtime, Warning, "Cannot select an invalid or foreign scene");
 		return false;
@@ -245,7 +298,7 @@ void World::RequestClearActiveScene()
 bool World::RequestDestroyScene(SceneHandle handle)
 {
 	RequireStructuralRequestsAllowed();
-	if (!IsSceneHandleValid(handle))
+	if (!IsSceneHandleAllocated(handle))
 	{
 		GILGAMESH_LOG(Runtime, Warning, "Cannot destroy an invalid or foreign scene");
 		return false;
@@ -255,8 +308,13 @@ bool World::RequestDestroyScene(SceneHandle handle)
 }
 
 // Scene operations retain their relative order with all entity edits.
-void World::ApplySceneCommand(ECSSceneCommandType type, SceneHandle handle)
+void World::ApplySceneCommand(ECSSceneCommandType type, SceneHandle handle, std::string name)
 {
+	if (type == ECSSceneCommandType::Create)
+	{
+		CommitScene(handle, std::move(name));
+		return;
+	}
 	if (type == ECSSceneCommandType::ClearActive)
 	{
 		activeScene_ = {};
@@ -287,6 +345,12 @@ const Scene* World::TryGetScene(SceneHandle handle) const noexcept
 
 bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 {
+	return IsSceneHandleAllocated(handle) && scenes_[handle.id].scene != nullptr;
+}
+
+// Request validation includes reserved slots without exposing them as live scenes.
+bool World::IsSceneHandleAllocated(SceneHandle handle) const noexcept
+{
 	// Reject foreign, null, or out-of-range handles before accessing the slot.
 	if (handle.owningWorldID_ != worldID_ || handle.IsNull())
 	{
@@ -298,19 +362,8 @@ bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 		return false;
 	}
 
-	// A recycled slot has no scene until it is reused.
-	if (scenes_[handle.id].scene == nullptr)
-	{
-		return false;
-	}
-
-	// A matching index alone does not identify the same scene after slot reuse.
-	if (scenes_[handle.id].generation != handle.generation)
-	{
-		return false;
-	}
-
-	return true;
+	const SceneItem& item = scenes_[handle.id];
+	return item.generation == handle.generation && (item.reserved || item.scene != nullptr);
 }
 
 Entity World::CreateEntity()

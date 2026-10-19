@@ -1,9 +1,11 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "Engine/ECS/Framework/World.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Engine/ECS/System/Core/ISystem.h"
 #include "Engine/ECS/System/Core/SystemGroup.h"
@@ -51,6 +53,19 @@ public:
 
 private:
     std::function<void()> callback_; // Empty after migration; active only in the final row.
+};
+
+// Fails during command playback so later reservations must be discarded safely.
+class PlaybackFailureComponent final
+{
+public:
+    explicit PlaybackFailureComponent(bool shouldThrow)
+    {
+        if (shouldThrow)
+            throw std::runtime_error("Component playback failed");
+    }
+
+    PlaybackFailureComponent(PlaybackFailureComponent&&) noexcept = default;
 };
 
 // Registers an enabled system while leaving its lifetime with the group.
@@ -181,7 +196,7 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "RejectsInvalidSceneHandlesAtRequestAn
         world.RequestDestroyScene(stale),
         "requests for a currently live scene must initially be accepted");
     GILGAMESH_CHECK_MESSAGE(world.DestroyScene(stale),
-        "idle immediate destruction must remain available for compatibility");
+        "idle immediate destruction must remain available for initialization and tests");
     const SceneHandle replacement = world.CreateScene("Replacement");
     GILGAMESH_CHECK_MESSAGE(replacement.id == stale.id &&
         replacement.generation != stale.generation,
@@ -312,8 +327,8 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "BlocksImmediateSceneMutationAndWorldR
         // Callback code must not mutate the scene table or recursively run phases.
         creationRejected = RejectsWithLogicError([&] { (void)current.CreateScene(); });
         destructionRejected = RejectsWithLogicError([&] { (void)current.DestroyScene(scene); });
-        updateRejected = RejectsWithLogicError([&] { current.Update(0.0f); });
-        presentationRejected = RejectsWithLogicError([&] { current.PreparePresentation(0.0f); });
+        updateRejected = RejectsWithLogicError([&] { world.Update(0.0f); });
+        presentationRejected = RejectsWithLogicError([&] { world.PreparePresentation(0.0f); });
     });
     world.Update(0.0f);
     GILGAMESH_CHECK_MESSAGE(creationRejected && destructionRejected &&
@@ -337,6 +352,7 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "PresentationRejectsStructuralRequests
     // Both presentation phases must keep the evaluated ECS structure stable.
     const auto attemptMutations = [&](World& current, float)
     {
+        rejected += RejectsWithLogicError([&] { (void)current.RequestCreateScene(); });
         rejected += RejectsWithLogicError([&] { (void)current.CreateEntity(); });
         rejected += RejectsWithLogicError([&] { current.RemoveEntity(entity); });
         rejected += RejectsWithLogicError([&] { current.Emplace<float>(entity, 1.0f); });
@@ -351,7 +367,7 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "PresentationRejectsStructuralRequests
 
     // Rejected requests must not leak into the next structural playback.
     world.Update(0.0f);
-    GILGAMESH_CHECK_MESSAGE(rejected == 14 && world.IsAlive(entity) &&
+    GILGAMESH_CHECK_MESSAGE(rejected == 16 && world.IsAlive(entity) &&
         world.Has<int>(entity) && !world.Has<float>(entity) &&
         world.IsSceneHandleValid(scene) && world.GetActiveSceneHandle().IsNull(),
         "transform and extraction must reject every structural request without recording it");
@@ -411,7 +427,7 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "ProtectsImmediateSceneDestructionFrom
     world.Emplace<DestructorCallbackComponent>(entity, onDestroy);
     world.Update(0.0f);
 
-    // Even the idle compatibility API must lock world execution and all scheduling roots.
+    // Even initialization-only immediate destruction guards callback and scheduling reentry.
     GILGAMESH_CHECK_MESSAGE(world.DestroyScene(scene) && destructorCount == 1 && rejected == 5,
         "immediate scene destruction must reject component reentry and scheduling mutation");
     GILGAMESH_CHECK_MESSAGE(!world.IsAlive(entity) && !world.IsSceneHandleValid(scene),
@@ -426,31 +442,216 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "ProtectsImmediateSceneDestructionFrom
         "normal world execution must resume after guarded scene destruction");
 }
 
-GILGAMESH_TEST("Engine.ECS.WorldSystems", "ExternalTraversalRejectsImmediateMutationButAllowsQueuedEdits")
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "ExternalTraversalRecordsSceneAndEntityRequests")
 {
     World world;
     const SceneHandle scene = world.CreateScene("Traversal");
     const Entity entity = world.CreateEntity(scene);
     world.Emplace<int>(entity, 10);
     world.Update(0.0f);
-    int rejected = 0;
+    SceneHandle requestedScene;
+    Entity requestedEntity;
 
-    // A caller outside the scheduler still holds live chunk references while traversing.
+    // Application code records edits and defers world execution until traversal finishes.
     world.ForEach<int>([&](int& value)
     {
-        rejected += RejectsWithLogicError([&] { world.Update(0.0f); });
-        rejected += RejectsWithLogicError([&] { world.PreparePresentation(0.0f); });
-        rejected += RejectsWithLogicError([&] { (void)world.CreateScene(); });
-        rejected += RejectsWithLogicError([&] { (void)world.DestroyScene(scene); });
-
-        // Recording work preserves the current row until the next playback boundary.
+        // All changes remain pending while the current component reference is in use.
+        requestedScene = world.RequestCreateScene("From traversal");
+        requestedEntity = world.CreateEntity(requestedScene);
+        world.Emplace<int>(requestedEntity, 30);
+        GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(requestedScene),
+            "a reserved scene must accept activation during a stable query");
         world.RemoveComponent<int>(entity);
         value += 2;
     });
-    GILGAMESH_CHECK_MESSAGE(rejected == 4 && world.Has<int>(entity) &&
-        world.Get<int>(entity) == 12 && world.IsSceneHandleValid(scene),
-        "external traversal must reject immediate world mutation while preserving live references");
+    GILGAMESH_CHECK_MESSAGE(world.Has<int>(entity) && world.Get<int>(entity) == 12 &&
+        world.IsSceneHandleValid(scene) && !world.IsSceneHandleValid(requestedScene) &&
+        !world.IsAlive(requestedEntity),
+        "recorded query edits must preserve the current row and leave new values unpublished");
     world.Update(0.0f);
-    GILGAMESH_CHECK_MESSAGE(world.IsAlive(entity) && !world.Has<int>(entity),
-        "queued traversal edits must be applied after iteration finishes");
+    GILGAMESH_CHECK_MESSAGE(world.IsAlive(entity) && !world.Has<int>(entity) &&
+        world.IsAlive(requestedEntity) && world.Get<int>(requestedEntity) == 30 &&
+        SameScene(world.GetActiveSceneHandle(), requestedScene),
+        "world playback after traversal must commit the scene, entity, and selection together");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "ReservedScenesPublishOnlyAtWorldPlayback")
+{
+    World world;
+    std::string sceneName = "Deferred scene";
+    const SceneHandle scene = world.RequestCreateScene(sceneName);
+    sceneName = "Changed by caller";
+
+    // A reservation is usable by queued requests but does not expose a live scene.
+    GILGAMESH_CHECK_MESSAGE(!scene.IsNull() && !world.IsSceneHandleValid(scene) &&
+        world.TryGetScene(scene) == nullptr && world.TryGetActiveScene() == nullptr,
+        "request creation must return a reserved identity without publishing scene storage");
+    const Entity entity = world.CreateEntity(scene);
+    world.Emplace<int>(entity, 42);
+    GILGAMESH_CHECK_MESSAGE(!entity.IsNull() && !world.IsAlive(entity) &&
+        world.RequestSetActiveScene(scene),
+        "entity creation and activation must accept the same reserved scene identity");
+
+    // One FIFO commits the scene before its entity, component, and active selection.
+    world.PreparePresentation(0.0f);
+    const Scene* created = world.TryGetScene(scene);
+    GILGAMESH_CHECK_MESSAGE(created != nullptr && created->Name() == "Deferred scene" &&
+        created->Contains(entity) && world.IsAlive(entity) && world.Has<int>(entity) &&
+        world.Get<int>(entity) == 42 && SameScene(world.GetActiveSceneHandle(), scene),
+        "playback must own the recorded name and publish dependent requests in recording order");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "ReservedSceneCreationUsesDefaultName")
+{
+    World world;
+    const SceneHandle scene = world.RequestCreateScene();
+
+    // Default names use the reserved slot identity, matching immediate initialization.
+    world.Update(0.0f);
+    const Scene* created = world.TryGetScene(scene);
+    GILGAMESH_CHECK_MESSAGE(created != nullptr &&
+        created->Name() == "Scene_" + std::to_string(scene.id) &&
+        world.GetActiveSceneHandle().IsNull(),
+        "deferred default naming must preserve the slot-derived name without selecting the scene");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "SimulationPublishesRequestedSceneAtEndBoundary")
+{
+    World world;
+    SceneHandle requestedScene;
+    Entity requestedEntity;
+    bool sawReservedState = false;
+
+    // A scheduled system can queue scene creation and dependent work during simulation.
+    AddEnabledSystem(world.GetSimulationSystems(), [&](World& current, float)
+    {
+        requestedScene = current.RequestCreateScene("From simulation");
+        requestedEntity = current.CreateEntity(requestedScene);
+        current.Emplace<int>(requestedEntity, 9);
+        sawReservedState = !current.IsSceneHandleValid(requestedScene) &&
+            current.TryGetScene(requestedScene) == nullptr && !current.IsAlive(requestedEntity);
+        GILGAMESH_CHECK_MESSAGE(current.RequestSetActiveScene(requestedScene),
+            "simulation must be able to select the scene it has just reserved");
+    });
+
+    // The update's final playback publishes all requests before presentation preparation.
+    world.Update(0.0f);
+    const Scene* created = world.TryGetScene(requestedScene);
+    GILGAMESH_CHECK_MESSAGE(sawReservedState && created != nullptr &&
+        created->Contains(requestedEntity) && world.Has<int>(requestedEntity) &&
+        world.Get<int>(requestedEntity) == 9 &&
+        SameScene(world.GetActiveSceneHandle(), requestedScene),
+        "the simulation end boundary must commit the requested scene and its dependent entity");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "CancelsReservedSceneWithoutRevivingStaleRequests")
+{
+    World world;
+    const SceneHandle cancelled = world.RequestCreateScene("Cancelled");
+    const Entity cancelledEntity = world.CreateEntity(cancelled);
+    GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(cancelled) &&
+        world.RequestDestroyScene(cancelled),
+        "dependent requests must initially accept a pending scene");
+
+    // The initialization-only immediate API may cancel a not-yet-created scene slot.
+    GILGAMESH_CHECK_MESSAGE(world.DestroyScene(cancelled) &&
+        !world.IsSceneHandleValid(cancelled) && world.TryGetScene(cancelled) == nullptr,
+        "immediate destruction of a pending scene must cancel its reservation");
+    const SceneHandle replacement = world.RequestCreateScene("Replacement");
+    GILGAMESH_CHECK_MESSAGE(replacement.id == cancelled.id &&
+        replacement.generation != cancelled.generation &&
+        !world.RequestSetActiveScene(cancelled) && !world.RequestDestroyScene(cancelled),
+        "reservation cancellation must recycle the slot with a new complete identity");
+
+    // Old creation, activation, and destruction payloads cannot address the replacement.
+    world.Update(0.0f);
+    const Scene* created = world.TryGetScene(replacement);
+    GILGAMESH_CHECK_MESSAGE(created != nullptr && created->Name() == "Replacement" &&
+        !world.IsAlive(cancelledEntity) && world.GetActiveSceneHandle().IsNull(),
+        "stale queued requests must neither publish cancelled entities nor affect the reused slot");
+    world.Update(0.0f);
+    GILGAMESH_CHECK_MESSAGE(world.IsSceneHandleValid(replacement),
+        "payload cleanup after successful playback must not cancel an already committed scene");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "PreservesFIFOForPendingSceneDestruction")
+{
+    World world;
+    const SceneHandle scene = world.RequestCreateScene("Short lived");
+    const Entity entity = world.CreateEntity(scene);
+    GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(scene) &&
+        world.RequestDestroyScene(scene) && world.RequestSetActiveScene(scene),
+        "a pending scene must accept later requests before playback validates their order");
+
+    // Creation runs first, destruction retires the entity, and late activation becomes stale.
+    world.Update(0.0f);
+    GILGAMESH_CHECK_MESSAGE(!world.IsSceneHandleValid(scene) && !world.IsAlive(entity) &&
+        world.GetActiveSceneHandle().IsNull() && world.TryGetActiveScene() == nullptr,
+        "create and destroy requests in one FIFO must leave no live scene or active selection");
+    const SceneHandle replacement = world.RequestCreateScene("After FIFO destruction");
+    world.Update(0.0f);
+    GILGAMESH_CHECK_MESSAGE(replacement.id == scene.id &&
+        replacement.generation != scene.generation && world.IsSceneHandleValid(replacement),
+        "deferred destruction must make the retired slot reusable under a new generation");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "PlaybackFailureCancelsUncommittedSceneReservations")
+{
+    World world;
+    const SceneHandle committed = world.RequestCreateScene("Committed before failure");
+    const Entity entity = world.CreateEntity();
+    world.Emplace<PlaybackFailureComponent>(entity, true);
+    const SceneHandle discarded = world.RequestCreateScene("Never executed");
+    const Entity discardedEntity = world.CreateEntity(discarded);
+    GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(discarded),
+        "the later reserved scene must accept a dependent activation request");
+
+    // Failure discards the remaining queue while preserving work committed before it.
+    bool failed = false;
+    try
+    {
+        world.Update(0.0f);
+    }
+    catch (const std::runtime_error&)
+    {
+        failed = true;
+    }
+    GILGAMESH_CHECK_MESSAGE(failed && world.IsSceneHandleValid(committed) &&
+        !world.IsSceneHandleValid(discarded) && world.TryGetScene(discarded) == nullptr &&
+        !world.IsAlive(discardedEntity) && world.GetActiveSceneHandle().IsNull(),
+        "failed playback must preserve committed scenes and cancel every future reservation");
+
+    // The discarded identity cannot become valid after its scene slot is reused.
+    const SceneHandle replacement = world.RequestCreateScene("After failure");
+    GILGAMESH_CHECK_MESSAGE(replacement.id == discarded.id &&
+        replacement.generation != discarded.generation &&
+        !world.RequestSetActiveScene(discarded) && !world.RequestDestroyScene(discarded),
+        "clearing failed payloads must retire pending generations before exposing their slots");
+    world.Update(0.0f);
+    GILGAMESH_CHECK_MESSAGE(world.IsSceneHandleValid(committed) &&
+        world.IsSceneHandleValid(replacement) && !world.IsAlive(discardedEntity),
+        "the world must recover after failure without reviving discarded requests");
+}
+
+GILGAMESH_TEST("Engine.ECS.WorldSystems", "RejectsForeignPendingSceneRequests")
+{
+    World world;
+    World otherWorld;
+    const SceneHandle local = world.RequestCreateScene("Local pending");
+    const SceneHandle foreign = otherWorld.RequestCreateScene("Foreign pending");
+
+    // Equal slot and generation values do not grant access across world ownership.
+    GILGAMESH_CHECK_MESSAGE(local.id == foreign.id && local.generation == foreign.generation &&
+        !world.RequestSetActiveScene(foreign) && !world.RequestDestroyScene(foreign) &&
+        !world.DestroyScene(foreign),
+        "pending scene requests must validate the owning world as well as slot and generation");
+    const Entity foreignEntity = world.CreateEntity(foreign);
+
+    // Rejected ownership must not disturb either world's independent creation request.
+    world.Update(0.0f);
+    otherWorld.Update(0.0f);
+    GILGAMESH_CHECK_MESSAGE(world.IsSceneHandleValid(local) &&
+        otherWorld.IsSceneHandleValid(foreign) && !world.IsAlive(foreignEntity) &&
+        world.GetActiveSceneHandle().IsNull(),
+        "foreign membership must never commit while both owning scene reservations remain valid");
 }

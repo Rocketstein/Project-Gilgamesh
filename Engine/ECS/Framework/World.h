@@ -17,9 +17,10 @@ public:
 	World(const World&) = delete;
 	World& operator=(const World&) = delete;
 
-	// Applies queued edits around simulation; presentation runs independently.
+	// Apply queued changes around simulation; call only outside active ECS traversals.
 	void Update(float deltaTime);
-	// Finalizes transforms and extracts presentation data once per rendered frame.
+	// Finalize transforms and extract presentation data once per rendered frame.
+	// Call only outside active ECS traversals, after the frame's editor changes.
 	void PreparePresentation(float realDeltaTime);
 
 	void SetSimulationPaused(bool paused) noexcept { simulationPaused_ = paused; }
@@ -30,11 +31,16 @@ public:
 	[[nodiscard]] SystemGroup& GetTransformSystems() noexcept { return transformSystems_; }
 	[[nodiscard]] SystemGroup& GetExtractionSystems() noexcept { return extractionSystems_; }
 
-	// Immediate setup operations are restricted to times outside system execution.
+	// Immediate execution is for initialization, tests, and other controlled setup only.
+	// Never call these during entity/scene traversal; normal changes use request APIs.
 	[[nodiscard]] SceneHandle CreateScene(std::string name = "");
+	// Immediate destruction is likewise limited to initialization, tests, and controlled setup.
+	// It can cancel a pending reservation, but must never run during a traversal.
 	bool DestroyScene(SceneHandle handle);
 
-	// Selection and destruction requested by systems are applied at playback.
+	// Creation reserves an identity immediately; the scene is published only at playback.
+	[[nodiscard]] SceneHandle RequestCreateScene(std::string name = "");
+	// Selection and destruction accept live or reserved identities in the same FIFO.
 	bool RequestSetActiveScene(SceneHandle handle);
 	void RequestClearActiveScene();
 	bool RequestDestroyScene(SceneHandle handle);
@@ -69,18 +75,7 @@ public:
 	template <typename... Components, typename Fn>
 	void ForEach(Fn&& fn)
 	{
-		// Deferred requests remain valid, but immediate operations must not invalidate rows.
-		++traversalDepth_;
-		try
-		{
-			entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
-		}
-		catch (...)
-		{
-			--traversalDepth_;
-			throw;
-		}
-		--traversalDepth_;
+		entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
 	}
 
 	std::uint32_t GetWorldID() const noexcept { return worldID_; }
@@ -126,7 +121,11 @@ private:
 	void RequireStructuralRequestsAllowed() const;
 	void SetSchedulingMutationAllowed(bool allowed) noexcept;
 	void ApplyPendingCommands();
-	void ApplySceneCommand(ECSSceneCommandType type, SceneHandle handle);
+	void ApplySceneCommand(ECSSceneCommandType type, SceneHandle handle, std::string name);
+	[[nodiscard]] SceneHandle ReserveScene();
+	void CommitScene(SceneHandle handle, std::string name);
+	void CancelSceneReservation(SceneHandle handle) noexcept;
+	[[nodiscard]] bool IsSceneHandleAllocated(SceneHandle handle) const noexcept;
 	bool DestroySceneNow(SceneHandle handle);
 
 	// Direct execution functions. Outside sources other than ECSCommandBuffer should use buffer request instead.
@@ -160,7 +159,6 @@ private:
 	std::uint32_t worldID_ = 0;
 	ExecutionPhase phase_ = ExecutionPhase::Idle; // Outlives storage to guard destructor callbacks.
 	bool simulationPaused_ = false; // Skips simulation without stopping presentation.
-	std::size_t traversalDepth_ = 0; // Protects explicit queries outside scheduled systems.
 
 	// Owns entity handles, component storage, and archetype queries.
 	EntityRegistry entityRegistry_;
@@ -177,6 +175,8 @@ private:
 		std::unique_ptr<Scene> scene;
 		// Advanced on destruction so old handles cannot address a reused slot.
 		std::uint32_t generation = 0;
+		// Reserved slots have an identity but are not visible through TryGetScene yet.
+		bool reserved = false;
 	};
 	// Slots keep their indices across reuse and are addressed by SceneHandle::id.
 	std::vector<SceneItem> scenes_;
@@ -195,10 +195,7 @@ private:
 	// Friends
 	friend class ECSCommandBuffer;
 	friend struct ECSSceneCommandPayload;
-	friend void ECSAddWorldEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world);
-	friend void ECSAddWorldEntityCommandPayload::Destroy(void* commandData, World& world) noexcept;
-	friend void ECSAddEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world);
-	friend void ECSAddEntityCommandPayload::Destroy(void* commandData, World& world) noexcept;
-	friend void ECSRemoveEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world);
-	friend void ECSRemoveEntityCommandPayload::Destroy(void* commandData, World& world) noexcept;
+	friend struct ECSAddWorldEntityCommandPayload;
+	friend struct ECSAddEntityCommandPayload;
+	friend struct ECSRemoveEntityCommandPayload;
 };

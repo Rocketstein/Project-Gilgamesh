@@ -2,6 +2,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -11,6 +12,42 @@
 
 namespace
 {
+// Applications can advance simulation through the world's public entry point.
+template <typename T>
+concept HasPublicWorldUpdate = requires(T& world) { world.Update(0.0f); };
+
+// Presentation preparation is also a public world execution entry point.
+template <typename T>
+concept HasPublicPresentationPreparation = requires(T& world)
+{
+	world.PreparePresentation(0.0f);
+};
+
+// Command playback stays internal to the world's execution entry points.
+template <typename T>
+concept HasPublicCommandPlayback = requires(T& buffer) { buffer.Flush(); };
+
+// Payload cleanup is also controlled by the owning world's playback boundary.
+template <typename T>
+concept HasPublicCommandCleanup = requires(T& buffer) { buffer.Clear(); };
+
+// Payload callbacks cannot serve as another entry point into world playback.
+template <typename T>
+concept HasPublicPayloadExecution = requires(T& payload, EntityRegistry& registry, World& world)
+{
+	T::Execute(&payload, registry, world);
+};
+
+static_assert(HasPublicWorldUpdate<World>);
+static_assert(HasPublicPresentationPreparation<World>);
+static_assert(!std::is_constructible_v<ECSCommandBuffer, World&>);
+static_assert(!HasPublicCommandPlayback<ECSCommandBuffer>);
+static_assert(!HasPublicCommandCleanup<ECSCommandBuffer>);
+static_assert(!HasPublicPayloadExecution<ECSSceneCommandPayload>);
+static_assert(!HasPublicPayloadExecution<ECSAddWorldEntityCommandPayload>);
+static_assert(!HasPublicPayloadExecution<ECSAddEntityCommandPayload>);
+static_assert(!HasPublicPayloadExecution<ECSRemoveEntityCommandPayload>);
+
 // Records lifecycle, execution, and destruction while allowing callback-driven checks.
 class RecordingSystem final : public ISystem
 {
