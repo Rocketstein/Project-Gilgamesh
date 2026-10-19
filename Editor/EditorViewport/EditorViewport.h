@@ -6,6 +6,7 @@
 
 #include "Engine/Core/Extent2D.h"
 
+// Owns viewport attachments and publishes complete replacements after a resize.
 class EditorViewport
 {
 public:
@@ -44,8 +45,15 @@ public:
 	[[nodiscard]]
 	ID3D11DepthStencilView* GetDepthStencilView() const noexcept;
 
+	// Shares the depth texture while preventing depth writes in overlay passes.
+	[[nodiscard]]
+	ID3D11DepthStencilView* GetReadOnlyDepthStencilView() const noexcept;
+
 private:
+	// Builds all replacement resources before changing the current attachments.
 	bool CreateResources(Extent2D extent);
+
+	// Releases views before their underlying viewport textures.
 	void ReleaseResources() noexcept;
 
 private:
@@ -60,11 +68,13 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> 
 		shaderResourceView_;
 
-	// Depth texture and depth stencil view for the viewport
+	// One depth texture with writable and read-only attachment views.
 	Microsoft::WRL::ComPtr<ID3D11Texture2D> 
 		depthTexture_;
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView> 
 		depthStencilView_;
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView>
+		readOnlyDepthStencilView_;
 
 	// Dimensions
 	Extent2D extent_{};

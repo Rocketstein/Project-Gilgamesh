@@ -77,34 +77,12 @@ std::optional<MeshPassCommands> VertexColorMeshPass::PrepareCommands(
 	const RenderView& view,
 	const MeshManager& meshes) const
 {
-	// A view must describe a usable viewport and invertible camera transform.
-	if (view.extent.width == 0 || view.extent.height == 0)
-	{
-		GILGAMESH_LOG(Renderer, Error,
-			"Cannot prepare mesh commands for an empty viewport");
-		return std::nullopt;
-	}
+	// Meshes and editor overlays use the same validated view-constant layout.
+	const auto viewConstants = PrepareViewConstants(view);
+	if (!viewConstants) return std::nullopt;
 
-	const Matrix4 viewProjection = view.view * view.projection;
-	Matrix4 inverseVP;
-	if (!TryInverse(viewProjection, inverseVP))
-	{
-		GILGAMESH_LOG(Renderer, Error,
-			"Cannot prepare mesh commands for a non-invertible view projection");
-		return std::nullopt;
-	}
-
-	// Convert CPU row-vector matrices once while retaining constants per view.
 	MeshPassCommands commands;
-	commands.view.view = Transpose(view.view);
-	commands.view.projection = Transpose(view.projection);
-	commands.view.viewProjection = Transpose(viewProjection);
-	commands.view.inverseVP = Transpose(inverseVP);
-	commands.view.cameraWorldPos = view.cameraWorldPos;
-	commands.view.viewportDim = {
-		static_cast<float>(view.extent.width),
-		static_cast<float>(view.extent.height)
-	};
+	commands.view = *viewConstants;
 
 	// Commands own their transforms and retain only managed geometry handles.
 	commands.draws.reserve(frame.staticMeshes.size());

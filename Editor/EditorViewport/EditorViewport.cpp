@@ -53,7 +53,8 @@ bool EditorViewport::IsReady() const noexcept
 		&& renderTargetView_ != nullptr
 		&& shaderResourceView_ != nullptr
 		&& depthTexture_ != nullptr
-		&& depthStencilView_ != nullptr;
+		&& depthStencilView_ != nullptr
+		&& readOnlyDepthStencilView_ != nullptr;
 }
 
 Extent2D EditorViewport::GetExtent() const noexcept
@@ -89,6 +90,12 @@ EditorViewport::GetDepthStencilView() const noexcept
 	return depthStencilView_.Get();
 }
 
+ID3D11DepthStencilView*
+EditorViewport::GetReadOnlyDepthStencilView() const noexcept
+{
+	return readOnlyDepthStencilView_.Get();
+}
+
 bool EditorViewport::CreateResources(Extent2D extent)
 {
 	if (!device_)
@@ -116,6 +123,9 @@ bool EditorViewport::CreateResources(Extent2D extent)
 
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilView>
 		newDepthStencilView;
+
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilView>
+		newReadOnlyDepthStencilView;
 
 	// Render target texture and render target view
 	D3D11_TEXTURE2D_DESC textureDesc{};
@@ -174,6 +184,20 @@ bool EditorViewport::CreateResources(Extent2D extent)
 		return false;
 	}
 
+	// Overlay passes test against the same depth texture without modifying it.
+	D3D11_DEPTH_STENCIL_VIEW_DESC readOnlyDepthViewDesc{};
+	readOnlyDepthViewDesc.Format = depthDesc.Format;
+	readOnlyDepthViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	readOnlyDepthViewDesc.Flags = D3D11_DSV_READ_ONLY_DEPTH;
+	hr = device_->CreateDepthStencilView(
+		newDepthTexture.Get(), &readOnlyDepthViewDesc, newReadOnlyDepthStencilView.GetAddressOf());
+	if (FAILED(hr))
+	{
+		GILGAMESH_LOG(Core, Error, "Failed to create read-only depth stencil view: HRESULT=0x{:X}", hr);
+		return false;
+	}
+
+	// Commit only after both depth views and all color resources are ready.
 	colorTexture_ =
 		std::move(newColorTexture);
 
@@ -189,6 +213,9 @@ bool EditorViewport::CreateResources(Extent2D extent)
 	depthStencilView_ =
 		std::move(newDepthStencilView);
 
+	readOnlyDepthStencilView_ =
+		std::move(newReadOnlyDepthStencilView);
+
 	return true;
 }
 
@@ -197,6 +224,7 @@ void EditorViewport::ReleaseResources() noexcept
 	renderTargetView_.Reset();
 	shaderResourceView_.Reset();
 	depthStencilView_.Reset();
+	readOnlyDepthStencilView_.Reset();
 	colorTexture_.Reset();
 	depthTexture_.Reset();
 	extent_ = {};

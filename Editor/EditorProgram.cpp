@@ -6,6 +6,7 @@
 #include "EditorUI/Workspace/EditorWorkspace.h"
 #include "EditorViewport/EditorViewport.h"
 #include "EditorViewport/EditorViewportClient.h"
+#include "Editor/Render/EditorGridPass.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/ECS/Component/MeshComponent.h"
 #include "Engine/ECS/Component/TransformComponent.h"
@@ -50,6 +51,7 @@ public:
 
     // Viewport
     EditorViewportClient viewportClient;
+    EditorGridPass gridPass; // Editor-only overlay state and view/settings constant buffers.
     RenderGraph renderGraph;
 
     // Persistent scene state belongs to the world; the group owns the extractor.
@@ -138,6 +140,15 @@ bool EditorProgram::Initialize(EngineServices& services)
 
     // Initialize editor viewport
     impl_->viewportClient.Initialize(services.renderer.GetDevice());
+
+    // The grid is an editor overlay and shares only camera data with scene rendering.
+    if (!impl_->gridPass.Initialize(
+        services.renderer.GetDevice(), services.renderer.GetShaderManager()))
+    {
+        GILGAMESH_LOG(Renderer, Error, "Failed to initialize the editor grid pass");
+        impl_.reset();
+        return false;
+    }
 
     // Register the world-owned extractor before creating any presentation content.
     auto extractionSystem = std::make_unique<RenderExtractionSystem>();
@@ -276,6 +287,8 @@ void EditorProgram::Render(RenderContext& context)
             importedDepth.texture = depthTexture;
             importedDepth.writableDepthStencilView =
                 viewport.GetDepthStencilView();
+            importedDepth.readOnlyDepthStencilView =
+                viewport.GetReadOnlyDepthStencilView();
 
             const RenderGraphTextureHandle colorTarget =
                 renderGraph.ImportTexture(
@@ -307,6 +320,12 @@ void EditorProgram::Render(RenderContext& context)
             if (!renderer.AddScenePasses(renderGraph, colorTarget, depthTarget, *frame, renderView))
             {
                 throw std::runtime_error("Failed to prepare editor scene draw commands");
+            }
+
+            // Load scene color/depth and blend the world grid without changing mesh depth.
+            if (!impl_->gridPass.AddToGraph(renderGraph, colorTarget, depthTarget, renderView))
+            {
+                throw std::runtime_error("Failed to prepare the editor grid pass");
             }
 
             const bool compiled =

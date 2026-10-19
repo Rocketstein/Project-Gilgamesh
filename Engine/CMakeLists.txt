@@ -90,6 +90,7 @@ target_sources (GilgameshEngine
 
 		Render/Renderer/Renderer.cpp
 		Render/Renderer/Renderer.h
+		Render/Renderer/RenderView.cpp
 		Render/Renderer/RenderView.h
 		Render/Renderer/RenderFrameData.h
 

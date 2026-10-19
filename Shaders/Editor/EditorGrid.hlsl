@@ -7,7 +7,7 @@ struct PSOutput
     float depth : SV_Depth;
 };
 
-// Draws a full screen quad
+// Draws a full-screen triangle without a vertex buffer.
 float4 VSMain(uint vertexID : SV_VertexID) : SV_POSITION
 {
     float2 corner = float2(

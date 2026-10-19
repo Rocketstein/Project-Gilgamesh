@@ -9,7 +9,7 @@ belongs in separate evolution documents.
 
 The current executable is an editor prototype. It opens one Win32 window,
 initializes the D3D11 renderer, runs one `EditorProgram`, draws the primitive
-cube into an offscreen editor viewport, and hosts an ImGui editor workspace.
+cube and editor grid into an offscreen viewport, and hosts an ImGui workspace.
 The developer console and Output Log are optional editor diagnostics.
 
 ## System overview
@@ -81,10 +81,11 @@ placeholder.
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
 | Renderer-facing mesh resource management | `Engine/Render/Mesh/MeshManager.*` |
 | Fixed vertex-color command preparation and drawing | `Engine/Render/Passes/VertexColorMeshPass.*` |
-| Renderer-facing snapshots and camera data | `Engine/Render/Renderer/RenderFrameData.h`, `RenderView.h` |
+| Renderer-facing snapshots and shared camera constants | `Engine/Render/Renderer/RenderFrameData.h`, `RenderView.*` |
 | Active-scene extraction system | `Engine/ECS/System/RenderExtractionSystem.*` |
 | Texture dependency, pass-state, and execution orchestration | `Engine/Render/RenderGraph/` |
 | Editor implementation and mesh submission | `Editor/EditorProgram.*` |
+| Procedural editor-grid overlay | `Editor/Render/EditorGridPass.*` |
 | Editor viewport presentation | `Editor/EditorUI/Panels/EditorViewportPanel.*` |
 | ImGui backend integration | `Editor/EditorUI/Runtime/ImGuiIntegration.*` |
 | Console implementation | `Editor/Console/` |
@@ -129,6 +130,7 @@ destructor are defined in `EditorProgram.cpp`, where `Impl` is complete.
 The implementation owns:
 
 - The editor viewport client, world, temporary demo mesh handle, and frame render graph
+- `EditorGridPass`, including its draw setup and view/settings constant buffers
 - A borrowed pointer to the extraction system owned by the world's extraction group
 - ImGui integration, the editor workspace, and the viewport panel
 - The console buffer, sink registration, configuration, Output Log panel,
@@ -185,6 +187,7 @@ WinMain
           -> optionally create console state and register ConsoleLogSink
           -> initialize ImGui against the engine window and D3D11 device
           -> initialize the editor viewport
+          -> initialize EditorGridPass with the renderer's shader manager
           -> register and enable RenderExtractionSystem in the world
           -> upload the demo cube through MeshManager
           -> create an active scene and a transform/mesh entity
@@ -264,13 +267,17 @@ World::PreparePresentation(realDeltaTime)
   -> RenderExtractionSystem
   -> TakeFrame(), assign the engine frame number
   -> build RenderView from the editor camera and viewport extent
-  -> import viewport color and depth resources
+  -> import viewport color and depth resources, including a read-only DSV
   -> Renderer::AddScenePasses
       -> VertexColorMeshPass::PrepareCommands
       -> graph owns a moved MeshPassCommands value in its execute callback
+  -> EditorGridPass::AddToGraph
+      -> graph owns copied view and editor-grid constants
   -> RenderGraph::Compile / Execute
-      -> clear and bind attachments
+      -> clear and bind the mesh attachments
       -> VertexColorMeshPass::ExecuteCommands
+      -> load scene color and bind read-only scene depth
+      -> EditorGridPass uploads constants and draws a full-screen triangle
 ```
 
 A hidden viewport discards pending extraction instead of retaining a previous
@@ -321,7 +328,8 @@ static meshes behind generation-checked handles. The pass owns its fixed
 vertex-color `DrawSetup` and separate view and object constant buffers.
 
 `PrepareCommands(frame, view, meshes)` is CPU-only. It validates the viewport
-and invertible view-projection matrix, copies shader-ready camera constants,
+and invertible view-projection matrix through the shared CPU-only
+`PrepareViewConstants(view)` helper, copies shader-ready camera constants,
 and prepares one `MeshDrawCommand` for each currently valid extracted mesh.
 Each command owns a transposed model matrix and a `MeshHandle`; it does not
 retain an ECS reference or a raw `StaticMesh*`. Preparation preserves extraction
@@ -350,9 +358,25 @@ no longer contain a combined MVP matrix.
 The editor owns the offscreen viewport and world. Temporary cube geometry is
 uploaded through `MeshManager`; its instance transform and mesh handle live in
 ECS components. `EditorViewport` exposes borrowed pointers to its native color
-and depth resources without depending on `RenderGraph`; `EditorProgram` imports
-them each frame. `EditorViewportPanel` measures and presents the viewport texture
+and depth resources, with writable and read-only views of the same depth texture,
+without depending on `RenderGraph`; `EditorProgram` imports them each frame.
+All replacement resources must be created before a resize publishes them.
+`EditorViewportPanel` measures and presents the viewport texture
 but does not own scene rendering.
+
+`EditorProgram::Impl` owns `EditorGridPass` and registers it after the mesh pass.
+The grid loads scene color and depth, uses a read-only DSV with `LESS_EQUAL`
+depth testing, disables depth writes, and alpha-blends its result. Its shader
+reconstructs intersections with the XY plane at Z=0 from a procedural
+full-screen triangle submitted with `Draw(3, 0)`. An empty mesh snapshot still
+clears both attachments before the grid runs, so the grid remains visible
+without an active scene.
+
+The grid uses the same `PrepareViewConstants` helper as the mesh pass and owns
+separate `b0 FrameConstants` and `b1 EditorConstants` GPU buffers. Its graph
+callback captures CPU constants by value and uploads them only at execution.
+The pass must outlive its callbacks; resetting the graph before resize or
+shutdown releases those callbacks and imported pointers first.
 
 `RenderGraph` declares texture attachments and shader reads. `Compile(device)`
 validates those declarations, derives a deterministic dependency order, and
@@ -382,9 +406,9 @@ The vertex-color pass is the first concrete consumer of ECS render extraction.
 There is no separate `MeshDrawExecutor`; command preparation and execution are
 two responsibilities within the same pass. Materials, mesh bounds, visibility
 culling, sorting, instancing, a general world renderer, and an API-independent
-RHI remain unimplemented. The existing `EditorGridLinePass` C++ stub remains
-unconnected; no grid submission or read-only viewport DSV is added by this mesh
-path.
+RHI remain unimplemented. `EditorGridPass` replaces the former
+`EditorGridLinePass` stub and is composed by the editor rather than the world
+or general scene renderer.
 
 ## ECS scheduling and render extraction
 
