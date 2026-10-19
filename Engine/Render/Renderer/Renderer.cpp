@@ -1,11 +1,5 @@
 #include "Renderer.h"
 
-#include <stdexcept>
-#include <utility>
-
-#include "Engine/Core/Logging/Logger.h"
-#include "Engine/Render/RenderGraph/RenderGraph.h"
-
 namespace {
     const Color4 clearColor = Color4{ 0.1f, 0.12f, 0.16f };
 } // Anonymous namespace
@@ -43,14 +37,6 @@ bool Renderer::Initialize(RendererDesc desc)
 	// Initialize renderer-owned mesh resources after the D3D11 device.
 	if (!meshManager_.Initialize(device_.GetDevice())) return false;
 
-	// Initialize the mesh pass after its shaders and device.
-	if (!vertexColorMeshPass_.Initialize(
-		device_.GetDevice(),
-		shaderManager_))
-	{
-		return false;
-	}
-
     rendererDesc_ = desc;
 
 	return true;
@@ -86,47 +72,6 @@ bool Renderer::BeginFrame()
 void Renderer::BindOutput() noexcept
 {
     surface_.Bind(device_.GetDeviceContext());
-}
-
-bool Renderer::AddScenePasses(
-	RenderGraph& graph,
-	RenderGraphTextureHandle color,
-	RenderGraphTextureHandle depth,
-	const RenderFrameData& frame,
-	const RenderView& view) const
-{
-	// Reject invalid submissions before adding any declarations to the graph.
-	if (!vertexColorMeshPass_.IsInitialized() ||
-		!graph.IsValid(color) || !graph.IsValid(depth))
-	{
-		GILGAMESH_LOG(Renderer, Error,
-			"Cannot add a mesh pass without initialized resources and valid graph targets");
-		return false;
-	}
-	auto commands = vertexColorMeshPass_.PrepareCommands(frame, view, meshManager_);
-	if (!commands) return false;
-
-	// The graph owns the prepared values; extraction data may be released now.
-	graph.AddPass(
-		"VertexColorMeshes",
-		[color, depth](GraphPassBuilder& builder)
-		{
-			builder.SetColorTarget(0, color, RenderGraphLoadOp::Clear, clearColor);
-			builder.SetDepthTarget(
-				depth,
-				RenderGraphDepthAccess::ReadWrite,
-				RenderGraphLoadOp::Clear,
-				1.0f);
-		},
-		[this, commands = std::move(*commands)](ID3D11DeviceContext& context)
-		{
-			// RenderGraph callbacks propagate failure to the application's render boundary.
-			if (!vertexColorMeshPass_.ExecuteCommands(&context, commands, meshManager_))
-			{
-				throw std::runtime_error("Failed to execute vertex-color mesh commands");
-			}
-		});
-	return true;
 }
 
 RenderResult Renderer::EndFrame()

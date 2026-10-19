@@ -51,9 +51,8 @@ bool EditorGridPass::Initialize(ID3D11Device* device, ShaderManager& shaders)
 		.drawState = {
 			.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
 			.cullMode = D3D11_CULL_NONE,
-			.depthTestEnabled = true,
+			.depthTestEnabled = false,
 			.depthWriteEnabled = false,
-			.depthComparison = D3D11_COMPARISON_LESS_EQUAL,
 			.blendEnabled = true
 		}
 	};
@@ -75,41 +74,41 @@ bool EditorGridPass::Initialize(ID3D11Device* device, ShaderManager& shaders)
 	return true;
 }
 
-bool EditorGridPass::AddToGraph(
-	RenderGraph& graph,
-	RenderGraphTextureHandle color,
-	RenderGraphTextureHandle depth,
-	const RenderView& view,
-	const EditorConstants& settings) const
+// Keep invalid shader arithmetic out of future submissions while preserving current settings.
+bool EditorGridPass::SetSettings(const EditorConstants& settings)
 {
-	// Fail before adding declarations when this submission cannot be executed.
-	if (!IsInitialized() || !graph.IsValid(color) || !graph.IsValid(depth))
-	{
-		GILGAMESH_LOG(Renderer, Error,
-			"Cannot add an editor grid without initialized resources and valid graph targets");
-		return false;
-	}
 	if (!IsGridSettingsValid(settings))
 	{
-		GILGAMESH_LOG(Renderer, Error, "Cannot add an editor grid with invalid settings");
+		GILGAMESH_LOG(Renderer, Error, "Cannot set an editor grid with invalid settings");
 		return false;
 	}
-	const auto viewConstants = PrepareViewConstants(view);
+	settings_ = settings;
+	return true;
+}
+
+bool EditorGridPass::AddToGraph(RenderGraph& graph, const RenderPassContext& context) const
+{
+	// Fail before adding declarations when this submission cannot be executed.
+	if (!IsInitialized() || !graph.IsValid(context.color))
+	{
+		GILGAMESH_LOG(Renderer, Error,
+			"Cannot add an editor grid without initialized resources and a valid color target");
+		return false;
+	}
+	const auto viewConstants = PrepareViewConstants(context.view);
 	if (!viewConstants) return false;
 
-	// Load the rendered scene and test against its depth without modifying it.
+	// Blend over the cleared background; later opaque meshes cover this color.
 	graph.AddPass(
 		"EditorGrid",
-		[color, depth](GraphPassBuilder& builder)
+		[color = context.color](GraphPassBuilder& builder)
 		{
 			builder.SetColorTarget(0, color, RenderGraphLoadOp::Load);
-			builder.SetDepthTarget(
-				depth, RenderGraphDepthAccess::ReadOnly, RenderGraphLoadOp::Load);
 		},
-		[this, constants = *viewConstants, settings](ID3D11DeviceContext& context)
+		[this, constants = *viewConstants, settings = settings_](ID3D11DeviceContext& deviceContext)
 		{
 			// Each callback owns its CPU data until this graph is reset.
-			if (!ExecuteCommands(&context, constants, settings))
+			if (!ExecuteCommands(&deviceContext, constants, settings))
 			{
 				throw std::runtime_error("Failed to execute editor grid commands");
 			}
@@ -141,7 +140,7 @@ bool EditorGridPass::ExecuteCommands(
 	context->PSSetConstantBuffers(0, 1, &viewBuffer);
 	context->PSSetConstantBuffers(1, 1, &editorBuffer);
 
-	// The pixel shader reconstructs Z=0 intersections and outputs their real depth.
+	// The pixel shader reconstructs Z=0 intersections only to shade the background.
 	context->Draw(3, 0);
 	return true;
 }

@@ -4,6 +4,7 @@
 #include "Engine/ECS/System/RenderExtractionSystem.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Passes/VertexColorMeshPass.h"
+#include "Engine/Render/Passes/ViewportClearPass.h"
 #include "Engine/Render/RenderGraph/RenderGraph.h"
 #include "Tests/TestFramework.h"
 
@@ -172,15 +173,21 @@ namespace
 			.extent = { 64, 64 },
 			.format = DXGI_FORMAT_D32_FLOAT
 		});
+		ViewportClearPass clear{ Color4{ 0.0f, 0.0f, 0.0f, 1.0f } };
+		ShaderManager shaders;
+		RenderFrameData frame;
+		const RenderView view{ .extent = { 64, 64 } };
+		if (!clear.Initialize(device.device.Get(), shaders)) return std::nullopt;
+		if (!clear.AddToGraph(graph, { color, depth, frame, view, meshes }))
+			return std::nullopt;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> output;
 		graph.AddPass(
 			"VertexColorMeshes",
 			[=](GraphPassBuilder& builder)
 			{
-				builder.SetColorTarget(0, color, RenderGraphLoadOp::Clear,
-					Color4{ 0.0f, 0.0f, 0.0f, 1.0f });
+				builder.SetColorTarget(0, color, RenderGraphLoadOp::Load);
 				builder.SetDepthTarget(depth, RenderGraphDepthAccess::ReadWrite,
-					RenderGraphLoadOp::Clear);
+					RenderGraphLoadOp::Load);
 			},
 			[&pass, &meshes, &output, commands = std::move(commands)]
 			(ID3D11DeviceContext& context)
@@ -394,7 +401,7 @@ GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "RendersExtractedWorldAfterS
 		"world extraction must reach an actual indexed draw through graph execution");
 }
 
-GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "SkipsMeshesRemovedAfterPreparationAndClearsEmptyPasses")
+GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "SkipsStaleMeshesAndPreservesExplicitClear")
 {
 	VertexColorMeshPass pass;
 	ShaderManager shaders;
@@ -416,7 +423,7 @@ GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "SkipsMeshesRemovedAfterPrep
 	GILGAMESH_CHECK_MESSAGE(stalePixel && *stalePixel == black,
 		"execution must not draw a replacement resource through a stale command handle");
 
-	// An empty extraction still runs the attachment clear instead of preserving old content.
+	// An empty extraction preserves the clear submitted by a separate viewport pass.
 	frame.staticMeshes.clear();
 	auto empty = pass.PrepareCommands(frame, view, meshes);
 	GILGAMESH_CHECK_MESSAGE(empty && empty->draws.empty(),
@@ -424,7 +431,7 @@ GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "SkipsMeshesRemovedAfterPrep
 	if (!empty) return;
 	const auto emptyPixel = RenderCenterPixel(pass, meshes, std::move(*empty));
 	GILGAMESH_CHECK_MESSAGE(emptyPixel && *emptyPixel == black,
-		"a graph pass with no mesh draws must still clear its color target");
+		"an empty mesh pass must preserve the independent viewport clear");
 }
 
 GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "UploadsEachViewWhenItsCommandsExecute")

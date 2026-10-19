@@ -4,6 +4,7 @@
 #include "Engine/ECS/System/RenderExtractionSystem.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Passes/VertexColorMeshPass.h"
+#include "Engine/Render/Passes/ViewportClearPass.h"
 #include "Engine/Render/RenderGraph/RenderGraph.h"
 #include "Tests/TestFramework.h"
 
@@ -58,7 +59,7 @@ namespace
 		}.parent_path() / L"Shaders";
 	}
 
-	// Initializes the real overlay resources and viewport attachments.
+	// Initializes the real background-grid resources and viewport attachments.
 	bool InitializePass(Gilgamesh::Testing::TestContext& testContext,
 		EditorGridPass& pass, ShaderManager& shaders, EditorViewport& viewport,
 		Extent2D extent = { 64, 64 })
@@ -100,7 +101,7 @@ namespace
 		};
 	}
 
-	// Imports the same viewport depth texture with both attachment access modes.
+	// Imports only writable depth; a background grid must not need a read-only view.
 	std::pair<RenderGraphTextureHandle, RenderGraphTextureHandle> ImportViewport(
 		RenderGraph& graph, const EditorViewport& viewport)
 	{
@@ -114,32 +115,24 @@ namespace
 			.extent = viewport.GetExtent(), .format = DXGI_FORMAT_D32_FLOAT
 		}, {
 			.texture = viewport.GetDepthTexture(),
-			.writableDepthStencilView = viewport.GetDepthStencilView(),
-			.readOnlyDepthStencilView = viewport.GetReadOnlyDepthStencilView()
+			.writableDepthStencilView = viewport.GetDepthStencilView()
 		});
 		return { color, depth };
 	}
 
-	// Empty mesh lists still clear attachments before the independently drawn grid.
-	void AddMeshPass(RenderGraph& graph, RenderGraphTextureHandle color,
-		RenderGraphTextureHandle depth, const VertexColorMeshPass& pass,
-		const MeshManager& meshes, MeshPassCommands commands)
+	// Exercises the same interface used by an owned viewport pass list.
+	bool AddPass(RenderGraph& graph, RenderGraphTextureHandle color,
+		RenderGraphTextureHandle depth, const IRenderPass& pass,
+		const RenderFrameData& frame, const RenderView& view,
+		const MeshManager& meshes)
 	{
-		graph.AddPass("SceneMeshes", [=](GraphPassBuilder& builder)
-		{
-			builder.SetColorTarget(0, color, RenderGraphLoadOp::Clear,
-				Color4{ 0.0f, 0.0f, 1.0f, 1.0f });
-			builder.SetDepthTarget(depth, RenderGraphDepthAccess::ReadWrite,
-				RenderGraphLoadOp::Clear);
-		}, [&pass, &meshes, commands = std::move(commands)]
-		(ID3D11DeviceContext& context)
-		{
-			if (!pass.ExecuteCommands(&context, commands, meshes))
-				throw std::runtime_error("the scene mesh pass failed");
+		return pass.AddToGraph(graph, {
+			.color = color, .depth = depth, .frame = frame,
+			.view = view, .meshes = meshes
 		});
 	}
 
-	// Uses a uniform foreground triangle to test the grid's projected fragment depth.
+	// Places geometry on either side of the grid plane with a uniform green color.
 	MeshHandle CreateGreenTriangle(MeshManager& meshes, float z)
 	{
 		StaticMeshData data;
@@ -205,23 +198,27 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "RejectsInvalidInputsWithoutAddin
 	if (!InitializePass(testContext, pass, shaders, viewport)) return;
 	RenderGraph graph;
 	const auto [color, depth] = ImportViewport(graph, viewport);
+	RenderFrameData frame;
+	MeshManager meshes;
 	RenderView view = MakeGridView(viewport.GetExtent());
 	EditorConstants settings = MakeGridSettings();
 	settings.gridSpacing = 0.0f;
-	GILGAMESH_CHECK_MESSAGE(!pass.AddToGraph(graph, color, depth, view, settings),
-		"zero grid spacing must be rejected before registering GPU work");
+	GILGAMESH_CHECK_MESSAGE(!pass.SetSettings(settings),
+		"zero grid spacing must not replace the grid's valid configuration");
 	settings = MakeGridSettings();
 	settings.gridWidth = std::numeric_limits<float>::quiet_NaN();
-	GILGAMESH_CHECK_MESSAGE(!pass.AddToGraph(graph, color, depth, view, settings),
-		"non-finite grid settings must not reach the shader");
+	GILGAMESH_CHECK_MESSAGE(!pass.SetSettings(settings),
+		"non-finite grid settings must not replace the grid's valid configuration");
 	settings = MakeGridSettings();
+	GILGAMESH_CHECK_MESSAGE(pass.SetSettings(settings),
+		"valid editor settings must be accepted before graph registration");
 	view.projection(0, 0) = 0.0f;
-	GILGAMESH_CHECK_MESSAGE(!pass.AddToGraph(graph, color, depth, view, settings) &&
+	GILGAMESH_CHECK_MESSAGE(!AddPass(graph, color, depth, pass, frame, view, meshes) &&
 		graph.GetPassCount() == 0,
-		"invalid settings or a singular camera must leave graph declarations unchanged");
+		"a singular camera must leave graph declarations unchanged");
 }
 
-GILGAMESH_TEST("Editor.Render.EditorGridPass", "BlendsOverEmptyWorldAndPreservesSceneDepth")
+GILGAMESH_TEST("Editor.Render.EditorGridPass", "BlendsAfterClearWithoutBindingOrChangingDepth")
 {
 	EditorGridPass grid;
 	ShaderManager shaders;
@@ -246,24 +243,26 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "BlendsOverEmptyWorldAndPreserves
 		"a world without an active scene must still publish an empty render snapshot");
 	if (!frame) return;
 	const RenderView view = MakeGridView(viewport.GetExtent());
-	auto commands = meshPass.PrepareCommands(*frame, view, meshes);
-	if (!commands) return;
+	ViewportClearPass clear{ Color4{ 0.0f, 0.0f, 1.0f, 1.0f } };
+	GILGAMESH_CHECK_MESSAGE(clear.Initialize(device.device.Get(), shaders) &&
+		grid.SetSettings(MakeGridSettings()),
+		"the independent clear and grid passes must initialize");
 	RenderGraph graph;
 	const auto [color, depth] = ImportViewport(graph, viewport);
-	AddMeshPass(graph, color, depth, meshPass, meshes, std::move(*commands));
-	GILGAMESH_CHECK_MESSAGE(grid.AddToGraph(graph, color, depth, view, MakeGridSettings()),
-		"the grid overlay must be registered after scene meshes");
+	GILGAMESH_CHECK_MESSAGE(AddPass(graph, color, depth, clear, *frame, view, meshes) &&
+		AddPass(graph, color, depth, grid, *frame, view, meshes),
+		"the grid must follow the independent viewport clear");
 	GILGAMESH_CHECK_MESSAGE(graph.Compile(device.device.Get()) &&
 		graph.Execute(device.context.Get()),
-		"writable scene depth and read-only grid depth must compile and execute together");
+		"the clear and background-grid passes must compile and execute together");
 	const auto pixel = ReadCenterPixel<std::array<std::uint8_t, 4>>(viewport.GetColorTexture());
 	const auto retainedDepth = ReadCenterPixel<float>(viewport.GetDepthTexture());
 	GILGAMESH_CHECK_MESSAGE(pixel && HasColor(*pixel, 128, 0, 128),
-		"a half-opacity red grid must blend over the blue empty-scene clear");
+		"a half-opacity red grid must blend over the blue viewport clear");
 	GILGAMESH_CHECK_MESSAGE(retainedDepth && *retainedDepth == 1.0f,
-		"the grid must retain scene depth instead of writing its own projected depth");
+		"the grid must retain the clear depth value");
 
-	// The overlay must replace mesh draw state and bind its own procedural shaders.
+	// The background grid supplies its own state and needs no depth attachment.
 	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthState;
 	Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizer;
@@ -273,7 +272,7 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "BlendsOverEmptyWorldAndPreserves
 	device.context->RSGetState(rasterizer.GetAddressOf());
 	device.context->IAGetInputLayout(layout.GetAddressOf());
 	GILGAMESH_CHECK_MESSAGE(depthState && blendState && rasterizer && !layout,
-		"a vertex-ID overlay must supply complete fixed state without a mesh input layout");
+		"a vertex-ID grid must supply complete fixed state without a mesh input layout");
 	if (depthState && blendState && rasterizer)
 	{
 		D3D11_DEPTH_STENCIL_DESC depthDescription{};
@@ -282,17 +281,31 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "BlendsOverEmptyWorldAndPreserves
 		depthState->GetDesc(&depthDescription);
 		blendState->GetDesc(&blendDescription);
 		rasterizer->GetDesc(&rasterDescription);
-		GILGAMESH_CHECK_MESSAGE(depthDescription.DepthEnable &&
-			depthDescription.DepthWriteMask == D3D11_DEPTH_WRITE_MASK_ZERO &&
-			depthDescription.DepthFunc == D3D11_COMPARISON_LESS_EQUAL &&
+		// D3D11 may normalize the unused write mask while depth testing is disabled.
+		// The depth readback above checks that the grid actually preserves the texture.
+		GILGAMESH_CHECK_MESSAGE(!depthDescription.DepthEnable &&
 			blendDescription.RenderTarget[0].BlendEnable &&
 			rasterDescription.CullMode == D3D11_CULL_NONE,
-			"grid drawing must use read-only LESS_EQUAL depth, alpha blending, and no culling");
+			"grid drawing must disable depth testing while using alpha blending and no culling");
 	}
+
+	// Even an empty mesh pass must load and preserve the preceding background.
+	graph.Reset();
+	const auto [reloadedColor, reloadedDepth] = ImportViewport(graph, viewport);
+	GILGAMESH_CHECK_MESSAGE(
+		AddPass(graph, reloadedColor, reloadedDepth, clear, *frame, view, meshes) &&
+		AddPass(graph, reloadedColor, reloadedDepth, grid, *frame, view, meshes) &&
+		AddPass(graph, reloadedColor, reloadedDepth, meshPass, *frame, view, meshes) &&
+		graph.Compile(device.device.Get()) && graph.Execute(device.context.Get()),
+		"Clear -> Grid -> Mesh must work for an empty extracted scene");
+	const auto preserved = ReadCenterPixel<std::array<std::uint8_t, 4>>(
+		viewport.GetColorTexture());
+	GILGAMESH_CHECK_MESSAGE(preserved && HasColor(*preserved, 128, 0, 128),
+		"an empty mesh pass must preserve the grid instead of clearing it again");
 	device.context->ClearState();
 }
 
-GILGAMESH_TEST("Editor.Render.EditorGridPass", "UsesProjectedGridDepthToOccludeAgainstMeshes")
+GILGAMESH_TEST("Editor.Render.EditorGridPass", "OpaqueMeshesCoverGridOnBothSidesOfItsPlane")
 {
 	EditorGridPass grid;
 	ShaderManager shaders;
@@ -303,31 +316,32 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "UsesProjectedGridDepthToOccludeA
 	MeshManager meshes;
 	GILGAMESH_CHECK_MESSAGE(meshes.Initialize(device.device.Get()) &&
 		meshPass.Initialize(device.device.Get(), shaders),
-		"the occluding geometry must use the real mesh pass");
+		"the opaque geometry must use the real mesh pass");
+	ViewportClearPass clear{ Color4{ 0.0f, 0.0f, 1.0f, 1.0f } };
+	GILGAMESH_CHECK_MESSAGE(clear.Initialize(device.device.Get(), shaders) &&
+		grid.SetSettings(MakeGridSettings()),
+		"the independent viewport clear and grid must initialize");
 	const RenderView view = MakeGridView(viewport.GetExtent());
 	for (float meshZ : { -0.25f, 0.25f })
 	{
-		// A foreground triangle hides the grid; a background triangle receives the blend.
+		// Both triangles draw after the grid regardless of their side of its plane.
 		const MeshHandle mesh = CreateGreenTriangle(meshes, meshZ);
 		RenderFrameData frame;
 		frame.staticMeshes.push_back({ mesh, Matrix4::Identity() });
-		auto commands = meshPass.PrepareCommands(frame, view, meshes);
-		if (!commands) return;
 		RenderGraph graph;
 		const auto [color, depth] = ImportViewport(graph, viewport);
-		AddMeshPass(graph, color, depth, meshPass, meshes, std::move(*commands));
-		GILGAMESH_CHECK_MESSAGE(grid.AddToGraph(graph, color, depth, view, MakeGridSettings()) &&
+		GILGAMESH_CHECK_MESSAGE(AddPass(graph, color, depth, clear, frame, view, meshes) &&
+			AddPass(graph, color, depth, grid, frame, view, meshes) &&
+			AddPass(graph, color, depth, meshPass, frame, view, meshes) &&
 			graph.Compile(device.device.Get()) && graph.Execute(device.context.Get()),
-			"the mesh and grid passes must execute with their shared depth texture");
+			"Clear -> Grid -> Mesh must execute through the common pass interface");
 		const auto pixel = ReadCenterPixel<std::array<std::uint8_t, 4>>(viewport.GetColorTexture());
 		const auto retainedDepth = ReadCenterPixel<float>(viewport.GetDepthTexture());
-		const bool foreground = meshZ < 0.0f;
-		GILGAMESH_CHECK_MESSAGE(pixel && (foreground ? HasColor(*pixel, 0, 255, 0) :
-			HasColor(*pixel, 128, 128, 0)),
-			"grid fragment depth must hide behind foreground geometry and blend over background geometry");
+		GILGAMESH_CHECK_MESSAGE(pixel && HasColor(*pixel, 0, 255, 0),
+			"both foreground and background opaque meshes must cover the background grid");
 		GILGAMESH_CHECK_MESSAGE(retainedDepth &&
 			std::abs(*retainedDepth - (meshZ + 0.5f)) < 1e-5f,
-			"both visible and occluded grid fragments must leave mesh depth intact");
+			"the grid must not interfere with either mesh's normal depth writes");
 		device.context->ClearState();
 	}
 }
@@ -360,11 +374,15 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "KeepsQueuedViewsAndSettingsIndep
 	}
 	RenderView view = MakeGridView(firstViewport.GetExtent());
 	EditorConstants settings = MakeGridSettings();
-	GILGAMESH_CHECK_MESSAGE(grid.AddToGraph(graph, firstColor, firstDepth, view, settings),
+	RenderFrameData frame;
+	MeshManager meshes;
+	GILGAMESH_CHECK_MESSAGE(grid.SetSettings(settings) &&
+		AddPass(graph, firstColor, firstDepth, grid, frame, view, meshes),
 		"the first view must retain its own camera and red settings");
 	view = MakeGridView(secondViewport.GetExtent());
 	settings.gridColor = { 0.0f, 1.0f, 0.0f, 1.0f };
-	GILGAMESH_CHECK_MESSAGE(grid.AddToGraph(graph, secondColor, secondDepth, view, settings),
+	GILGAMESH_CHECK_MESSAGE(grid.SetSettings(settings) &&
+		AddPass(graph, secondColor, secondDepth, grid, frame, view, meshes),
 		"the second view must retain its own camera and green settings");
 	view = {};
 	settings = {};
@@ -416,10 +434,13 @@ GILGAMESH_TEST("Editor.Render.EditorGridPass", "RecreatesMatchingReadOnlyDepthVi
 		builder.SetDepthTarget(depth, RenderGraphDepthAccess::ReadWrite,
 			RenderGraphLoadOp::Clear);
 	}, [](ID3D11DeviceContext&) {});
-	GILGAMESH_CHECK_MESSAGE(grid.AddToGraph(graph, color, depth,
-		MakeGridView(viewport.GetExtent()), MakeGridSettings()) &&
+	RenderFrameData frame;
+	MeshManager meshes;
+	GILGAMESH_CHECK_MESSAGE(grid.SetSettings(MakeGridSettings()) &&
+		AddPass(graph, color, depth, grid, frame,
+			MakeGridView(viewport.GetExtent()), meshes) &&
 		graph.Compile(device.device.Get()) && graph.Execute(device.context.Get()),
-		"a resized viewport must still support writable mesh and read-only grid attachments");
+		"a resized viewport must support its clear and background-grid attachments");
 	graph.Reset();
 	device.context->ClearState();
 	viewport.Shutdown();

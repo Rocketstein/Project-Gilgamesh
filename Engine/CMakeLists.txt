@@ -85,6 +85,9 @@ target_sources (GilgameshEngine
 		Render/RenderGraph/GraphPassBuilder.h
 
 
+		Render/Passes/IRenderPass.h
+		Render/Passes/ViewportClearPass.cpp
+		Render/Passes/ViewportClearPass.h
 		Render/Passes/VertexColorMeshPass.cpp
 		Render/Passes/VertexColorMeshPass.h
 

@@ -1,12 +1,6 @@
 #include "Common/Functions.hlsli"
 #include "Common/ConstantBuffer.hlsli"
 
-struct PSOutput
-{
-    float4 color : SV_TARGET;
-    float depth : SV_Depth;
-};
-
 // Draws a full-screen triangle without a vertex buffer.
 float4 VSMain(uint vertexID : SV_VertexID) : SV_POSITION
 {
@@ -16,7 +10,7 @@ float4 VSMain(uint vertexID : SV_VertexID) : SV_POSITION
     return float4(corner, 0.0f, 1.0f);
 }
 
-PSOutput PSMain(float4 pos : SV_POSITION)
+float4 PSMain(float4 pos : SV_POSITION) : SV_TARGET
 {
     float2 UV = pos.xy / viewportDim;
     float2 NDC = float2(UV.x * 2 - 1.0f,
@@ -49,9 +43,6 @@ PSOutput PSMain(float4 pos : SV_POSITION)
         discard;
     clip(alpha - 1e-3f);
 
-    float4 projected = mul(float4(hit, 1.0f), viewProjection);
-    PSOutput output;
-    output.color = float4(gridColor.rgb, alpha);
-    output.depth = projected.z / projected.w;
-    return output;
+    // Scene meshes drawn later cover the grid regardless of the plane's depth.
+    return float4(gridColor.rgb, alpha);
 }

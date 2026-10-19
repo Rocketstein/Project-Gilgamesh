@@ -20,15 +20,16 @@ World::PreparePresentation
   -> transform systems
   -> RenderExtractionSystem
   -> RenderFrameData: mesh handles and copied world transforms
-  -> EditorProgram adds RenderView: camera and viewport
-  -> Renderer::AddScenePasses
-  -> VertexColorMeshPass::PrepareCommands
-  -> MeshPassCommands captured by value in RenderGraph
-  -> EditorGridPass::AddToGraph captures view and editor settings by value
-  -> RenderGraph binds and clears viewport attachments
-  -> VertexColorMeshPass::ExecuteCommands
-  -> DrawSetup, constant buffers, mesh binding, DrawIndexed
-  -> EditorGridPass loads scene color/depth and draws its grid overlay
+  -> EditorProgram builds RenderView: camera and viewport
+  -> EditorViewportRenderer imports targets and registers its IRenderPass list
+      -> ViewportClearPass declares color/depth clears
+      -> EditorGridPass captures view and editor settings by value
+      -> VertexColorMeshPass prepares MeshPassCommands captured by value
+  -> RenderGraph Compile / Execute: Clear -> Grid -> Mesh
+      -> clear viewport attachments
+      -> grid blends background color with no depth attachment
+      -> mesh loads color/depth, uploads constants, binds meshes, DrawIndexed
+  -> reset the graph before returning from viewport rendering
 ```
 
 Extraction separates ECS storage from renderer input. The renderer does not
@@ -95,7 +96,7 @@ Future passes may select different setups without changing geometry ownership.
 `MeshDrawCommand` owns a `MeshHandle` and `ObjectConstants`; `MeshPassCommands`
 owns `FrameConstants` and a vector of those commands. Neither structure holds
 component references or raw mesh pointers. A graph callback owns its prepared
-commands by value, while borrowing the renderer for execution. Mesh handles
+commands by value, while borrowing the pass and mesh manager for execution. Mesh handles
 belong to the renderer's own `MeshManager`.
 
 View constants are uploaded when a pass executes, so preparing another view
@@ -125,22 +126,31 @@ camera-independent snapshot, without coupling generic ECS storage to rendering.
 
 ### The graph owns attachment state and ordering
 
-`EditorProgram` owns the offscreen viewport and imports its color and depth
-resources into `RenderGraph`. `Renderer::AddScenePasses()` registers the
-`VertexColorMeshes` pass with color/depth clears and read-write depth access.
-The editor then registers `EditorGridPass`, which loads scene color and reads
-scene depth through a read-only DSV of the same depth texture. The grid uses
-`LESS_EQUAL`, disables depth writes, and alpha-blends over the mesh result.
+`EditorViewportRenderer` owns `RenderGraph` and a configurable list of
+`unique_ptr<IRenderPass>`. The interface exposes resource initialization and
+graph registration; `RenderPassContext` supplies color/depth handles plus
+borrowed frame, view, and mesh-manager inputs. `Renderer` owns backend and
+resource services, with no concrete pass member or `AddScenePasses` API.
+`CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh in editor
+composition code. The viewport module imports targets and registers this list
+without type-specific branches. It initializes from `Renderer&` or explicit
+device/context/shader/mesh services for WARP and other callers.
+
+`ViewportClearPass` clears color and depth. `EditorGridPass` loads color,
+disables depth testing/writes, and alpha-blends without a depth attachment.
+`VertexColorMeshPass` loads color/depth and uses read-write depth access, so
+opaque meshes cover the background grid on either side of its Z=0 plane.
 The graph compiles dependencies, realizes graph-owned textures, binds declared
 attachments and shader resources, performs clears, and supplies the viewport.
 The callback owns draw-local state and submission.
 
-An empty mesh list still produces the clear pass. Execution failure is
-propagated from the callback to the editor render boundary. Graph-held resource
-pointers and callbacks are discarded by `Reset()` before viewport resize or
-shutdown. The renderer's mesh pass and editor-owned grid pass must outlive any
-graph using their callbacks. Viewport resize publishes new attachments only
-after its color resources and both depth views are successfully created.
+An empty mesh list still produces the clear and grid passes. The viewport
+module catches preparation/execution failures and resets its graph before
+returning on both success and failure. It leaves no callbacks or imported
+pointers between frames, so UI-driven resize needs no external graph reset.
+Pass resources outlive the module's graph callbacks. Viewport resize publishes
+new attachments only after its color resources and both depth views are
+successfully created.
 
 The swap chain and ImGui remain outside the graph. The editor restores the
 presentation target after scene rendering and submits UI draw data whose
@@ -167,15 +177,19 @@ system. The previous `EditorPreviewScene`, `StaticMeshDrawItem`, and
 `Update()` advances the public world simulation entry point. A visible viewport
 runs `PreparePresentation()` after UI and resize decisions, takes the completed
 snapshot, assigns its engine frame number, and supplies camera data to the
-renderer. A hidden viewport discards pending output. Simulation and presentation
-remain separate so rendering can continue while simulation is paused.
+viewport renderer. A hidden viewport discards pending output. Simulation and
+presentation remain separate so rendering can continue while simulation is paused.
 
-`EditorProgram::Impl` owns and initializes `EditorGridPass` with the renderer's
-shader manager. After scene submission it adds the grid to the graph using the
-same `RenderView`. The grid owns its draw setup and `b0` view/`b1` editor-settings
-buffers, captures CPU constants by value, and updates buffers during execution.
-It uses no mesh resource: a full-screen triangle reconstructs plane intersections
-in the pixel shader and is submitted with `Draw(3, 0)`.
+`EditorProgram` retains world, extraction, camera, and UI decisions while
+delegating target imports, pass resources, and graph execution to
+`EditorViewportRenderer`. The grid owns its draw setup and `b0` view/`b1`
+editor-settings buffers, captures CPU constants by value, and updates buffers
+during execution.
+`SetSettings` validates and copies future appearance settings, while queued
+callbacks retain their copied settings. The grid uses no mesh resource: a
+full-screen triangle reconstructs plane intersections in the pixel shader and
+is submitted with `Draw(3, 0)`. The shader emits color only, with no `SV_Depth`.
+The viewport retains its read-only depth view, but the grid does not consume it.
 
 The working pieces are:
 
@@ -187,8 +201,8 @@ The working pieces are:
 - Active-scene ECS extraction into copied `RenderFrameData`
 - Per-view `MeshPassCommands` and pass-owned view/object constant buffers
 - Texture dependency compilation and execution through `RenderGraph`
-- Editor submission through `Renderer::AddScenePasses()`
-- Editor-grid overlay composed through `EditorGridPass::AddToGraph()`
+- Generic `IRenderPass` registration through `EditorViewportRenderer`
+- Editor pipeline composition with independent Clear -> Grid -> Mesh passes
 
 ## Milestones and next work
 
@@ -261,11 +275,12 @@ these optimizations.
 ### Explicit pass orchestration — foundation implemented
 
 The graph implements declaration, dependency compilation, GPU texture
-realization, and attachment execution. The vertex-color mesh pass clears and
-draws the scene; `EditorGridPass` follows with color Load and read-only depth
-Load. It replaces the old `EditorGridLinePass` stub and exercises ordered color
-writes and actual read-only DSV binding. Further requirements should follow
-visible features such as editor selection, shadows, post-processing, or multiple
+realization, and attachment execution. `EditorViewportRenderer` composes a
+configured `IRenderPass` list and executes it synchronously. `ViewportClearPass`
+clears both attachments, `EditorGridPass` loads color without depth, and the
+vertex-color mesh pass loads color/depth afterward. It replaces the old
+`EditorGridLinePass` stub and exercises ordered color writes. Further requirements
+should follow visible features such as editor selection, shadows, post-processing, or multiple
 views. Stencil-plane access, subresources, and independent depth/stencil load
 behavior remain deferred.
 
@@ -279,10 +294,13 @@ behavior remain deferred.
 | GPU geometry lifetime | `MeshManager` and `StaticMesh` |
 | Fixed shaders, draw state, and mesh constant buffers | `VertexColorMeshPass` |
 | Editor-grid draw state and view/settings constant buffers | `EditorGridPass` |
+| Pass resource initialization and graph-registration contract | `IRenderPass` |
+| Editor pass selection and Clear -> Grid -> Mesh order | `CreateEditorViewportPasses` |
+| Pass ownership, target imports, graph execution, and cleanup | `EditorViewportRenderer` |
 | Output targets, clears, texture binding, and ordering | `RenderGraph` |
 | Swap chain and D3D11 device | `Renderer` |
 | Window lifecycle | `Engine` |
-| World, editor camera, viewport, and frame composition | `EditorProgram` |
+| World, extraction consumption, editor camera, viewport, and UI | `EditorProgram` |
 
 ## Explicitly deferred
 

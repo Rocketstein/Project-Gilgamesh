@@ -7,6 +7,10 @@ target_sources (GilgameshEditor
 
     Render/EditorGridPass.cpp
     Render/EditorGridPass.h
+    Render/EditorViewportPasses.cpp
+    Render/EditorViewportPasses.h
+    Render/EditorViewportRenderer.cpp
+    Render/EditorViewportRenderer.h
 
     EditorCamera/EditorCamera.cpp
     EditorCamera/EditorCamera.h

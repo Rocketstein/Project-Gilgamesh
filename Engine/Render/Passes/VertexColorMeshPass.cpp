@@ -1,11 +1,13 @@
 #include "VertexColorMeshPass.h"
 
 #include <cstddef>
+#include <stdexcept>
 #include <utility>
 
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Mesh/Vertex.h"
+#include "Engine/Render/RenderGraph/RenderGraph.h"
 
 bool VertexColorMeshPass::Initialize(
 	ID3D11Device* device,
@@ -72,6 +74,44 @@ bool VertexColorMeshPass::Initialize(
 	return true;
 }
 
+bool VertexColorMeshPass::AddToGraph(
+	RenderGraph& graph,
+	const RenderPassContext& context) const
+{
+	// Reject invalid submissions before adding any declarations to the graph.
+	if (!IsInitialized() ||
+		!graph.IsValid(context.color) || !graph.IsValid(context.depth))
+	{
+		GILGAMESH_LOG(Renderer, Error,
+			"Cannot add a mesh pass without initialized resources and valid graph targets");
+		return false;
+	}
+	auto commands = PrepareCommands(context.frame, context.view, context.meshes);
+	if (!commands) return false;
+
+	// Retain prepared values and stable services, never the temporary context.
+	graph.AddPass(
+		"VertexColorMeshes",
+		[color = context.color, depth = context.depth](GraphPassBuilder& builder)
+		{
+			builder.SetColorTarget(0, color, RenderGraphLoadOp::Load);
+			builder.SetDepthTarget(
+				depth,
+				RenderGraphDepthAccess::ReadWrite,
+				RenderGraphLoadOp::Load);
+		},
+		[this, commands = std::move(*commands), meshes = &context.meshes](
+			ID3D11DeviceContext& deviceContext)
+		{
+			// Propagate upload failures to the viewport renderer's execution boundary.
+			if (!ExecuteCommands(&deviceContext, commands, *meshes))
+			{
+				throw std::runtime_error("Failed to execute vertex-color mesh commands");
+			}
+		});
+	return true;
+}
+
 std::optional<MeshPassCommands> VertexColorMeshPass::PrepareCommands(
 	const RenderFrameData& frame,
 	const RenderView& view,
@@ -111,7 +151,7 @@ bool VertexColorMeshPass::ExecuteCommands(
 		return false;
 	}
 
-	// An empty scene still lets the graph perform attachment clear operations.
+	// Empty scenes preserve the background produced by preceding passes.
 	if (commands.draws.empty()) return true;
 
 	// Upload at execution time so preparing another view cannot overwrite this one.

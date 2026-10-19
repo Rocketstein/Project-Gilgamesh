@@ -4,10 +4,6 @@
 #include "Engine/Render/D3D11/PresentationSurface.h"
 #include "Engine/Render/Shader/ShaderManager.h"
 #include "Engine/Render/Mesh/MeshManager.h"
-#include "Engine/Render/Passes/VertexColorMeshPass.h"
-#include "Engine/Render/RenderGraph/Resource/RenderGraphTexture.h"
-
-class RenderGraph;
 
 struct RendererDesc
 {
@@ -26,7 +22,7 @@ enum class RenderResult
 	Failed
 };
 
-// Owns D3D11 presentation resources and the passes used to render extracted scenes.
+// Owns D3D11 presentation and resource managers shared by rendering pipelines.
 class Renderer
 {
 public:
@@ -36,17 +32,6 @@ public:
 	bool BeginFrame();
 	void BindOutput() noexcept;
 	RenderResult EndFrame();
-
-	// Copies extracted instances into graph-owned commands and registers a clear/draw pass.
-	// This renderer, including its mesh manager, must outlive the graph's next Reset().
-	// Do not reinitialize this renderer while the graph retains its pass callback.
-	[[nodiscard]]
-	bool AddScenePasses(
-		RenderGraph& graph,
-		RenderGraphTextureHandle color,
-		RenderGraphTextureHandle depth,
-		const RenderFrameData& frame,
-		const RenderView& view) const;
 
 	[[nodiscard]]
 	bool IsOccluded() const { return surface_.PresentTest() == DXGI_STATUS_OCCLUDED; }
@@ -89,5 +74,4 @@ private:
 	D3D11PresentationSurface surface_;
 	ShaderManager shaderManager_;
 	MeshManager meshManager_;
-	VertexColorMeshPass vertexColorMeshPass_; // Owns mesh-pass state and constant buffers.
 };

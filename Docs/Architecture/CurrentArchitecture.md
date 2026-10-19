@@ -28,7 +28,7 @@ WinMain
           -> World and registered RenderExtractionSystem
           -> temporary demo mesh resource
           -> editor viewport and viewport client
-          -> frame-local RenderGraph orchestration
+          -> EditorViewportRenderer and configured render passes
           -> ImGui integration and editor workspace
           -> developer console and Output Log (optional diagnostics)
 ```
@@ -81,11 +81,14 @@ placeholder.
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
 | Renderer-facing mesh resource management | `Engine/Render/Mesh/MeshManager.*` |
 | Fixed vertex-color command preparation and drawing | `Engine/Render/Passes/VertexColorMeshPass.*` |
+| Common pass contract and viewport clear | `Engine/Render/Passes/IRenderPass.h`, `ViewportClearPass.*` |
 | Renderer-facing snapshots and shared camera constants | `Engine/Render/Renderer/RenderFrameData.h`, `RenderView.*` |
 | Active-scene extraction system | `Engine/ECS/System/RenderExtractionSystem.*` |
 | Texture dependency, pass-state, and execution orchestration | `Engine/Render/RenderGraph/` |
-| Editor implementation and mesh submission | `Editor/EditorProgram.*` |
-| Procedural editor-grid overlay | `Editor/Render/EditorGridPass.*` |
+| Editor world, extraction, and UI composition | `Editor/EditorProgram.*` |
+| Viewport graph ownership and synchronous submission | `Editor/Render/EditorViewportRenderer.*` |
+| Clear, grid, and mesh pipeline selection | `Editor/Render/EditorViewportPasses.*` |
+| Procedural editor-grid background | `Editor/Render/EditorGridPass.*` |
 | Editor viewport presentation | `Editor/EditorUI/Panels/EditorViewportPanel.*` |
 | ImGui backend integration | `Editor/EditorUI/Runtime/ImGuiIntegration.*` |
 | Console implementation | `Editor/Console/` |
@@ -129,16 +132,18 @@ destructor are defined in `EditorProgram.cpp`, where `Impl` is complete.
 
 The implementation owns:
 
-- The editor viewport client, world, temporary demo mesh handle, and frame render graph
-- `EditorGridPass`, including its draw setup and view/settings constant buffers
+- The editor viewport client, world, and temporary demo mesh handle
+- `EditorViewportRenderer`, owning a graph and an ordered list of `IRenderPass` instances
 - A borrowed pointer to the extraction system owned by the world's extraction group
 - ImGui integration, the editor workspace, and the viewport panel
 - The console buffer, sink registration, configuration, Output Log panel,
   commands, and pending command state when editor diagnostics are enabled
 
 `EditorProgram::Shutdown()` resets the implementation while the engine window
-and renderer are still alive. Its destructor resets the graph before releasing
-viewport resources and retires the temporary demo mesh through `MeshManager`.
+and renderer are still alive. The viewport renderer releases graph callbacks
+before its pass resources, and its synchronous render calls leave no pending
+graph between frames. The implementation retires the temporary demo mesh through
+`MeshManager`.
 World destruction clears pending extraction and destroys the registered system.
 This also lets ImGui disconnect its
 window-message handler and releases program-owned viewport resources before
@@ -181,13 +186,13 @@ WinMain
           -> initialize Renderer
               -> create the D3D11 device and presentation surface
               -> initialize ShaderManager and MeshManager
-              -> initialize VertexColorMeshPass
       -> create EditorProgram
       -> EditorProgram::Initialize
           -> optionally create console state and register ConsoleLogSink
           -> initialize ImGui against the engine window and D3D11 device
           -> initialize the editor viewport
-          -> initialize EditorGridPass with the renderer's shader manager
+          -> create Clear -> Grid -> Mesh through CreateEditorViewportPasses
+          -> initialize EditorViewportRenderer and its configured passes
           -> register and enable RenderExtractionSystem in the world
           -> upload the demo cube through MeshManager
           -> create an active scene and a transform/mesh entity
@@ -257,9 +262,8 @@ console command submitted by the previous frame, advances `World::Update()`,
 and begins the new ImGui frame. It retains the frame time and number for the
 render submission.
 
-`EditorProgram::Render()` first resets its frame-local graph, releasing borrowed
-viewport resource pointers before UI-driven resize. After drawing the workspace
-and viewport panel, a visible viewport runs this sequence:
+`EditorProgram::Render()` draws the workspace and viewport panel before
+extracting the finalized world. A visible viewport runs this sequence:
 
 ```text
 World::PreparePresentation(realDeltaTime)
@@ -267,22 +271,22 @@ World::PreparePresentation(realDeltaTime)
   -> RenderExtractionSystem
   -> TakeFrame(), assign the engine frame number
   -> build RenderView from the editor camera and viewport extent
-  -> import viewport color and depth resources, including a read-only DSV
-  -> Renderer::AddScenePasses
-      -> VertexColorMeshPass::PrepareCommands
-      -> graph owns a moved MeshPassCommands value in its execute callback
-  -> EditorGridPass::AddToGraph
-      -> graph owns copied view and editor-grid constants
-  -> RenderGraph::Compile / Execute
-      -> clear and bind the mesh attachments
-      -> VertexColorMeshPass::ExecuteCommands
-      -> load scene color and bind read-only scene depth
-      -> EditorGridPass uploads constants and draws a full-screen triangle
+  -> EditorViewportRenderer::Render
+      -> import viewport color and depth resources
+      -> call IRenderPass::AddToGraph in configured order
+          -> ViewportClearPass declares color/depth clears
+          -> EditorGridPass captures view and grid constants by value
+          -> VertexColorMeshPass prepares and owns MeshPassCommands in its callback
+      -> RenderGraph::Compile / Execute
+          -> Clear -> Grid background -> Mesh
+      -> Reset the graph before returning, including on failure
 ```
 
 A hidden viewport discards pending extraction instead of retaining a previous
-snapshot. Presentation or pass-execution failure is caught and logged at the
-editor render boundary; failed extraction is not submitted again.
+snapshot. Presentation failure is caught at the program boundary; pass preparation
+or execution failure is caught and logged by the viewport renderer. Failed
+extraction is not submitted again. The viewport can resize on the next UI frame
+because every viewport render call releases imported pointers and callbacks.
 
 The swap chain and ImGui remain outside the graph: after graph execution,
 `Renderer::BindOutput()` restores the swap-chain target before the Output Log
@@ -322,10 +326,21 @@ OutputLogPanel::Draw
 
 ## Rendering boundary
 
-The renderer currently owns the D3D11 device, presentation surface, shader
-manager, `MeshManager`, and `VertexColorMeshPass`. `MeshManager` owns uploaded
-static meshes behind generation-checked handles. The pass owns its fixed
-vertex-color `DrawSetup` and separate view and object constant buffers.
+`Renderer` owns the D3D11 device, presentation surface, shader manager, and
+`MeshManager`. It owns no concrete render pass and has no `AddScenePasses` API.
+`MeshManager` owns uploaded static meshes behind generation-checked handles.
+`EditorViewportRenderer` owns the graph and `vector<unique_ptr<IRenderPass>>`.
+`CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh; the viewport
+renderer itself contains no concrete pass member or type-specific branch.
+
+`IRenderPass::Initialize(device, shaders)` creates pass-owned resources, and
+`AddToGraph(graph, context)` declares prepared work. `RenderPassContext` supplies
+color/depth handles and borrows the extracted frame, view, and mesh manager.
+Callbacks copy submission data and borrow only longer-lived passes and services.
+The viewport module can initialize from `Renderer&` or explicit device, immediate
+context, shader-manager, and mesh-manager services, including for WARP tests.
+The mesh pass owns its fixed vertex-color `DrawSetup` and separate view and
+object constant buffers.
 
 `PrepareCommands(frame, view, meshes)` is CPU-only. It validates the viewport
 and invertible view-projection matrix through the shared CPU-only
@@ -336,19 +351,19 @@ retain an ECS reference or a raw `StaticMesh*`. Preparation preserves extraction
 order and performs no culling, sorting, or GPU updates.
 
 `MeshPassCommands` owns the per-view `FrameConstants` and vector of draw commands.
-`Renderer::AddScenePasses()` prepares that value and registers a `VertexColorMeshes`
+`VertexColorMeshPass::AddToGraph()` prepares that value and registers a `VertexColorMeshes`
 pass whose execute callback captures it by value. Callers can release the
-extraction snapshot after preparation. The renderer and its mesh manager must
-outlive graph execution; graph callbacks borrow them.
+extraction snapshot after preparation. The pass and mesh manager must outlive
+graph execution; graph callbacks borrow them.
 
 `ExecuteCommands(context, commands, meshes)` uploads view constants only when
 the pass executes, applies the draw setup, and uploads object constants for each
 draw. It resolves each handle again before mesh binding and `DrawIndexed()`,
 skipping resources removed since preparation. Preparing multiple views cannot
-overwrite their GPU constants in advance. Empty command lists still register
-the graph pass so its color and depth clears occur. Failed constant uploads
-return failure; the graph callback converts it to an exception for the editor
-render boundary to handle.
+overwrite their GPU constants in advance. Empty command lists preserve the
+background initialized by the independent clear and grid passes. Failed constant
+uploads return failure; the graph callback converts it to an exception for the
+viewport renderer to handle.
 
 The Primitive vertex shader uses `b0 FrameConstants.viewProjection` and
 `b2 ObjectConstants.model` to evaluate model then view-projection. CPU matrices
@@ -359,24 +374,31 @@ The editor owns the offscreen viewport and world. Temporary cube geometry is
 uploaded through `MeshManager`; its instance transform and mesh handle live in
 ECS components. `EditorViewport` exposes borrowed pointers to its native color
 and depth resources, with writable and read-only views of the same depth texture,
-without depending on `RenderGraph`; `EditorProgram` imports them each frame.
+without depending on `RenderGraph`; `EditorViewportRenderer` imports them per
+submission.
 All replacement resources must be created before a resize publishes them.
 `EditorViewportPanel` measures and presents the viewport texture
 but does not own scene rendering.
 
-`EditorProgram::Impl` owns `EditorGridPass` and registers it after the mesh pass.
-The grid loads scene color and depth, uses a read-only DSV with `LESS_EQUAL`
-depth testing, disables depth writes, and alpha-blends its result. Its shader
-reconstructs intersections with the XY plane at Z=0 from a procedural
+`EditorViewportRenderer` owns `EditorGridPass` through its configured interface
+list. The clear pass initializes color and depth first. The grid then loads
+color, disables depth testing and writes, and alpha-blends without a depth
+attachment. The mesh pass loads color/depth and draws afterward, so opaque
+meshes on either side of Z=0 cover the grid. The grid shader emits color only,
+with no `SV_Depth`. It reconstructs intersections with the XY plane at Z=0 from a procedural
 full-screen triangle submitted with `Draw(3, 0)`. An empty mesh snapshot still
-clears both attachments before the grid runs, so the grid remains visible
+runs the clear and grid passes, so the grid remains visible
 without an active scene.
 
 The grid uses the same `PrepareViewConstants` helper as the mesh pass and owns
 separate `b0 FrameConstants` and `b1 EditorConstants` GPU buffers. Its graph
 callback captures CPU constants by value and uploads them only at execution.
-The pass must outlive its callbacks; resetting the graph before resize or
-shutdown releases those callbacks and imported pointers first.
+`SetSettings` validates and copies appearance settings; already registered
+callbacks retain their own values. The module resets its graph before every
+render return, releasing callbacks and imported pointers before resize or
+shutdown.
+The viewport retains its read-only depth view for other consumers; the grid
+does not use it.
 
 `RenderGraph` declares texture attachments and shader reads. `Compile(device)`
 validates those declarations, derives a deterministic dependency order, and
@@ -472,7 +494,7 @@ The extractor owns at most one completed `optional<RenderFrameData>`.
 disablement, and destruction clear unconsumed data. No active scene produces a
 present but empty snapshot, distinct from no fresh result. `EditorProgram`
 takes the result, assigns engine frame metadata, and supplies it to
-`Renderer::AddScenePasses()`. The old `EditorPreviewScene`, `StaticMeshDrawItem`,
+`EditorViewportRenderer::Render()`. The old `EditorPreviewScene`, `StaticMeshDrawItem`,
 and `SimpleMeshRenderer` path has been removed.
 
 Composition code registers an enabled `RenderExtractionSystem` in

@@ -1,23 +1,19 @@
 #include "EditorProgram.h"
 
-#include "EditorCamera/EditorCamera.h"
 #include "EditorUI/Panels/EditorViewportPanel.h"
 #include "EditorUI/Runtime/ImGuiIntegration.h"
 #include "EditorUI/Workspace/EditorWorkspace.h"
-#include "EditorViewport/EditorViewport.h"
 #include "EditorViewport/EditorViewportClient.h"
-#include "Editor/Render/EditorGridPass.h"
+#include "Editor/Render/EditorViewportPasses.h"
+#include "Editor/Render/EditorViewportRenderer.h"
 #include "Engine/Core/Logging/Logger.h"
 #include "Engine/ECS/Component/MeshComponent.h"
 #include "Engine/ECS/Component/TransformComponent.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Engine/ECS/System/RenderExtractionSystem.h"
-#include "Engine/Input/InputFrame.h"
 #include "Engine/Input/InputSystem.h"
 #include "Engine/Render/Mesh/PrimitiveMeshes.h"
-#include "Engine/Render/RenderGraph/RenderGraph.h"
 #include "Engine/Render/Renderer/RenderView.h"
-#include "Engine/Render/Renderer/Renderer.h"
 #include "Engine/Runtime/EngineServices.h"
 #include "Engine/Runtime/FrameContext.h"
 #include "Engine/Runtime/RenderContext.h"
@@ -30,7 +26,6 @@
 
 #if GILGAMESH_ENABLE_EDITOR_DIAGNOSTICS
     #include "Editor/Console/Commands/BuiltInCommands.h"
-    #include "Editor/Console/ConsoleBuffer.h"
     #include "Editor/Console/ConsoleCommandOutput.h"
     #include "Editor/Console/ConsoleConfiguration.h"
     #include "Editor/Console/ConsoleLogSink.h"
@@ -41,7 +36,7 @@
 struct EditorProgram::Impl
 {
 public:
-    // Release captured submissions before removing the editor's demonstration geometry.
+    // Remove demonstration geometry while the borrowed renderer services still exist.
     ~Impl() noexcept;
 
 public:
@@ -51,8 +46,7 @@ public:
 
     // Viewport
     EditorViewportClient viewportClient;
-    EditorGridPass gridPass; // Editor-only overlay state and view/settings constant buffers.
-    RenderGraph renderGraph;
+    EditorViewportRenderer viewportRenderer; // Owns the configured passes and synchronous graph submission.
 
     // Persistent scene state belongs to the world; the group owns the extractor.
     World world;
@@ -86,7 +80,6 @@ public:
 // Renderer services outlive the program, including partially initialized editor state.
 EditorProgram::Impl::~Impl() noexcept
 {
-    renderGraph.Reset();
     if (!renderer || !demoCubeMesh) return;
 
     // Resource retirement can allocate its free-list entry; teardown must not throw.
@@ -141,11 +134,10 @@ bool EditorProgram::Initialize(EngineServices& services)
     // Initialize editor viewport
     impl_->viewportClient.Initialize(services.renderer.GetDevice());
 
-    // The grid is an editor overlay and shares only camera data with scene rendering.
-    if (!impl_->gridPass.Initialize(
-        services.renderer.GetDevice(), services.renderer.GetShaderManager()))
+    // The viewport module owns GPU pass resources; the factory selects editor drawing order.
+    if (!impl_->viewportRenderer.Initialize(services.renderer, CreateEditorViewportPasses()))
     {
-        GILGAMESH_LOG(Renderer, Error, "Failed to initialize the editor grid pass");
+        GILGAMESH_LOG(Renderer, Error, "Failed to initialize the editor viewport renderer");
         impl_.reset();
         return false;
     }
@@ -218,10 +210,6 @@ void EditorProgram::Update(const FrameContext& frame)
 void EditorProgram::Render(RenderContext& context)
 {
     Renderer& renderer = context.renderer;
-    RenderGraph& renderGraph = impl_->renderGraph;
-
-    // Drop last frame's imported pointers before the viewport may resize.
-    renderGraph.Reset();
 
     impl_->workspace.DrawDockSpace();
 
@@ -244,63 +232,6 @@ void EditorProgram::Render(RenderContext& context)
             }
             frame->frameNumber = impl_->frame.frameNumber;
 
-            ID3D11Texture2D* colorTexture =
-                viewport.GetColorTexture();
-            ID3D11Texture2D* depthTexture =
-                viewport.GetDepthTexture();
-
-            // Describe and import the viewport-owned native resources. The graph
-            // borrows these objects only until its next Reset().
-            D3D11_TEXTURE2D_DESC colorNativeDescription{};
-            D3D11_TEXTURE2D_DESC depthNativeDescription{};
-            colorTexture->GetDesc(&colorNativeDescription);
-            depthTexture->GetDesc(&depthNativeDescription);
-
-            RenderGraphTextureDesc colorDescription;
-            colorDescription.extent = {
-                colorNativeDescription.Width,
-                colorNativeDescription.Height
-            };
-            colorDescription.format = colorNativeDescription.Format;
-            colorDescription.mipLevels = colorNativeDescription.MipLevels;
-            colorDescription.sampleCount =
-                colorNativeDescription.SampleDesc.Count;
-
-            ImportedRenderGraphTexture importedColor;
-            importedColor.texture = colorTexture;
-            importedColor.renderTargetView =
-                viewport.GetColorRenderTargetView();
-            importedColor.shaderResourceView =
-                viewport.GetColorShaderResourceView();
-
-            RenderGraphTextureDesc depthDescription;
-            depthDescription.extent = {
-                depthNativeDescription.Width,
-                depthNativeDescription.Height
-            };
-            depthDescription.format = depthNativeDescription.Format;
-            depthDescription.mipLevels = depthNativeDescription.MipLevels;
-            depthDescription.sampleCount =
-                depthNativeDescription.SampleDesc.Count;
-
-            ImportedRenderGraphTexture importedDepth;
-            importedDepth.texture = depthTexture;
-            importedDepth.writableDepthStencilView =
-                viewport.GetDepthStencilView();
-            importedDepth.readOnlyDepthStencilView =
-                viewport.GetReadOnlyDepthStencilView();
-
-            const RenderGraphTextureHandle colorTarget =
-                renderGraph.ImportTexture(
-                    "EditorViewport.Color",
-                    colorDescription,
-                    importedColor);
-            const RenderGraphTextureHandle depthTarget =
-                renderGraph.ImportTexture(
-                    "EditorViewport.Depth",
-                    depthDescription,
-                    importedDepth);
-
             const float aspectRatio =
                 static_cast<float>(viewportFrame.renderExtent.width) /
                 static_cast<float>(
@@ -316,41 +247,18 @@ void EditorProgram::Render(RenderContext& context)
                 .extent = viewportFrame.renderExtent
             };
 
-            // The renderer prepares pass-local commands and the graph owns their captured values.
-            if (!renderer.AddScenePasses(renderGraph, colorTarget, depthTarget, *frame, renderView))
-            {
-                throw std::runtime_error("Failed to prepare editor scene draw commands");
-            }
-
-            // Load scene color/depth and blend the world grid without changing mesh depth.
-            if (!impl_->gridPass.AddToGraph(renderGraph, colorTarget, depthTarget, renderView))
-            {
-                throw std::runtime_error("Failed to prepare the editor grid pass");
-            }
-
-            const bool compiled =
-                renderGraph.Compile(renderer.GetDevice());
-            const bool executed = compiled
-                && renderGraph.Execute(renderer.GetDeviceContext());
-            if (!executed)
-            {
-                GILGAMESH_LOG(
-                    Renderer,
-                    Error,
-                    "Failed to execute the editor scene render graph");
-            }
+            // The module logs submission failures and releases every captured resource before return.
+            (void)impl_->viewportRenderer.Render(viewport, *frame, renderView);
         }
         catch (const std::exception& error)
         {
-            // A failed presentation must not leave an older snapshot or partial graph for reuse.
+            // A failed presentation must not leave an older extraction result for reuse.
             impl_->extractionSystem->DiscardFrame();
-            renderGraph.Reset();
             GILGAMESH_LOG(Renderer, Error, "Editor scene rendering failed: {}", error.what());
         }
         catch (...)
         {
             impl_->extractionSystem->DiscardFrame();
-            renderGraph.Reset();
             GILGAMESH_LOG(Renderer, Error, "Editor scene rendering failed with an unknown exception");
         }
     }
@@ -374,6 +282,6 @@ void EditorProgram::Render(RenderContext& context)
 
 void EditorProgram::Shutdown()
 {
-    // Impl owns both graph cleanup and the demonstration mesh's resource retirement.
+    // Impl retires demonstration geometry and destroys the viewport pipeline within renderer lifetime.
     impl_.reset();
 }

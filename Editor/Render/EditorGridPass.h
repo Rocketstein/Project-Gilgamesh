@@ -2,18 +2,19 @@
 
 #include "Engine/Render/Buffers/ConstantBuffer.h"
 #include "Engine/Render/DrawSetup/DrawSetup.h"
+#include "Engine/Render/Passes/IRenderPass.h"
 #include "Engine/Render/RenderGraph/Resource/RenderGraphTexture.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Shader/ShaderConstants.h"
 
 class RenderGraph;
 
-// Draws an anti-aliased XY-plane grid using the mesh pass's existing depth.
-class EditorGridPass final
+// Draws an anti-aliased XY-plane background before opaque scene meshes.
+class EditorGridPass final : public IRenderPass
 {
 public:
 	EditorGridPass() = default;
-	~EditorGridPass() = default;
+	~EditorGridPass() override = default;
 
 	EditorGridPass(const EditorGridPass&) = delete;
 	EditorGridPass& operator=(const EditorGridPass&) = delete;
@@ -22,7 +23,11 @@ public:
 
 	// Publishes new GPU resources only after every creation succeeds.
 	[[nodiscard]]
-	bool Initialize(ID3D11Device* device, ShaderManager& shaders);
+	bool Initialize(ID3D11Device* device, ShaderManager& shaders) override;
+
+	// Copies valid appearance settings without changing already queued callbacks.
+	[[nodiscard]]
+	bool SetSettings(const EditorConstants& settings);
 
 	// Returns the editor's initial grid appearance in world units and pixels.
 	[[nodiscard]]
@@ -36,15 +41,12 @@ public:
 		};
 	}
 
-	// Copies view and grid settings into the graph; this pass must outlive it.
-	// Color and depth must already contain the scene pass's clear or draw results.
+	// Loads the cleared background and copies this view's settings into the graph.
+	// The grid does not consume scene depth; this pass must outlive its callbacks.
 	[[nodiscard]]
 	bool AddToGraph(
 		RenderGraph& graph,
-		RenderGraphTextureHandle color,
-		RenderGraphTextureHandle depth,
-		const RenderView& view,
-		const EditorConstants& settings = DefaultSettings()) const;
+		const RenderPassContext& context) const override;
 
 	[[nodiscard]]
 	bool IsInitialized() const noexcept;
@@ -58,7 +60,8 @@ private:
 		const EditorConstants& settings) const;
 
 private:
-	DrawSetup drawSetup_; // Full-screen shader, alpha blend, and read-only depth state.
+	DrawSetup drawSetup_; // Full-screen shader and alpha blend with depth testing disabled.
 	ConstantBuffer<FrameConstants> viewCB_; // Updated for the view being executed.
 	ConstantBuffer<EditorConstants> editorCB_; // Grid appearance copied for each pass.
+	EditorConstants settings_ = DefaultSettings(); // Validated appearance for future submissions.
 };

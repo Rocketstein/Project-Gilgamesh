@@ -8,6 +8,7 @@
 #include "Engine/Render/Renderer/RenderFrameData.h"
 #include "Engine/Render/Renderer/RenderView.h"
 #include "Engine/Render/Shader/ShaderConstants.h"
+#include "IRenderPass.h"
 
 class MeshManager;
 
@@ -26,11 +27,11 @@ struct MeshPassCommands
 };
 
 // Prepares copied mesh commands and submits them through fixed vertex-color state.
-class VertexColorMeshPass final
+class VertexColorMeshPass final : public IRenderPass
 {
 public:
 	VertexColorMeshPass() = default;
-	~VertexColorMeshPass() = default;
+	~VertexColorMeshPass() override = default;
 
 	VertexColorMeshPass(const VertexColorMeshPass&) = delete;
 	VertexColorMeshPass& operator=(const VertexColorMeshPass&) = delete;
@@ -39,7 +40,11 @@ public:
 
 	// Publishes new GPU state only after every required resource is created.
 	[[nodiscard]]
-	bool Initialize(ID3D11Device* device, ShaderManager& shaders);
+	bool Initialize(ID3D11Device* device, ShaderManager& shaders) override;
+
+	// Prepares copied commands and loads targets initialized by an earlier pass.
+	[[nodiscard]]
+	bool AddToGraph(RenderGraph& graph, const RenderPassContext& context) const override;
 
 	// Copies one extracted snapshot for a view without changing GPU state.
 	// This CPU-only operation does not require Initialize to have been called.
