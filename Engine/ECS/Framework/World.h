@@ -12,11 +12,7 @@ class World final
 public:
 	World();
 
-	// void PreUpdate();
-
 	void Update(float deltaTime);
-
-	// void PostUpdate();
 
 	// Create a scene, generating a name when none is supplied.
 	[[nodiscard]] SceneHandle CreateScene(std::string name = "");
@@ -126,7 +122,6 @@ private:
 	};
 	// Slots keep their indices across reuse and are addressed by SceneHandle::id.
 	std::vector<SceneItem> scenes_;
-	//std::vector<std::uint32_t> activeScenes_;
 	// Vacant slots available for reuse; exhausted generations are excluded.
 	std::vector<std::uint32_t> freeSceneIndices_;
 

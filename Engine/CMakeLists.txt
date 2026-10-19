@@ -50,6 +50,13 @@ target_sources (GilgameshEngine
 		ECS/Framework/Scene.h
 		ECS/Framework/World.cpp
 		ECS/Framework/World.h
+		
+		ECS/System/Core/ISystem.h
+		ECS/System/Core/SystemGroup.cpp
+		ECS/System/Core/SystemGroup.h
+
+		ECS/System/RenderExtractionSystem.cpp
+		ECS/System/RenderExtractionSystem.h
 
 		Render/D3D11/D3D11Device.cpp
 		Render/D3D11/D3D11Device.h
