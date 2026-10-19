@@ -2,6 +2,19 @@
 
 #include "World.h"
 
+// Apply scene changes through the same FIFO as entity structural commands.
+void ECSSceneCommandPayload::Execute(void* commandData, EntityRegistry&, World& world)
+{
+	const auto* payload = static_cast<ECSSceneCommandPayload*>(commandData);
+	world.ApplySceneCommand(payload->type, payload->scene);
+}
+
+// Scene handles own no resources, but their arena payload still has a lifetime.
+void ECSSceneCommandPayload::Destroy(void* commandData, World&) noexcept
+{
+	std::destroy_at(static_cast<ECSSceneCommandPayload*>(commandData));
+}
+
 // ===============================================================================================
 // Add Entity Command Payload
 // ===============================================================================================

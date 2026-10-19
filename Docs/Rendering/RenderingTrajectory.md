@@ -320,7 +320,15 @@ If draw-setup descriptions are retained for caching or hot reload, copy their
 input-element data. Never retain a temporary `std::span` supplied during
 creation.
 
-### Milestone 4: generic ECS render extraction
+### Milestone 4: generic ECS render extraction — foundation implemented
+
+`RenderExtractionSystem` now implements active-scene extraction into copied
+`RenderFrameData` independently of the viewport. `World` provides separate
+simulation, transform, and extraction phases, and the extractor transfers its
+completed result once through `TakeFrame()`. It copies mesh handles and current
+world-space TRS without resolving GPU resources. Integration with editor
+viewport submission, material resolution, and pass-specific draw preparation
+remains future work; `EditorPreviewScene` still supplies the running prototype.
 
 After the generic ECS provides reliable entity lifetime, type-safe component
 storage, and queries, add an extraction system that:

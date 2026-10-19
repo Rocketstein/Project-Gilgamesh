@@ -1,9 +1,9 @@
 #pragma once
 
+#include "Engine/Render/Mesh/MeshHandle.h"
+
+// Refers to shared geometry without owning or resolving its GPU resource.
 struct MeshComponent
 {
-	// Mesh data
-	
-	// Material data (TODO)
-	
+	MeshHandle mesh; // Invalid until geometry is explicitly assigned.
 };

@@ -29,6 +29,8 @@ target_sources (GilgameshEngine
 		Platform/Windows/Logging/DebugOutputSink.h
 
 		ECS/Entity/Entity.h
+		ECS/Component/MeshComponent.h
+		ECS/Component/TransformComponent.h
 		ECS/Framework/ArchetypeResource.h
 		ECS/Framework/ArchetypeManager.cpp
 		ECS/Framework/ArchetypeManager.h
@@ -52,6 +54,7 @@ target_sources (GilgameshEngine
 		ECS/Framework/World.h
 		
 		ECS/System/Core/ISystem.h
+		ECS/System/Core/ISystem.cpp
 		ECS/System/Core/SystemGroup.cpp
 		ECS/System/Core/SystemGroup.h
 
@@ -89,6 +92,7 @@ target_sources (GilgameshEngine
 		Render/Renderer/Renderer.h
 		Render/Renderer/RenderView.h
 		Render/Renderer/StaticMeshDrawItem.h
+		Render/Renderer/RenderFrameData.h
 
 		Render/Buffers/BufferUsage.h
 		Render/Buffers/ConstantBuffer.h

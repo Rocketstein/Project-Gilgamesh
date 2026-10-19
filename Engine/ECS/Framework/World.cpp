@@ -2,19 +2,144 @@
 
 #include "IDGenerator.h"
 
+#include <stdexcept>
+
+#include "Engine/Core/Logging/Logger.h"
+
+// Initialize generic scheduling roots without registering concrete engine systems.
 World::World() : worldID_(IDGenerator<WorldTag>::Next()), entityRegistry_(worldID_), commandBuffer_(*this)
 {
-
+	for (SystemGroup* group : { &simulationSystems_, &transformSystems_, &extractionSystems_ })
+	{
+		group->Initialize();
+		group->SetEnabled(true);
+	}
 }
 
+// Tear systems down while the registry and queued component payloads still exist.
+World::~World() noexcept
+{
+	phase_ = ExecutionPhase::Shutdown;
+	SetSchedulingMutationAllowed(false);
+	for (SystemGroup* group : { &extractionSystems_, &transformSystems_, &simulationSystems_ })
+	{
+		try
+		{
+			group->ShutdownOwned(*this);
+		}
+		catch (...)
+		{
+			GILGAMESH_LOG(Runtime, Error, "A system failed during world shutdown");
+		}
+	}
+
+	// Honor deferred cleanup recorded by OnDestroy before registry destruction.
+	try
+	{
+		ApplyPendingCommands();
+	}
+	catch (...)
+	{
+		GILGAMESH_LOG(Runtime, Error, "World cleanup command playback failed");
+	}
+	// Later member destructors must not record into an already destroyed command buffer.
+	phase_ = ExecutionPhase::ShutdownComplete;
+}
+
+// Keep every root immutable while any world phase is executing.
+void World::SetSchedulingMutationAllowed(bool allowed) noexcept
+{
+	simulationSystems_.SetMutationAllowed(allowed);
+	transformSystems_.SetMutationAllowed(allowed);
+	extractionSystems_.SetMutationAllowed(allowed);
+}
+
+// Immediate scene operations and nested world updates would invalidate traversal.
+void World::RequireIdle() const
+{
+	if (phase_ == ExecutionPhase::Idle && traversalDepth_ == 0) return;
+	GILGAMESH_LOG(Runtime, Error, "This world operation requires an idle execution phase");
+	throw std::logic_error("World operation requires an idle execution phase");
+}
+
+// Presentation reads stable storage, and playback must not append to its own FIFO.
+void World::RequireStructuralRequestsAllowed() const
+{
+	if (phase_ == ExecutionPhase::Idle || phase_ == ExecutionPhase::Simulation ||
+		phase_ == ExecutionPhase::Shutdown)
+	{
+		return;
+	}
+	GILGAMESH_LOG(Runtime, Error, "Structural requests are not allowed during this world phase");
+	throw std::logic_error("Structural requests are not allowed during this world phase");
+}
+
+// Mark playback explicitly so component callbacks cannot recursively mutate the queue.
+void World::ApplyPendingCommands()
+{
+	const ExecutionPhase previousPhase = phase_;
+	phase_ = ExecutionPhase::Playback;
+	try
+	{
+		commandBuffer_.Flush();
+	}
+	catch (...)
+	{
+		phase_ = previousPhase;
+		throw;
+	}
+	phase_ = previousPhase;
+}
+
+// Simulation changes become visible before later transform and extraction phases.
 void World::Update(float deltaTime)
 {
-
-	commandBuffer_.Flush();
+	RequireIdle();
+	SetSchedulingMutationAllowed(false);
+	try
+	{
+		ApplyPendingCommands();
+		phase_ = ExecutionPhase::Simulation;
+		if (!simulationPaused_) simulationSystems_.Update(*this, deltaTime);
+		ApplyPendingCommands();
+	}
+	catch (...)
+	{
+		phase_ = ExecutionPhase::Idle;
+		SetSchedulingMutationAllowed(true);
+		throw;
+	}
+	phase_ = ExecutionPhase::Idle;
+	SetSchedulingMutationAllowed(true);
 }
 
+// Run once after editor changes, even when simulation is paused.
+void World::PreparePresentation(float realDeltaTime)
+{
+	RequireIdle();
+	SetSchedulingMutationAllowed(false);
+	try
+	{
+		ApplyPendingCommands();
+		phase_ = ExecutionPhase::Transform;
+		transformSystems_.Update(*this, realDeltaTime);
+		phase_ = ExecutionPhase::Extraction;
+		extractionSystems_.Update(*this, realDeltaTime);
+	}
+	catch (...)
+	{
+		phase_ = ExecutionPhase::Idle;
+		SetSchedulingMutationAllowed(true);
+		throw;
+	}
+	phase_ = ExecutionPhase::Idle;
+	SetSchedulingMutationAllowed(true);
+}
+
+// Preserve synchronous scene construction for setup outside running systems.
 SceneHandle World::CreateScene(std::string name)
 {
+	RequireIdle();
 	// Reserve the null index and narrow only after checking the slot capacity.
 	const bool reuseSlot = !freeSceneIndices_.empty();
 	if (!reuseSlot && scenes_.size() >= std::numeric_limits<std::uint32_t>::max())
@@ -43,6 +168,28 @@ SceneHandle World::CreateScene(std::string name)
 
 bool World::DestroyScene(SceneHandle handle)
 {
+	RequireIdle();
+	// Component destructors are callbacks too; keep their reentry out of live storage.
+	SetSchedulingMutationAllowed(false);
+	phase_ = ExecutionPhase::Playback;
+	try
+	{
+		const bool destroyed = DestroySceneNow(handle);
+		phase_ = ExecutionPhase::Idle;
+		SetSchedulingMutationAllowed(true);
+		return destroyed;
+	}
+	catch (...)
+	{
+		phase_ = ExecutionPhase::Idle;
+		SetSchedulingMutationAllowed(true);
+		throw;
+	}
+}
+
+// Systems request destruction through the command buffer instead of this helper.
+bool World::DestroySceneNow(SceneHandle handle)
+{
 	if (!IsSceneHandleValid(handle)) return false;
 	Scene* scene = scenes_[handle.id].scene.get();
 
@@ -53,6 +200,9 @@ bool World::DestroyScene(SceneHandle handle)
 	{
 		freeSceneIndices_.reserve(freeSceneIndices_.size() + 1);
 	}
+
+	// Clear selection before retiring the slot; never choose an implicit fallback.
+	if (activeScene_ == handle) activeScene_ = {};
 
 	// DestroyEntity erases membership, so drain rather than iterate the vector.
 	while (!scene->entities_.empty())
@@ -69,6 +219,64 @@ bool World::DestroyScene(SceneHandle handle)
 		freeSceneIndices_.push_back(handle.id);
 	}
 	return true;
+}
+
+// Record only a currently valid selection, then validate it again at playback.
+bool World::RequestSetActiveScene(SceneHandle handle)
+{
+	RequireStructuralRequestsAllowed();
+	if (!IsSceneHandleValid(handle))
+	{
+		GILGAMESH_LOG(Runtime, Warning, "Cannot select an invalid or foreign scene");
+		return false;
+	}
+	commandBuffer_.RecordSceneCommand(ECSSceneCommandType::SetActive, handle);
+	return true;
+}
+
+// An explicit clear is distinct from an invalid selection request.
+void World::RequestClearActiveScene()
+{
+	RequireStructuralRequestsAllowed();
+	commandBuffer_.RecordSceneCommand(ECSSceneCommandType::ClearActive, {});
+}
+
+// The return value acknowledges the request, not immediate destruction.
+bool World::RequestDestroyScene(SceneHandle handle)
+{
+	RequireStructuralRequestsAllowed();
+	if (!IsSceneHandleValid(handle))
+	{
+		GILGAMESH_LOG(Runtime, Warning, "Cannot destroy an invalid or foreign scene");
+		return false;
+	}
+	commandBuffer_.RecordSceneCommand(ECSSceneCommandType::Destroy, handle);
+	return true;
+}
+
+// Scene operations retain their relative order with all entity edits.
+void World::ApplySceneCommand(ECSSceneCommandType type, SceneHandle handle)
+{
+	if (type == ECSSceneCommandType::ClearActive)
+	{
+		activeScene_ = {};
+		return;
+	}
+	if (!IsSceneHandleValid(handle))
+	{
+		GILGAMESH_LOG(Runtime, Warning, "Discarded a scene request whose handle became stale");
+		return;
+	}
+	if (type == ECSSceneCommandType::SetActive)
+		activeScene_ = handle;
+	else if (type == ECSSceneCommandType::Destroy)
+		DestroySceneNow(handle);
+}
+
+// Scene pointers are borrowed only until the next structural playback boundary.
+const Scene* World::TryGetActiveScene() const noexcept
+{
+	return TryGetScene(activeScene_);
 }
 
 const Scene* World::TryGetScene(SceneHandle handle) const noexcept
@@ -107,16 +315,19 @@ bool World::IsSceneHandleValid(SceneHandle handle) const noexcept
 
 Entity World::CreateEntity()
 {
+	RequireStructuralRequestsAllowed();
 	return commandBuffer_.CreateEntity();
 }
 
 Entity World::CreateEntity(SceneHandle handle)
 {
+	RequireStructuralRequestsAllowed();
 	return commandBuffer_.CreateEntity(handle);
 }
 
 void World::RemoveEntity(Entity entity)
 {
+	RequireStructuralRequestsAllowed();
 	commandBuffer_.RemoveEntity(entity);
 }
 

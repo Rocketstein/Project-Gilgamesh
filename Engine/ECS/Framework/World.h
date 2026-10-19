@@ -5,19 +5,41 @@
 #include "ECSCommandBuffer.h"
 #include "EntityRegistry.h"
 #include "Scene.h"
+#include "Engine/ECS/System/Core/SystemGroup.h"
 
 // Owns ECS storage and coordinates entity lifetimes with scene membership.
 class World final
 {
 public:
 	World();
+	~World() noexcept;
 
+	World(const World&) = delete;
+	World& operator=(const World&) = delete;
+
+	// Applies queued edits around simulation; presentation runs independently.
 	void Update(float deltaTime);
+	// Finalizes transforms and extracts presentation data once per rendered frame.
+	void PreparePresentation(float realDeltaTime);
 
-	// Create a scene, generating a name when none is supplied.
+	void SetSimulationPaused(bool paused) noexcept { simulationPaused_ = paused; }
+	[[nodiscard]] bool IsSimulationPaused() const noexcept { return simulationPaused_; }
+
+	// Groups own registered systems; callers retain only borrowed references.
+	[[nodiscard]] SystemGroup& GetSimulationSystems() noexcept { return simulationSystems_; }
+	[[nodiscard]] SystemGroup& GetTransformSystems() noexcept { return transformSystems_; }
+	[[nodiscard]] SystemGroup& GetExtractionSystems() noexcept { return extractionSystems_; }
+
+	// Immediate setup operations are restricted to times outside system execution.
 	[[nodiscard]] SceneHandle CreateScene(std::string name = "");
-	// Destroy the scene's entities and invalidate its handle before slot reuse.
 	bool DestroyScene(SceneHandle handle);
+
+	// Selection and destruction requested by systems are applied at playback.
+	bool RequestSetActiveScene(SceneHandle handle);
+	void RequestClearActiveScene();
+	bool RequestDestroyScene(SceneHandle handle);
+	[[nodiscard]] SceneHandle GetActiveSceneHandle() const noexcept { return activeScene_; }
+	[[nodiscard]] const Scene* TryGetActiveScene() const noexcept;
 	[[nodiscard]] const Scene* TryGetScene(SceneHandle handle) const noexcept;
 	[[nodiscard]] bool IsSceneHandleValid(SceneHandle handle) const noexcept;
 
@@ -47,7 +69,18 @@ public:
 	template <typename... Components, typename Fn>
 	void ForEach(Fn&& fn)
 	{
-		entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
+		// Deferred requests remain valid, but immediate operations must not invalidate rows.
+		++traversalDepth_;
+		try
+		{
+			entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
+		}
+		catch (...)
+		{
+			--traversalDepth_;
+			throw;
+		}
+		--traversalDepth_;
 	}
 
 	std::uint32_t GetWorldID() const noexcept { return worldID_; }
@@ -63,17 +96,39 @@ public:
 	template <typename Component>
 	void RemoveComponent(Entity entity)
 	{
+		RequireStructuralRequestsAllowed();
 		commandBuffer_.RemoveComponent<Component>(entity);
 	}
 
 	template <typename Component, typename... Args>
 	void Emplace(Entity entity, Args&&... args)
 	{
+		RequireStructuralRequestsAllowed();
 		commandBuffer_.EmplaceComponent<Component>(
 			entity, std::forward<Args>(args)...);
 	}
 
 private:
+	// Distinguishes write phases from transform and extraction read boundaries.
+	enum class ExecutionPhase
+	{
+		Idle,
+		Playback,
+		Simulation,
+		Transform,
+		Extraction,
+		Shutdown,
+		ShutdownComplete
+	};
+
+	// Guards callbacks against reentry and unsafe structural or scene mutations.
+	void RequireIdle() const;
+	void RequireStructuralRequestsAllowed() const;
+	void SetSchedulingMutationAllowed(bool allowed) noexcept;
+	void ApplyPendingCommands();
+	void ApplySceneCommand(ECSSceneCommandType type, SceneHandle handle);
+	bool DestroySceneNow(SceneHandle handle);
+
 	// Direct execution functions. Outside sources other than ECSCommandBuffer should use buffer request instead.
 	// Component access delegates to the registry; structural changes can invalidate references.
 	template <typename Component, typename... Args>
@@ -103,6 +158,9 @@ private:
 
 private:
 	std::uint32_t worldID_ = 0;
+	ExecutionPhase phase_ = ExecutionPhase::Idle; // Outlives storage to guard destructor callbacks.
+	bool simulationPaused_ = false; // Skips simulation without stopping presentation.
+	std::size_t traversalDepth_ = 0; // Protects explicit queries outside scheduled systems.
 
 	// Owns entity handles, component storage, and archetype queries.
 	EntityRegistry entityRegistry_;
@@ -125,12 +183,18 @@ private:
 	// Vacant slots available for reuse; exhausted generations are excluded.
 	std::vector<std::uint32_t> freeSceneIndices_;
 
+	// Default render source; selection does not silently filter global ECS queries.
+	SceneHandle activeScene_;
 
 	ECSCommandBuffer commandBuffer_;
+	SystemGroup simulationSystems_; // Gameplay systems in registration order.
+	SystemGroup transformSystems_; // Final world-transform evaluation.
+	SystemGroup extractionSystems_; // Read-only render and presentation extraction.
 
 private:
 	// Friends
 	friend class ECSCommandBuffer;
+	friend struct ECSSceneCommandPayload;
 	friend void ECSAddWorldEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world);
 	friend void ECSAddWorldEntityCommandPayload::Destroy(void* commandData, World& world) noexcept;
 	friend void ECSAddEntityCommandPayload::Execute(void* commandData, EntityRegistry& registry, World& world);

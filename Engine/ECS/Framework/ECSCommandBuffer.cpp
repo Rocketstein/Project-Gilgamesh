@@ -133,6 +133,25 @@ void ECSCommandBuffer::Clear()
 	commandBuffer_.Reset();
 }
 
+// Publish an arena-owned scene operation only after its payload is complete.
+void ECSCommandBuffer::RecordSceneCommand(ECSSceneCommandType type, SceneHandle scene)
+{
+    using Payload = ECSSceneCommandPayload;
+    void* storage = commandBuffer_.Allocate(sizeof(Payload), alignof(Payload));
+    if (!storage) throw std::bad_alloc{};
+
+    auto* payload = new (storage) Payload{ type, scene };
+    try
+    {
+        commands_.push_back({ &Payload::Execute, &Payload::Destroy, payload });
+    }
+    catch (...)
+    {
+        Payload::Destroy(payload, world_);
+        throw;
+    }
+}
+
 void ECSCommandBuffer::Flush()
 {
     // Execute commands in recording order.

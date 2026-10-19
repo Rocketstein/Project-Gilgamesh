@@ -4,7 +4,7 @@
 
 This document records the architecture implemented by Project Gilgamesh after
 the application-loop refactor. It describes the code as it exists now. Future
-module, ECS world, runtime simulation, reflection, and Play-in-Editor design
+module, runtime simulation, reflection, and Play-in-Editor design
 belongs in separate evolution documents.
 
 The current executable is an editor prototype. It opens one Win32 window,
@@ -331,8 +331,65 @@ restores the presentation target with `Renderer::BindOutput()` and then submits
 the UI, whose viewport image samples the already rendered color texture.
 
 This is intentional prototype code, not a general scene renderer. There is no
-asset manager, material system, world renderer, render-command extraction
-system, or API-independent RHI.
+asset manager, material system, world renderer, pass-specific mesh-command
+preparation, or API-independent RHI. The ECS render extraction described below
+is implemented independently and is not yet connected to the editor viewport.
+
+## ECS scheduling and render extraction
+
+`World` owns three generic `SystemGroup` roots: simulation, transform, and
+extraction. Each root is initialized and enabled by the world. Concrete systems
+are registered by composition code through `AddSystem(unique_ptr<ISystem>)`,
+then explicitly enabled. Groups own their children exclusively, execute them in
+registration order, and disable and destroy them in reverse order while the
+world storage remains alive. Callers may retain borrowed system references but
+must discard them before removal or world destruction.
+
+`World::Update(deltaTime)` replays structural commands, runs simulation unless
+paused, then replays simulation requests. `PreparePresentation(realDeltaTime)`
+replays the latest editor requests, runs transform systems, and finally runs
+extraction systems. It is a separate entry point so presentation can run once
+per render submission, including while simulation is paused. There is no
+structural playback between transform evaluation and extraction. Structural
+requests, immediate scene mutation, recursive world updates, and changes to
+system registration are rejected during the phases where they would invalidate
+storage or scheduling. A system exception restores the world to its idle phase.
+
+The world retains one full generation-checked active `SceneHandle`, initially
+null. Scene creation does not activate a scene. `RequestSetActiveScene`,
+`RequestClearActiveScene`, and `RequestDestroyScene` enter the same FIFO as
+entity commands and are applied at playback boundaries. Requests are validated
+again at playback. Destroying the selected scene clears selection without
+choosing a fallback. The synchronous `CreateScene` and `DestroyScene` APIs are
+available only outside world execution for setup and existing callers. Active
+scene selection identifies the default render source; `World::ForEach` retains
+its whole-world query semantics.
+
+`RenderExtractionSystem : public ISystem` traverses the active scene's entity
+membership and reads `TransformComponent` and `MeshComponent` from the world.
+It copies assigned mesh handles and row-vector world transforms into
+`RenderFrameData`; it does not resolve GPU resources or retain ECS references.
+World-space TRS currently composes as scale, rotation, then translation. There
+is no transform hierarchy evaluator yet. Stale resource generations are left
+for the renderer-facing consumer to validate.
+
+The extractor owns at most one completed `optional<RenderFrameData>`.
+`TakeFrame` transfers it once and clears the pending slot; `DiscardFrame`,
+disablement, and destruction clear unconsumed data. No active scene produces a
+present but empty snapshot, distinct from no fresh result. Composition code can
+move the snapshot to a future renderer submission API and assign engine frame
+metadata there. This implementation does not alter `SimpleMeshRenderer`,
+introduce pass-specific draw commands, or replace `EditorPreviewScene` yet.
+
+Composition code registers an enabled `RenderExtractionSystem` in
+`world.GetExtractionSystems()`, retains a borrowed pointer, and requests the
+active scene explicitly. After `world.PreparePresentation(realDeltaTime)`
+returns successfully, it calls `TakeFrame()` once and moves the result to its
+consumer. A failed presentation preparation must abort consumption and discard
+any pending result; extraction clears its own pending output before rebuilding.
+System initialization hooks must release their own partially acquired resources
+if they fail, just as constructors do. Successful world-owned systems are shut
+down while ECS storage is still valid.
 
 ## Current boundaries and non-features
 

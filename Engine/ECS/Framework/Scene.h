@@ -15,6 +15,8 @@ struct SceneHandle
     [[nodiscard]]
 	bool IsNull() const noexcept { return id == InvalidIndex; }
 
+    friend constexpr bool operator==(SceneHandle, SceneHandle) = default;
+
 private:
     static constexpr std::uint32_t InvalidIndex =
         std::numeric_limits<std::uint32_t>::max();

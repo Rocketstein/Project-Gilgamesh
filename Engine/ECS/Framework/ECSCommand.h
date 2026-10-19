@@ -10,6 +10,26 @@
 
 class World;
 
+// Scene changes share entity command ordering and playback boundaries.
+enum class ECSSceneCommandType
+{
+	SetActive,
+	ClearActive,
+	Destroy
+};
+
+// Keeps scene identity intact until a deferred change can be validated again.
+struct ECSSceneCommandPayload
+{
+public:
+	static void Execute(void* commandData, EntityRegistry& registry, World& world);
+	static void Destroy(void* commandData, World& world) noexcept;
+
+public:
+	ECSSceneCommandType type; // Scene operation recorded by the caller.
+	SceneHandle scene; // Full identity, including generation and owning world.
+};
+
 struct ECSAddWorldEntityCommandPayload
 {
 public:

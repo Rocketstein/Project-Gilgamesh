@@ -38,6 +38,9 @@ public:
 
 	void RemoveEntity(Entity entity);
 
+	// Records scene selection or destruction in the entity command FIFO.
+	void RecordSceneCommand(ECSSceneCommandType type, SceneHandle scene);
+
 	// Record a preconstructed component for later attachment.
 	template <typename Component>
 	void AddComponent(Entity entity, Component component)
