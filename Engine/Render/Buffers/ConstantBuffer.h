@@ -4,6 +4,11 @@
 #include <dxgi1_5.h>
 #include <wrl/client.h>
 
+#include <cstring>
+#include <type_traits>
+#include <utility>
+
+// Owns a CPU-writable constant buffer with explicitly packed shader data.
 template <class T>
 class ConstantBuffer final
 {
@@ -22,7 +27,7 @@ public:
     ConstantBuffer(ConstantBuffer&&) noexcept = default;
     ConstantBuffer& operator=(ConstantBuffer&&) noexcept = default;
 
-    // Create a CPU-writable D3D11 constant buffer.
+    // Create a CPU-writable buffer, preserving the current resource on failure.
     bool Create(ID3D11Device* device)
     {
         UINT byteWidth = static_cast<UINT>(sizeof(T));
@@ -34,8 +39,16 @@ public:
         desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-        device->CreateBuffer(&desc, nullptr, &buffer_);
-        buffer_->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ConstantBuffer")), "ConstantBuffer");
+        // Publish the replacement only after D3D11 has created a valid buffer.
+        Microsoft::WRL::ComPtr<ID3D11Buffer> newBuffer;
+        const HRESULT hr = device->CreateBuffer(
+            &desc, nullptr, newBuffer.GetAddressOf());
+        if (FAILED(hr)) return false;
+
+        constexpr char debugName[] = "ConstantBuffer";
+        newBuffer->SetPrivateData(WKPDID_D3DDebugObjectName,
+            static_cast<UINT>(sizeof(debugName) - 1), debugName);
+        buffer_ = std::move(newBuffer);
         initialized_ = true;
 
         return true;
@@ -64,6 +77,7 @@ public:
     bool IsInitialized() const noexcept { return initialized_; }
 
 private:
+    // Retains the last successfully created buffer until replacement succeeds.
     Microsoft::WRL::ComPtr<ID3D11Buffer> buffer_;
     bool initialized_ = false;
 };

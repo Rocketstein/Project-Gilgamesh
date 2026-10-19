@@ -1,7 +1,4 @@
-cbuffer ObjectConstants : register(b2)
-{
-    float4x4 modelViewProjection;
-};
+#include "Common/ConstantBuffer.hlsli"
 
 struct VSOut
 {
@@ -12,8 +9,9 @@ struct VSOut
 VSOut VSMain(float3 pos : POSITION, float3 col : COLOR)
 {
     VSOut output;
+    // Keep per-object transforms separate from the current camera view.
     output.pos =
-        mul(float4(pos, 1.0f), modelViewProjection);
+        mul(mul(float4(pos, 1.0f), model), viewProjection);
     output.col = col;
     return output;
 };

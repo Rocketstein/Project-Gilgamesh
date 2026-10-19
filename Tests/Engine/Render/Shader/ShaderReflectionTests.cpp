@@ -122,7 +122,7 @@ GILGAMESH_TEST("Engine.Render.ShaderReflection", "ExtractsPrimitiveVertexContrac
             "Primitive VS inputs must both contain three float components");
     }
 
-    // Match the constant buffer slot and its matrix layout.
+    // Match the per-object constant buffer slot and its model matrix layout.
     const auto binding = std::find_if(data.bindings.begin(), data.bindings.end(),
         [](const auto& resource)
         {
@@ -149,10 +149,52 @@ GILGAMESH_TEST("Engine.Render.ShaderReflection", "ExtractsPrimitiveVertexContrac
     {
         GILGAMESH_CHECK_MESSAGE(buffer->size == 64 &&
             buffer->variables.size() == 1 &&
-            buffer->variables[0].name == "modelViewProjection" &&
+            buffer->variables[0].name == "model" &&
             buffer->variables[0].offset == 0 &&
             buffer->variables[0].size == 64,
-            "ObjectConstants must contain a 64-byte MVP matrix at offset zero");
+            "ObjectConstants must contain a 64-byte model matrix at offset zero");
+    }
+
+    // Camera matrices stay in b0 so the same model data can serve multiple views.
+    const auto frameBinding = std::find_if(data.bindings.begin(), data.bindings.end(),
+        [](const auto& resource)
+        {
+            return resource.name == "FrameConstants";
+        });
+    GILGAMESH_CHECK_MESSAGE(frameBinding != data.bindings.end(),
+        "Primitive VS must bind FrameConstants");
+    if (frameBinding != data.bindings.end())
+    {
+        GILGAMESH_CHECK_MESSAGE(frameBinding->type == D3D_SIT_CBUFFER &&
+            frameBinding->slot == 0 && frameBinding->count == 1,
+            "FrameConstants must be one constant buffer at b0");
+    }
+
+    const auto frameBuffer = std::find_if(data.constantBuffers.begin(),
+        data.constantBuffers.end(),
+        [](const auto& candidate)
+        {
+            return candidate.name == "FrameConstants";
+        });
+    GILGAMESH_CHECK_MESSAGE(frameBuffer != data.constantBuffers.end(),
+        "Primitive VS must expose the FrameConstants layout");
+    if (frameBuffer != data.constantBuffers.end())
+    {
+        const auto viewProjection = std::find_if(frameBuffer->variables.begin(),
+            frameBuffer->variables.end(),
+            [](const auto& variable)
+            {
+                return variable.name == "viewProjection";
+            });
+        GILGAMESH_CHECK_MESSAGE(frameBuffer->size == 288 &&
+            viewProjection != frameBuffer->variables.end(),
+            "FrameConstants must retain the shared 288-byte frame layout");
+        if (viewProjection != frameBuffer->variables.end())
+        {
+            GILGAMESH_CHECK_MESSAGE(viewProjection->offset == 128 &&
+                viewProjection->size == 64,
+                "viewProjection must occupy the shared frame matrix slot");
+        }
     }
 }
 
@@ -221,7 +263,7 @@ GILGAMESH_TEST("Engine.Render.ShaderReflection", "ManagerOwnsReflectedStageMetad
     {
         GILGAMESH_CHECK_MESSAGE(
             vertexData->inputs.size() == 2 &&
-            vertexData->constantBuffers.size() == 1 &&
+            vertexData->constantBuffers.size() == 2 &&
             pixelData->bindings.empty() &&
             pixelData->constantBuffers.empty(),
             "each stage must retain its own distinct reflection contract");

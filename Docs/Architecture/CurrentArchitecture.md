@@ -2,8 +2,8 @@
 
 ## Purpose
 
-This document records the architecture implemented by Project Gilgamesh after
-the application-loop refactor. It describes the code as it exists now. Future
+This document records the architecture implemented by Project Gilgamesh. It
+describes the code as it exists now. Future
 module, runtime simulation, reflection, and Play-in-Editor design
 belongs in separate evolution documents.
 
@@ -25,7 +25,8 @@ WinMain
           -> FrameClock
           -> Engine::Run(IProgram&)
       -> EditorProgram : IProgram
-          -> EditorPreviewScene
+          -> World and registered RenderExtractionSystem
+          -> temporary demo mesh resource
           -> editor viewport and viewport client
           -> frame-local RenderGraph orchestration
           -> ImGui integration and editor workspace
@@ -79,10 +80,11 @@ placeholder.
 | Win32 input translation | `Engine/Platform/Windows/Win32InputBackend.*` |
 | Real-time frame measurement | `Engine/Time/FrameClock.*` |
 | Renderer-facing mesh resource management | `Engine/Render/Mesh/MeshManager.*` |
-| Fixed vertex-color mesh technique | `Engine/Render/Techniques/SimpleMeshRenderer.*` |
+| Fixed vertex-color command preparation and drawing | `Engine/Render/Passes/VertexColorMeshPass.*` |
+| Renderer-facing snapshots and camera data | `Engine/Render/Renderer/RenderFrameData.h`, `RenderView.h` |
+| Active-scene extraction system | `Engine/ECS/System/RenderExtractionSystem.*` |
 | Texture dependency, pass-state, and execution orchestration | `Engine/Render/RenderGraph/` |
 | Editor implementation and mesh submission | `Editor/EditorProgram.*` |
-| Temporary preview content and mesh instances | `Editor/EditorScene/EditorPreviewScene.*` |
 | Editor viewport presentation | `Editor/EditorUI/Panels/EditorViewportPanel.*` |
 | ImGui backend integration | `Editor/EditorUI/Runtime/ImGuiIntegration.*` |
 | Console implementation | `Editor/Console/` |
@@ -120,20 +122,23 @@ and read-only input system through `EngineServices`; a program does not own any
 of these objects.
 
 `EditorProgram` owns its implementation through `std::unique_ptr<Impl>`. The
-private PImpl contains editor-only state and an `EditorPreviewScene` while
+private PImpl contains editor-only state and a `World` while
 keeping those dependencies out of `EditorProgram.h`. Its constructor and
 destructor are defined in `EditorProgram.cpp`, where `Impl` is complete.
 
 The implementation owns:
 
-- The editor viewport client, temporary preview scene, and frame render graph
+- The editor viewport client, world, temporary demo mesh handle, and frame render graph
+- A borrowed pointer to the extraction system owned by the world's extraction group
 - ImGui integration, the editor workspace, and the viewport panel
 - The console buffer, sink registration, configuration, Output Log panel,
   commands, and pending command state when editor diagnostics are enabled
 
-`EditorProgram::Shutdown()` asks `EditorPreviewScene` to remove its resources
-through `MeshManager`, then resets the implementation while the engine window
-and renderer are still alive. This also lets ImGui disconnect its
+`EditorProgram::Shutdown()` resets the implementation while the engine window
+and renderer are still alive. Its destructor resets the graph before releasing
+viewport resources and retires the temporary demo mesh through `MeshManager`.
+World destruction clears pending extraction and destroys the registered system.
+This also lets ImGui disconnect its
 window-message handler and releases program-owned viewport resources before
 engine destruction.
 
@@ -157,7 +162,7 @@ public:
 `EngineServices` currently exposes borrowed `Window&` and `Renderer&`
 references during initialization. `RenderContext` exposes the renderer and
 current output extent during rendering. These are deliberately small prototype
-boundaries; they do not yet form a general subsystem or render-command API.
+boundaries; they do not yet form a general subsystem API.
 
 ## Startup and shutdown
 
@@ -174,13 +179,15 @@ WinMain
           -> initialize Renderer
               -> create the D3D11 device and presentation surface
               -> initialize ShaderManager and MeshManager
-              -> initialize SimpleMeshRenderer
+              -> initialize VertexColorMeshPass
       -> create EditorProgram
       -> EditorProgram::Initialize
           -> optionally create console state and register ConsoleLogSink
           -> initialize ImGui against the engine window and D3D11 device
           -> initialize the editor viewport
-          -> initialize EditorPreviewScene through MeshManager
+          -> register and enable RenderExtractionSystem in the world
+          -> upload the demo cube through MeshManager
+          -> create an active scene and a transform/mesh entity
       -> Engine::Run(EditorProgram)
 ```
 
@@ -243,19 +250,37 @@ and is not a frame limiter. No fixed-step simulation clock currently exists.
 ### Editor update and rendering
 
 `EditorProgram::Update()` updates the viewport client, optionally executes a
-console command submitted by the previous frame, and begins the new ImGui
-frame.
+console command submitted by the previous frame, advances `World::Update()`,
+and begins the new ImGui frame. It retains the frame time and number for the
+render submission.
 
-`EditorProgram::Render()` submits the editor workspace and viewport panel, then
-rebuilds its frame-local render graph. It imports the viewport-owned color and
-depth textures and their native views, declares an `EditorScene` pass, builds a
-`RenderView`, and gathers `StaticMeshDrawItem` values from
-`EditorPreviewScene`. The pass callback invokes `SimpleMeshRenderer` after the
-graph has bound and cleared the viewport attachments. The swap chain and ImGui
-remain outside the graph: after graph execution, `Renderer::BindOutput()`
-restores the swap-chain target before the Output Log and the accumulated ImGui
-draw data are submitted. The engine surrounds this work with renderer
-begin/end calls.
+`EditorProgram::Render()` first resets its frame-local graph, releasing borrowed
+viewport resource pointers before UI-driven resize. After drawing the workspace
+and viewport panel, a visible viewport runs this sequence:
+
+```text
+World::PreparePresentation(realDeltaTime)
+  -> transform systems
+  -> RenderExtractionSystem
+  -> TakeFrame(), assign the engine frame number
+  -> build RenderView from the editor camera and viewport extent
+  -> import viewport color and depth resources
+  -> Renderer::AddScenePasses
+      -> VertexColorMeshPass::PrepareCommands
+      -> graph owns a moved MeshPassCommands value in its execute callback
+  -> RenderGraph::Compile / Execute
+      -> clear and bind attachments
+      -> VertexColorMeshPass::ExecuteCommands
+```
+
+A hidden viewport discards pending extraction instead of retaining a previous
+snapshot. Presentation or pass-execution failure is caught and logged at the
+editor render boundary; failed extraction is not submitted again.
+
+The swap chain and ImGui remain outside the graph: after graph execution,
+`Renderer::BindOutput()` restores the swap-chain target before the Output Log
+and accumulated ImGui draw data are submitted. The engine surrounds this work
+with renderer begin/end calls.
 
 Deferring console execution until the next update prevents command handlers
 from mutating the console buffer while the previous frame's widgets are being
@@ -291,20 +316,43 @@ OutputLogPanel::Draw
 ## Rendering boundary
 
 The renderer currently owns the D3D11 device, presentation surface, shader
-manager, `MeshManager`, and `SimpleMeshRenderer`. `MeshManager` owns uploaded
-static meshes behind generation-checked handles. `SimpleMeshRenderer` owns the
-fixed vertex-color pipeline and object constant buffer and issues indexed
-draws from a `RenderView` and a span of `StaticMeshDrawItem` values.
+manager, `MeshManager`, and `VertexColorMeshPass`. `MeshManager` owns uploaded
+static meshes behind generation-checked handles. The pass owns its fixed
+vertex-color `DrawSetup` and separate view and object constant buffers.
 
-The editor owns the offscreen viewport target and `EditorPreviewScene`. The
-preview scene owns the temporary cube handle and transform and resolves them
-into frame-local draw items. `EditorViewport` exposes borrowed pointers to its
-viewport-owned D3D11 color and depth resources without depending on
-`RenderGraph`; `EditorProgram` is the composition point that imports those
-resources into the graph each frame. Its `EditorScene` pass selects the target,
-constructs the view, gathers the draw items, and invokes the renderer-owned
-technique. `EditorViewportPanel` measures and presents the viewport texture but
-does not own scene rendering.
+`PrepareCommands(frame, view, meshes)` is CPU-only. It validates the viewport
+and invertible view-projection matrix, copies shader-ready camera constants,
+and prepares one `MeshDrawCommand` for each currently valid extracted mesh.
+Each command owns a transposed model matrix and a `MeshHandle`; it does not
+retain an ECS reference or a raw `StaticMesh*`. Preparation preserves extraction
+order and performs no culling, sorting, or GPU updates.
+
+`MeshPassCommands` owns the per-view `FrameConstants` and vector of draw commands.
+`Renderer::AddScenePasses()` prepares that value and registers a `VertexColorMeshes`
+pass whose execute callback captures it by value. Callers can release the
+extraction snapshot after preparation. The renderer and its mesh manager must
+outlive graph execution; graph callbacks borrow them.
+
+`ExecuteCommands(context, commands, meshes)` uploads view constants only when
+the pass executes, applies the draw setup, and uploads object constants for each
+draw. It resolves each handle again before mesh binding and `DrawIndexed()`,
+skipping resources removed since preparation. Preparing multiple views cannot
+overwrite their GPU constants in advance. Empty command lists still register
+the graph pass so its color and depth clears occur. Failed constant uploads
+return failure; the graph callback converts it to an exception for the editor
+render boundary to handle.
+
+The Primitive vertex shader uses `b0 FrameConstants.viewProjection` and
+`b2 ObjectConstants.model` to evaluate model then view-projection. CPU matrices
+use row-vector conventions and are transposed for HLSL upload. Model constants
+no longer contain a combined MVP matrix.
+
+The editor owns the offscreen viewport and world. Temporary cube geometry is
+uploaded through `MeshManager`; its instance transform and mesh handle live in
+ECS components. `EditorViewport` exposes borrowed pointers to its native color
+and depth resources without depending on `RenderGraph`; `EditorProgram` imports
+them each frame. `EditorViewportPanel` measures and presents the viewport texture
+but does not own scene rendering.
 
 `RenderGraph` declares texture attachments and shader reads. `Compile(device)`
 validates those declarations, derives a deterministic dependency order, and
@@ -330,10 +378,13 @@ presentation and ImGui composition are not graph passes: `EditorProgram`
 restores the presentation target with `Renderer::BindOutput()` and then submits
 the UI, whose viewport image samples the already rendered color texture.
 
-This is intentional prototype code, not a general scene renderer. There is no
-asset manager, material system, world renderer, pass-specific mesh-command
-preparation, or API-independent RHI. The ECS render extraction described below
-is implemented independently and is not yet connected to the editor viewport.
+The vertex-color pass is the first concrete consumer of ECS render extraction.
+There is no separate `MeshDrawExecutor`; command preparation and execution are
+two responsibilities within the same pass. Materials, mesh bounds, visibility
+culling, sorting, instancing, a general world renderer, and an API-independent
+RHI remain unimplemented. The existing `EditorGridLinePass` C++ stub remains
+unconnected; no grid submission or read-only viewport DSV is added by this mesh
+path.
 
 ## ECS scheduling and render extraction
 
@@ -395,10 +446,10 @@ for the renderer-facing consumer to validate.
 The extractor owns at most one completed `optional<RenderFrameData>`.
 `TakeFrame` transfers it once and clears the pending slot; `DiscardFrame`,
 disablement, and destruction clear unconsumed data. No active scene produces a
-present but empty snapshot, distinct from no fresh result. Composition code can
-move the snapshot to a future renderer submission API and assign engine frame
-metadata there. This implementation does not alter `SimpleMeshRenderer`,
-introduce pass-specific draw commands, or replace `EditorPreviewScene` yet.
+present but empty snapshot, distinct from no fresh result. `EditorProgram`
+takes the result, assigns engine frame metadata, and supplies it to
+`Renderer::AddScenePasses()`. The old `EditorPreviewScene`, `StaticMeshDrawItem`,
+and `SimpleMeshRenderer` path has been removed.
 
 Composition code registers an enabled `RenderExtractionSystem` in
 `world.GetExtractionSystems()`, retains a borrowed pointer, and requests the
@@ -415,7 +466,7 @@ down while ECS storage is still valid.
 The following are not implemented by the current architecture:
 
 - Standalone game executable or functioning `GameProgram`
-- ECS world integration, runtime simulation, or Play-in-Editor
+- Runtime gameplay simulation or Play-in-Editor
 - Configurable action mapping and UI-aware editor/gameplay input routing
 - Reflection, serialization, object handles, or garbage collection
 - Asset/project management

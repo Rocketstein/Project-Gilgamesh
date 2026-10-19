@@ -85,13 +85,12 @@ target_sources (GilgameshEngine
 		Render/RenderGraph/GraphPassBuilder.h
 
 
-		Render/Techniques/SimpleMeshRenderer.cpp
-		Render/Techniques/SimpleMeshRenderer.h
+		Render/Passes/VertexColorMeshPass.cpp
+		Render/Passes/VertexColorMeshPass.h
 
 		Render/Renderer/Renderer.cpp
 		Render/Renderer/Renderer.h
 		Render/Renderer/RenderView.h
-		Render/Renderer/StaticMeshDrawItem.h
 		Render/Renderer/RenderFrameData.h
 
 		Render/Buffers/BufferUsage.h

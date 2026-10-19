@@ -2,425 +2,289 @@
 
 ## Purpose
 
-This document records the intended evolution of rendering in Project
-Gilgamesh as a general-purpose ECS engine. It supersedes the earlier
-domain-specific trajectory.
+This document records the implemented rendering baseline and intended evolution
+of Project Gilgamesh as a general-purpose ECS engine. It supersedes the earlier
+domain-specific trajectory. `Docs/Architecture/CurrentArchitecture.md` describes
+the complete running application boundary.
 
-The goal is still not to build a general-purpose rendering framework in
-advance. Each abstraction should appear when a visible feature gives it a
-concrete job. The renderer is currently D3D11-specific; a cross-API rendering
-interface remains out of scope until a second backend becomes a real
-requirement.
+Each abstraction should appear when a visible feature gives it a concrete job.
+The renderer is D3D11-specific; a cross-API interface remains out of scope until
+a second backend becomes a real requirement.
 
-The ECS direction changes the boundary through which scenes reach the
-renderer. It does not require mesh resources, draw setups, or the renderer
-itself to know about entities or component storage.
+## Current data boundary
 
-## Target boundary
-
-The intended data flow is:
+The implemented path is:
 
 ```text
-ECS world
-  -> transform update, visibility, and render extraction
-  -> frame-local RenderView + StaticMeshDrawItem[]
-  -> rendering techniques and pass orchestration
-  -> DrawSetup + D3D11 resources
-  -> GPU submission
+World::PreparePresentation
+  -> transform systems
+  -> RenderExtractionSystem
+  -> RenderFrameData: mesh handles and copied world transforms
+  -> EditorProgram adds RenderView: camera and viewport
+  -> Renderer::AddScenePasses
+  -> VertexColorMeshPass::PrepareCommands
+  -> MeshPassCommands captured by value in RenderGraph
+  -> RenderGraph binds and clears viewport attachments
+  -> VertexColorMeshPass::ExecuteCommands
+  -> DrawSetup, constant buffers, mesh binding, DrawIndexed
 ```
 
-The ECS is a source of renderable state, not the renderer's submission API.
-Extraction is the dependency firewall: it converts component data into
-renderer-owned, frame-local values. The renderer must not query or traverse an
-ECS registry.
+Extraction separates ECS storage from renderer input. The renderer does not
+query entities or retain component references. `RenderFrameData` is
+camera-independent and can be reused to prepare several views. Tests and
+non-ECS previews can construct the same values without a world.
 
-This keeps both sides reusable. The same ECS world may feed a game view, an
-editor view, a thumbnail renderer, or no renderer at all. The renderer can
-also draw editor previews and tests that do not originate in an ECS world.
+The extractor owns one optional completed snapshot. `TakeFrame()` transfers it
+once; disablement, destruction, or `DiscardFrame()` clears unconsumed output.
+An empty active-scene result is a fresh, empty snapshot and still clears the
+viewport. Without a fresh result, callers must not reuse earlier commands.
 
 ## Architectural principles
 
-### Draw setups describe how a draw is processed
-
-A draw setup is treated as an immutable, reusable collection of
-draw-processing state after successful initialization. It does not own
-geometry, render targets, per-frame data, or the draw call.
-
-The current draw setup contains:
-
-- A required vertex shader
-- An optional pixel shader, allowing depth-only draws
-- An optional input layout, allowing `SV_VertexID` full-screen draws
-- Primitive topology
-- Rasterizer state
-- Depth-stencil state
-- Blend state
-
-The static-mesh path made rasterizer state explicit, while the editor-grid
-requirement made blend state configurable. Safe defaults remain solid,
-back-face-culled, and opaque; techniques opt into different behavior through
-the draw-state description so their result cannot depend on earlier draw state.
-
-The shader manager owns logical shader resources. A draw setup resolves
-typed shader handles during initialization and retains shared COM references
-to the native shaders it requires. This keeps binding self-contained and gives
-an initialized draw setup a clear lifetime guarantee.
-
-### Mesh data, GPU geometry, and drawing are separate concepts
-
-Static-mesh support should have three boundaries:
+### Mesh resources and draws have separate ownership
 
 ```text
 StaticMeshData
-  -> CPU vertices, indices, and local bounds
+  -> CPU vertices and indices
 
 StaticMesh
   -> immutable D3D11 vertex/index buffers and draw metadata
 
-SimpleMeshRenderer
-  -> shader, draw setup, per-draw constants, and DrawIndexed
+MeshManager
+  -> uploaded mesh ownership and generation-checked MeshHandle identities
+
+VertexColorMeshPass
+  -> fixed DrawSetup, command preparation, constants, and indexed submission
 ```
 
 `StaticMeshData` is API-independent and suitable for procedural generation,
-asset import, validation, and unit tests. `StaticMesh` is a move-only GPU
-resource. `SimpleMeshRenderer` is the first fixed rendering technique.
+asset import, and validation. `StaticMesh` is a move-only GPU resource. Neither
+a mesh nor a renderable component owns a camera, render target, or draw call.
+Here, static means non-deforming topology; an entity may move every frame.
+Bounds, normals, and texture coordinates remain future work driven by
+visibility and material requirements.
 
-Neither `StaticMesh` nor a renderable component owns a draw setup,
-camera, render target, or draw call. Here, *static* means non-deforming mesh
-topology; an entity using the mesh may move every frame.
+### Draw setups describe reusable draw state
 
-### Frame render data belongs to the renderer
+An initialized `DrawSetup` is a reusable bundle of shaders, optional input
+layout, topology, rasterizer, depth-stencil, and blend state. It does not own
+geometry, render targets, per-view data, or draw calls. The shader manager owns
+logical shader resources; the setup retains shared COM references to native
+shaders and state after successful initialization.
 
-The initial renderer-facing values can remain deliberately small. The exact
-API may evolve, but its responsibilities should resemble:
+The vertex-color pass uses position and color from `NormalVertex`, triangle
+topology, depth testing and writing, back-face culling, and opaque blending.
+Future passes may select different setups without changing geometry ownership.
 
-```cpp
-struct RenderView
-{
-    Matrix4 view;
-    Matrix4 projection;
-};
+### Preparation and execution remain in one concrete pass
 
-struct StaticMeshDrawItem
-{
-    const StaticMesh* mesh;
-    Matrix4 localToWorld;
-    Color4 tint;
-};
-```
+`VertexColorMeshPass` exposes two phases:
 
-A draw item is a non-owning, frame-local description. It contains resolved
-render data, not component references, ECS queries, or persistent entity
-ownership. A source entity identifier may be carried later for editor
-selection or diagnostics, but rendering must not require one.
+- `PrepareCommands(frame, view, meshes)` copies shader-ready view constants and
+  per-instance model matrices without changing GPU state. It rejects an empty
+  viewport or non-invertible view-projection matrix and skips invalid mesh
+  handles. It preserves extraction order.
+- `ExecuteCommands(context, commands, meshes)` applies the fixed setup,
+  uploads constants, resolves each handle again, binds geometry, and issues
+  whole-mesh indexed draws. A stale handle is skipped; an upload failure fails
+  execution.
 
-The initial, synchronous editor path may use borrowed `StaticMesh` references
-in draw items because submission finishes before the meshes can be replaced or
-destroyed. Once resources can unload or submission can be deferred, resolved
-resources must remain pinned through submission or draw items must retain safe
-handles. Extraction can adopt that policy without reversing the renderer/ECS
-dependency direction.
+`MeshDrawCommand` owns a `MeshHandle` and `ObjectConstants`; `MeshPassCommands`
+owns `FrameConstants` and a vector of those commands. Neither structure holds
+component references or raw mesh pointers. A graph callback owns its prepared
+commands by value, while borrowing the renderer for execution. Mesh handles
+belong to the renderer's own `MeshManager`.
+
+View constants are uploaded when a pass executes, so preparing another view
+cannot overwrite the earlier view's GPU state. Primitive HLSL computes model
+then view-projection using `b2 ObjectConstants.model` and
+`b0 FrameConstants.viewProjection`. CPU row-vector matrices are transposed at
+the preparation boundary.
+
+There is no separate `MeshDrawExecutor`. A second mesh pass may reveal shared
+submission code later; that concrete overlap should determine what to extract.
 
 ### ECS components describe persistent world state
 
-Once the generic ECS has stable entity lifetime, component storage, and query
-semantics, a renderable entity will conceptually combine separate data-only
-components such as:
+The current renderable entity combines data-only `TransformComponent` and
+`MeshComponent`. The mesh component stores a shared `MeshHandle`; it contains
+no COM pointer, draw setup, camera, or rendering code. The extractor copies
+world-space TRS in scale, rotation, translation order. Hierarchical transform
+evaluation remains unimplemented.
 
-```text
-Transform or WorldTransform
-  -> spatial state
+Extraction does not resolve GPU resources or select a particular view. Resource
+validation happens during pass preparation and again during execution. Future
+view-dependent culling, material resolution, and sorting belong after the
+camera-independent snapshot, without coupling generic ECS storage to rendering.
 
-StaticMeshComponent
-  -> MeshHandle
-  -> MaterialHandle, when materials exist
-```
+### The graph owns attachment state and ordering
 
-Renderable components must never contain COM pointers, D3D11 buffers, draw
-setups, cameras, or rendering code. Meshes are shared resources,
-not duplicated component data. Transform hierarchy evaluation and
-local-to-world computation happen before extraction, outside the renderer.
+`EditorProgram` owns the offscreen viewport and imports its color and depth
+resources into `RenderGraph`. `Renderer::AddScenePasses()` registers the
+`VertexColorMeshes` pass with color/depth clears and read-write depth access.
+The graph compiles dependencies, realizes graph-owned textures, binds declared
+attachments and shader resources, performs clears, and supplies the viewport.
+The callback owns draw-local state and submission.
 
-Do not introduce `MeshHandle` merely as a typedef. Add it with the resource
-manager and lifetime rules that make it meaningful: validity, ownership,
-unloading, stale-handle behavior, and fallback resources.
+An empty mesh list still produces the clear pass. Execution failure is
+propagated from the callback to the editor render boundary. Graph-held resource
+pointers and callbacks are discarded by `Reset()` before viewport resize or
+shutdown. The renderer and its pass must outlive any graph using their callbacks.
 
-### Materials describe reusable appearance
+The swap chain and ImGui remain outside the graph. The editor restores the
+presentation target after scene rendering and submits UI draw data whose
+viewport image samples the rendered color texture.
 
-A future material should reference a rendering technique and supply textures,
-samplers, and parameter data. It should not expose D3D11 objects to gameplay,
-tools, or ECS code.
+### Materials wait for reusable appearance
 
-```text
-Material
-  -> technique identity
-  -> texture and sampler handles
-  -> parameter data
-```
-
-Broad scheduling classifications such as opaque or translucent may be
-material properties, but concrete pass scheduling remains a renderer or
-rendering-technique responsibility. A general material system is premature
-while one fixed mesh appearance is sufficient.
-
-### Render passes describe why and where rendering happens
-
-A render pass owns an objective and its output context: render targets, clears,
-viewport, ordering, and any resource preparation around its draws.
-
-Draw setups and rendering techniques do not register passes. The dependency
-points in the other direction:
-
-```text
-Render pass or explicit orchestration
-  -> establishes outputs, clears, viewport, and ordering
-  -> selects draw items and invokes rendering techniques
-
-Rendering technique
-  -> applies its draw setup
-  -> binds geometry and resources
-  -> issues draws
-```
-
-One pass may invoke several techniques, and one draw setup may be reusable by
-several techniques or passes. `RenderGraph` now provides this pass boundary: it
-owns dependency ordering and declared texture binding, while execute callbacks
-perform the draw-local work. The editor viewport is the first concrete adopter.
-`EditorProgram` imports the viewport-owned native color and depth resources,
-declares an `EditorScene` pass, and invokes `SimpleMeshRenderer` from that
-pass's execute callback. The viewport does not depend on the graph; the editor
-program composes the two systems.
+A future material should reference rendering behavior and supply texture,
+sampler, and parameter handles. It should not expose D3D11 objects to gameplay,
+tools, or ECS code. Opaque/translucent classification may be a material
+property, but concrete pass scheduling remains a renderer responsibility.
+One fixed vertex-color appearance does not require a general material system.
 
 ## Current baseline
 
-The editor prototype currently renders one indexed, vertex-colored cube. The
-implementation establishes these working pieces:
+The editor renders an indexed, vertex-colored cube from ECS-extracted state.
+`EditorProgram::Impl` owns a `World`, registers and enables its extraction
+system, uploads the demo cube, and creates an active scene with a transform/mesh
+entity. It retains a borrowed extractor pointer while the world group owns the
+system. The previous `EditorPreviewScene`, `StaticMeshDrawItem`, and
+`SimpleMeshRenderer` path has been removed.
 
-- The D3D11 device, context, swap chain, and back-buffer lifecycle
-- An offscreen editor viewport with color and depth targets
-- Typed shader loading through `ShaderManager`
-- API-independent `StaticMeshData` and a procedural unit-cube factory
-- Renderer-owned static meshes addressed by generation-checked `MeshHandle`
-  values through `MeshManager`
-- Frame-local `RenderView` and `StaticMeshDrawItem` submission data
-- `SimpleMeshRenderer` ownership of the fixed shaders, `DrawSetup`,
-  model-view-projection constant buffer, and indexed draw loop
-- A `RenderGraph` that compiles texture dependencies, realizes graph-owned GPU
-  resources, and executes declared pass state in compiled order
-- Per-frame import of the editor viewport's existing color and depth resources
-  into an `EditorScene` graph pass
-- An editor-only `EditorPreviewScene` that owns temporary mesh handles and
-  instance transforms
+`Update()` advances the public world simulation entry point. A visible viewport
+runs `PreparePresentation()` after UI and resize decisions, takes the completed
+snapshot, assigns its engine frame number, and supplies camera data to the
+renderer. A hidden viewport discards pending output. Simulation and presentation
+remain separate so rendering can continue while simulation is paused.
 
-`EditorProgram` owns the editor viewport and preview scene. It creates the
-`RenderView`, asks the preview scene to gather draw items, and invokes the
-renderer-owned technique from the `EditorScene` pass callback. The graph binds
-and clears the imported viewport attachments before that callback. Cube
-creation, handle lifetime, and instance state stay in `EditorPreviewScene`;
-mesh upload, draw state, constants, binding, and `DrawIndexed()` stay on the
-renderer side. The swap chain and ImGui remain outside the graph;
-`Renderer::BindOutput()` restores the presentation target before the editor
-submits its UI draw data. This is deliberately not yet a general scene graph or
-ECS extraction layer.
+The working pieces are:
 
-## Milestones
+- D3D11 device, immediate context, swap chain, and back-buffer lifecycle
+- Offscreen editor viewport with color and depth targets
+- Typed shader loading and reflected metadata through `ShaderManager`
+- API-independent procedural mesh data and a unit-cube factory
+- Generation-checked mesh resource ownership through `MeshManager`
+- Active-scene ECS extraction into copied `RenderFrameData`
+- Per-view `MeshPassCommands` and pass-owned view/object constant buffers
+- Texture dependency compilation and execution through `RenderGraph`
+- Editor submission through `Renderer::AddScenePasses()`
 
-### Milestone 1: static-mesh vertical slice — in progress
+## Milestones and next work
 
-Replace the prototype cube path with a small but real static-mesh path.
+### Static-mesh vertical slice — implemented
 
-#### CPU mesh data and procedural primitives
+Procedural CPU mesh data, validated immutable GPU upload, managed mesh handles,
+and indexed vertex-color drawing form the current vertical slice. The concrete
+pass owns preparation and execution, and ECS extraction feeds the running
+viewport. Mesh generation uses left-handed, Z-up coordinates (`+X` forward,
+`+Y` right, `+Z` up).
 
-- Retain `NormalVertex` for now, using its position and color fields while its
-  tangent, normal, and UV fields remain zero.
-- Define API-independent `StaticMeshData` with vertices and 32-bit indices.
-- Generate a unit cube centered at the origin with 8 shared vertices and 36
-  indices.
-- Follow the engine convention of left-handed, Z-up world space (`+X`
-  forward, `+Y` right, `+Z` up) and document the triangle winding.
-- Reject empty geometry and out-of-range indices before GPU upload.
-- Unit-test cube counts, corners, deferred attributes, and index validity
-  without requiring D3D11.
+### Stable scene submission — foundation implemented
 
-Bounds are a separate pass. Normals should arrive with lighting, and texture
-coordinates and tangents should wait until materials require them.
+Snapshots and per-view commands support multiple instances with distinct
+transforms and deterministic stale-handle skipping. Preparation and execution
+are independent phases, and commands own the constants required after the
+snapshot is released. Further work should exercise real multi-view features
+and additional procedural/imported meshes. Tint, submesh ranges, and appearance
+overrides require explicit data when their corresponding features are added.
 
-#### GPU mesh resource
+### Resource identity and reusable appearance — partially implemented
 
-- Add a move-only `StaticMesh` that owns immutable D3D11 vertex and index
-  buffers plus index count and format.
-- Make initialization atomic: failure must not leave a partially usable mesh.
-- Validate sizes before narrowing to D3D11's `UINT` fields.
-- Keep draw setup, material, transform, camera, and draw submission outside the
-  mesh.
-
-Do not introduce a generic buffer hierarchy for this milestone. A second real
-geometry use case should determine whether one is valuable.
-
-#### Simple mesh rendering technique
-
-- Add a `SimpleMeshRenderer` that owns the fixed mesh shaders,
-  `DrawSetup`, and constant-buffer updates.
-- Accept a `RenderView` and a span of `StaticMeshDrawItem` values.
-- Use local-to-world and view/projection data to compute per-draw transforms.
-- Apply the draw setup, bind the mesh, and issue `DrawIndexed()` without owning
-  the view target or clearing it.
-
-Normal transforms, lighting, tint, and explicit rasterizer/culling policy are
-deferred until those systems have a concrete use case.
-
-`EditorProgram` remains responsible for editor viewport orchestration.
-`EditorPreviewScene` owns temporary demo handles and transforms, while
-`SimpleMeshRenderer` consumes the gathered draw items. The editor program no
-longer owns raw mesh buffers, primitive shaders, the primitive draw setup,
-primitive constants, or cube-specific lifecycle code.
-
-This milestone deliberately does not require an ECS, asset importer, general
-material system, or generic rendering API.
-
-### Milestone 2: stable scene submission
-
-Exercise the renderer-facing boundary with several cube and sphere instances:
-
-- Stabilize `RenderView` and frame-local draw-item responsibilities.
-- Submit a list or span instead of making one editor-specific draw call.
-- Support distinct transforms and simple appearance values per item.
-- Keep draw items non-owning and independent of entities.
-- Establish deterministic behavior for missing or invalid mesh references.
-
-This milestone may remain part of Milestone 1 if the implementation stays
-small. Its purpose is to prove that the technique consumes scene data rather
-than merely relocating the original hard-coded cube.
-
-### Milestone 3: resource identity and reusable appearance
-
-Introduce mesh and material handles only when resources need shared ownership,
-lookup, unloading, or reuse across worlds and tools. The manager must define
-handle generation, stale-handle detection, and fallback behavior rather than
-exposing raw indexes or unvalidated identifiers.
-
-Introduce materials when textures, samplers, or shader parameters form
-reusable combinations. Introduce centralized draw-setup lifetime or caching
-only when multiple rendering techniques need it.
-
-Likely relationships are:
+Mesh identity, generation validation, release, and slot reuse are implemented.
+Materials, asset import, streaming, and fallback resources remain future work.
+A likely later relationship is:
 
 ```text
-StaticMeshComponent
+MeshComponent
   -> MeshHandle
-  -> MaterialHandle
+  -> MaterialHandle, when materials exist
 
-Resolved StaticMeshDrawItem
-  -> GPU mesh and material resources pinned through submission
-  -> local-to-world matrix
-  -> frame-local overrides
+Pass-specific commands
+  -> managed geometry and appearance identities
+  -> copied per-draw constants
+  -> resource lifetime valid through execution
 ```
 
-If draw-setup descriptions are retained for caching or hot reload, copy their
-input-element data. Never retain a temporary `std::span` supplied during
-creation.
+Introduce centralized draw-setup caching only when multiple consumers need it.
+Any retained description must own its input-element data rather than a temporary
+`std::span`.
 
-### Milestone 4: generic ECS render extraction — foundation implemented
+### Generic ECS render extraction — integrated
 
-`RenderExtractionSystem` now implements active-scene extraction into copied
-`RenderFrameData` independently of the viewport. Application composition code
-owns the world and calls its public simulation and presentation entry points
-outside active traversals; systems receive borrowed world access. The extractor
-transfers its completed result once through `TakeFrame()`. It copies mesh handles and current
-world-space TRS without resolving GPU resources. Integration with editor
-viewport submission, material resolution, and pass-specific draw preparation
-remains future work; `EditorPreviewScene` still supplies the running prototype.
+The world owns simulation, transform, and extraction system groups. Application
+composition owns the world and calls its public entry points outside active
+traversals. `PreparePresentation()` replays editor requests, evaluates transform
+systems, and runs extraction without structural playback between the latter
+two phases.
 
-After the generic ECS provides reliable entity lifetime, type-safe component
-storage, and queries, add an extraction system that:
+`RenderExtractionSystem` copies the selected scene's mesh handles and world
+transforms, then transfers one completed result through `TakeFrame()`. The
+editor consumes that result through renderer command preparation. Future
+transform hierarchies and richer renderable components can extend extraction
+without changing the renderer's dependency direction.
 
-- Queries the required transform and static-mesh component combination.
-- Uses already-evaluated world transforms.
-- Resolves resource handles through renderer-facing resource services.
-- Emits frame-local draw items for a particular `RenderView`.
-- Skips or substitutes invalid resources according to documented policy.
+### Visibility, sorting, and batching — deferred
 
-The extraction system is an integration layer; it may depend on the ECS and
-renderer-facing data definitions. The low-level renderer, `StaticMesh`, and
-`DrawSetup` must not depend on the ECS. The ECS storage model should
-likewise be chosen for general component workloads rather than around renderer
-submission details.
+Add these when scene scale makes them useful:
 
-### Milestone 5: visibility, sorting, and batching
-
-Add these only when scene scale makes them useful:
-
-- Per-view frustum culling using mesh bounds and world transforms
-- Sorting by pass, draw setup or technique, material, and mesh
+- Mesh bounds and per-view frustum culling
+- Sorting by pass, draw setup, material, and mesh
 - Instanced draws for measured high-volume repetition
-- A D3D11 state cache when redundant binding is observable
-- Parallel transform, visibility, or extraction work when profiling supports it
+- D3D11 state caching when redundant binding is observable
+- Parallel work when profiling supports it
 
-These are extraction and submission concerns. They do not belong in generic
-ECS storage or in the mesh resource itself.
+These belong to extraction and submission, not generic ECS storage or GPU mesh
+ownership. The current pass preserves extraction order and performs none of
+these optimizations.
 
-### Milestone 6: explicit pass orchestration — foundation implemented
+### Explicit pass orchestration — foundation implemented
 
-Introduce an explicit pass model when there are multiple rendering objectives
-or outputs with meaningful ordering. Likely generic triggers include:
+The graph implements declaration, dependency compilation, GPU texture
+realization, and attachment execution. The vertex-color mesh pass is its first
+scene consumer. A concrete second objective should determine additional
+requirements: editor selection, depth-only rendering, shadows, post-processing,
+or multiple views.
 
-- Editor selection or object-ID rendering
-- Shadow maps
-- Depth-only rendering
-- Post-processing
-- Multiple views
-
-`RenderGraph` now implements declaration, dependency compilation, GPU resource
-realization, and execution. Execution follows the compiled pass order, binds
-the declared RTV, DSV, and shader-stage SRV slots, performs requested clears,
-sets a full-attachment default viewport, invokes the pass callback, and unbinds
-the relevant outputs and shader-resource slots at the pass boundary.
-
-The callback deliberately owns `DrawSetup`, constant-buffer, mesh, and draw
-submission work. The graph does not inspect techniques, ECS state, or future
-render commands. `EditorProgram` now exercises this boundary by importing the
-existing viewport color and depth resources and running `SimpleMeshRenderer`
-inside an `EditorScene` pass. Swap-chain presentation and ImGui composition
-remain deliberately outside the graph. The next orchestration work should come
-from a real second objective; editor selection, shadows, or a depth-only pass
-can reveal missing subresource, viewport, or command-submission requirements.
+The editor-grid shader and C++ grid stub are not connected to graph execution.
+A future grid pass will need its own draw state and constants, plus a read-only
+DSV for the viewport depth texture. Those changes are outside this mesh-command
+integration. Stencil-plane access, subresources, and independent depth/stencil
+load behavior remain deferred as well.
 
 ## Responsibility guide
 
-Use the following rule when deciding where new state belongs:
-
 | State | Owner |
 | --- | --- |
-| Persistent entity state | ECS component |
-| Shared imported or procedural asset | Resource system |
-| Frame-local visible instance data | Render extraction output |
-| GPU geometry lifetime | `StaticMesh` |
-| Shader and fixed draw behavior | Rendering technique and `DrawSetup` |
-| Output target, clears, resource binding, and ordering | `RenderGraph` pass |
-| Window, swap chain, and D3D11 device | `Renderer` |
+| Persistent instance transform and mesh identity | ECS components |
+| Camera-independent frame snapshot | Extraction system, then its consumer |
+| Per-view CPU constants and draw list | `MeshPassCommands` owned by a graph callback |
+| GPU geometry lifetime | `MeshManager` and `StaticMesh` |
+| Fixed shaders, draw state, and mesh constant buffers | `VertexColorMeshPass` |
+| Output targets, clears, texture binding, and ordering | `RenderGraph` |
+| Swap chain and D3D11 device | `Renderer` |
+| Window lifecycle | `Engine` |
+| World, editor camera, viewport, and frame composition | `EditorProgram` |
 
 ## Explicitly deferred
-
-The following remain deferred until a measured or feature-driven need appears:
 
 - Multiple graphics backends or a generic RHI
 - A universal material or pass-definition language
 - General asset import, streaming, and hot reload
+- Mesh bounds, culling, sorting, batching, and instancing
 - Draw-setup descriptor hashing and caching
 - Shader reflection as the sole input-layout source
 - Shader permutations and automatic variant management
 - Multithreaded D3D11 command recording
 - General state-change deduplication
 - Stencil-plane access and independent depth/stencil load and clear operations
-- Geometry, hull, and domain shader support
+- Geometry, hull, and domain shader integration
+- Editor-grid submission and a read-only viewport DSV
 
 ## Decision rule
 
-Prefer the smallest abstraction that completes the next visible feature. When
-a concept begins appearing in multiple call sites—resource creation, draw-state
-setup, geometry binding, scene extraction, pass setup, or draw submission—that
-repetition is evidence for the next abstraction.
-
-The immediate visible feature is a cube and sphere rendered through a reusable
-static-mesh path. The ECS matters now only by preserving the extraction seam;
-it should not delay or invade that vertical slice.
+Complete the next visible feature with clear ownership and copied submission
+data. Repeated resource creation, state setup, geometry binding, or draw loops
+across actual passes provide evidence for a shared abstraction. The current
+vertex-color pass keeps preparation and execution together until such overlap
+exists.
