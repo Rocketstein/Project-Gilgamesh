@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "Engine/Core/BoundingShape.h"
 #include "StaticMeshData.h"
 #include "StaticMesh.h"
 #include "MeshHandle.h"
@@ -43,6 +44,14 @@ public:
 	[[nodiscard]]
 	const StaticMesh* TryGet(MeshHandle handle) const noexcept;
 
+	// Copy shared CPU-local bounds and their revision without resolving GPU buffers.
+	// Return false without changing outputs when the handle or metadata is invalid.
+	// This API is currently a stub; CreateMesh does not populate bounds metadata yet.
+	[[nodiscard]] bool TryGetLocalBounds(
+		MeshHandle handle,
+		BoundingBox& outBounds,
+		std::uint64_t& outRevision) const noexcept;
+
 	// Releases the referenced mesh and invalidates its handle for future lookups.
 	[[nodiscard]]
 	bool RemoveMesh(MeshHandle handle);
@@ -56,6 +65,8 @@ private:
 	{
 		std::uint32_t generation = 0;
 		std::unique_ptr<StaticMesh> mesh;
+		BoundingBox localBounds{}; // Shared CPU metadata, separate from the GPU mesh wrapper.
+		std::uint64_t boundsRevision = 0; // Zero until local bounds have been evaluated.
 	};
 
 	std::vector<MeshSlot> meshSlots_;

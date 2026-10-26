@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "ECSCommandBuffer.h"
@@ -51,6 +52,10 @@ public:
 
 	[[nodiscard]]
 	bool IsAlive(Entity entity) const noexcept;
+
+	// Visit all live committed world entities, including those without a scene; exclude reservations.
+	// The visitor must not structurally mutate this World. Revalidate retained handles later.
+	void ForEachEntity(const std::function<void(Entity)>& visitor) const;
 
 	template <typename Component>
 	[[nodiscard]] bool Has(Entity entity) const

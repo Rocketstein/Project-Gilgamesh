@@ -4,6 +4,8 @@ target_sources (GilgameshEngine
 	PRIVATE
 		Core/Color.h
 		Core/Extent2D.h
+		Core/BoundingShape.cpp
+		Core/BoundingShape.h
 		Core/Logging/ILogSink.h
 		Core/Logging/Logger.cpp
 		Core/Logging/Logger.h
@@ -29,6 +31,7 @@ target_sources (GilgameshEngine
 		Platform/Windows/Logging/DebugOutputSink.h
 
 		ECS/Entity/Entity.h
+		ECS/Component/BoundsComponent.h
 		ECS/Component/MeshComponent.h
 		ECS/Component/TransformComponent.h
 		ECS/Framework/ArchetypeResource.h
@@ -57,6 +60,15 @@ target_sources (GilgameshEngine
 		ECS/System/Core/ISystem.cpp
 		ECS/System/Core/SystemGroup.cpp
 		ECS/System/Core/SystemGroup.h
+
+		ECS/System/Transform/LocalTransformSystem.cpp
+		ECS/System/Transform/LocalTransformSystem.h
+		ECS/System/Transform/TransformHierarchySystem.cpp
+		ECS/System/Transform/TransformHierarchySystem.h
+		ECS/System/Transform/LocalToWorldSystem.cpp
+		ECS/System/Transform/LocalToWorldSystem.h
+		ECS/System/Transform/UpdateBoundsSystem.cpp
+		ECS/System/Transform/UpdateBoundsSystem.h
 
 		ECS/System/RenderExtractionSystem.cpp
 		ECS/System/RenderExtractionSystem.h

@@ -152,3 +152,8 @@ EntityState EntityRegistry::GetEntityState(Entity entity) const noexcept
 
 	return slots_[entity.index_].state;
 }
+
+// API scaffold only: live-entity enumeration is intentionally unimplemented.
+void EntityRegistry::ForEachEntity(const std::function<void(Entity)>& /*visitor*/) const
+{
+}

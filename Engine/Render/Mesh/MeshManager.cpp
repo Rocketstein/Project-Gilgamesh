@@ -160,6 +160,15 @@ const StaticMesh* MeshManager::TryGet(MeshHandle handle) const noexcept
 		: nullptr;
 }
 
+// API scaffold only: mesh creation does not calculate local bounds yet.
+bool MeshManager::TryGetLocalBounds(
+	MeshHandle /*handle*/,
+	BoundingBox& /*outBounds*/,
+	std::uint64_t& /*outRevision*/) const noexcept
+{
+	return false;
+}
+
 bool MeshManager::RemoveMesh(MeshHandle handle)
 {
 	if (!IsValid(handle))

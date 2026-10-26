@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <stdexcept>
 #include <typeinfo>
 #include <utility>
@@ -38,6 +39,10 @@ public:
 	bool Destroy(Entity entity);
 
 	[[nodiscard]] EntityState GetEntityState(Entity entity) const noexcept;
+
+	// Visit all live committed handles, including componentless entities; exclude reservations.
+	// The visitor must not structurally mutate this registry. Revalidate retained handles later.
+	void ForEachEntity(const std::function<void(Entity)>& visitor) const;
 
 	// =============================================================================
 	// Component Operations
