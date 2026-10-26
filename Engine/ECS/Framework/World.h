@@ -54,7 +54,8 @@ public:
 	bool IsAlive(Entity entity) const noexcept;
 
 	// Visit all live committed world entities, including those without a scene; exclude reservations.
-	// The visitor must not structurally mutate this World. Revalidate retained handles later.
+	// Deferred requests may be queued; keep playback and immediate scene changes outside traversal.
+	// Visitor exceptions propagate; revalidate retained handles after traversal.
 	void ForEachEntity(const std::function<void(Entity)>& visitor) const;
 
 	template <typename Component>
@@ -76,11 +77,11 @@ public:
 	}
 
 	// Visit matching components across the whole world, including entities without a scene.
-	// Keep structural changes outside the traversal to preserve chunk rows and references.
+	// Deferred requests may be queued; keep playback and immediate scene changes outside traversal.
 	template <typename... Components, typename Fn>
-	void ForEach(Fn&& fn)
+	void ForEachComponent(Fn&& fn)
 	{
-		entityRegistry_.ForEach<Components...>(std::forward<Fn>(fn));
+		entityRegistry_.ForEachComponent<Components...>(std::forward<Fn>(fn));
 	}
 
 	std::uint32_t GetWorldID() const noexcept { return worldID_; }

@@ -10,13 +10,13 @@
 
 // Maintains a world-wide, parent-before-child traversal of TransformComponent entities.
 // Parent links are authored in components; children, depths, and traversal order are derived.
-// This transform hierarchy is independent of any BVH, octree, or scene membership filter.
 class TransformHierarchySystem final : public ISystem
 {
 public:
 	// Run after structural playback and before local/world evaluation. Detect direct parent
 	// edits and entity/component removal; rebuild caches only when topology changes.
 	// Invalid direct links are logged and evaluated as roots without rewriting authored TRS.
+	// Cycles are repaired in the cache by detaching the edge that closes an ordered parent walk.
 	void Update(World& world, float deltaTime) override;
 
 	// Change a live child's parent immediately while preserving local TRS, before presentation.
@@ -40,7 +40,8 @@ public:
 	[[nodiscard]] std::span<const Entity> GetChildren(Entity parent) const noexcept;
 	[[nodiscard]] std::span<const Entity> GetTraversalOrder() const noexcept;
 
-	// Zero means unevaluated; the revision advances on the first build and topology changes.
+	// Zero means no successful build yet; each published rebuild advances the revision.
+	// Cache invalidation retains the last published value; re-enabling publishes a newer value.
 	[[nodiscard]] std::uint64_t GetRevision() const noexcept;
 
 	// Invalidate derived views so re-enabling requires a fresh topology evaluation.

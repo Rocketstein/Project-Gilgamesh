@@ -19,7 +19,7 @@ struct TransformComponent
 	Matrix4 localToParent = Matrix4::Identity(); // LocalTransformSystem evaluates S * R * T.
 	Matrix4 localToWorld = Matrix4::Identity(); // LocalToWorldSystem evaluates local * parentWorld.
 	std::uint64_t localRevision = 0; // Zero until first local evaluation, then advances on changes.
-	std::uint64_t worldRevision = 0; // Zero until first world evaluation, then advances on changes.
+	std::uint64_t worldRevision = 0; // Nonzero publication token after evaluation; changes on new results.
 
 	// LocalToWorldSystem tracks its own inputs without clearing another consumer's state.
 	Entity evaluatedParent{}; // Last validated parent used to evaluate localToWorld.

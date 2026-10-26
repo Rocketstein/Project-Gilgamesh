@@ -228,7 +228,7 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "ActiveSceneDoesNotNarrowWorldQueries"
     // General ECS queries keep their whole-world semantics after scene selection.
     int count = 0;
     int total = 0;
-    world.ForEach<int>([&](int& value)
+    world.ForEachComponent<int>([&](int& value)
     {
         ++count;
         total += value;
@@ -453,7 +453,7 @@ GILGAMESH_TEST("Engine.ECS.WorldSystems", "ExternalTraversalRecordsSceneAndEntit
     Entity requestedEntity;
 
     // Application code records edits and defers world execution until traversal finishes.
-    world.ForEach<int>([&](int& value)
+    world.ForEachComponent<int>([&](int& value)
     {
         // All changes remain pending while the current component reference is in use.
         requestedScene = world.RequestCreateScene("From traversal");

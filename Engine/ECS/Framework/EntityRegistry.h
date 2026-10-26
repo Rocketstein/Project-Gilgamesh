@@ -41,7 +41,8 @@ public:
 	[[nodiscard]] EntityState GetEntityState(Entity entity) const noexcept;
 
 	// Visit all live committed handles, including componentless entities; exclude reservations.
-	// The visitor must not structurally mutate this registry. Revalidate retained handles later.
+	// Reservations may be recorded, but live entity/component membership must remain stable.
+	// Visitor exceptions propagate; revalidate retained handles after traversal.
 	void ForEachEntity(const std::function<void(Entity)>& visitor) const;
 
 	// =============================================================================
@@ -167,11 +168,12 @@ public:
 		MoveEntityToArchetype(entity, source, target, [](Chunk::PendingRow&) {});
 	}
 
+	// Visit component references in matching archetypes; structural changes invalidate rows.
 	template <class... Components, class Fn>
-	void ForEach(Fn&& fn)
+	void ForEachComponent(Fn&& fn)
 	{
 		static_assert(sizeof...(Components) > 0,
-			"ForEach() requires at least one component type");
+			"ForEachComponent() requires at least one component type");
 
 		auto& cache = archetypeManager_.GetQueryCache<Components...>();
 		auto& archetypes = cache.matches;

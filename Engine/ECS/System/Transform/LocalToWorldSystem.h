@@ -16,7 +16,10 @@ public:
 
 	// Re-evaluate uninitialized nodes or changed local/parent inputs, including ancestor motion.
 	// Root world = local; child world = local * parentWorld. Preserve shear in Matrix4.
-	// Record consumed inputs even if the resulting matrix is unchanged; do not clear revisions.
+	// Hierarchy and local evaluation must finish first; keep storage/topology stable until done.
+	// Log and skip inputs whose local or parent world revision is still zero.
+	// Record consumed inputs even for equal results; publish a revision on first/change only.
+	// World revisions are publication tokens; component/system recreation does not reuse them.
 	void Update(World& world, float deltaTime) override;
 
 private:

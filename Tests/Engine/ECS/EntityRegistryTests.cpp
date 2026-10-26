@@ -867,7 +867,7 @@ GILGAMESH_TEST("Engine.ECS.World", "DefersStructuralChangesDuringTraversal")
 	// Recording creation during traversal must not extend or invalidate the current component rows.
 	std::array<Entity, 2> pending{};
 	std::size_t visits = 0;
-	world.ForEach<int>([&](int& value)
+	world.ForEachComponent<int>([&](int& value)
 	{
 		if (visits < pending.size())
 		{
@@ -884,7 +884,7 @@ GILGAMESH_TEST("Engine.ECS.World", "DefersStructuralChangesDuringTraversal")
 	world.Update(0.0f);
 	visits = 0;
 	int total = 0;
-	world.ForEach<int>([&](int& value)
+	world.ForEachComponent<int>([&](int& value)
 	{
 		++visits;
 		total += value;

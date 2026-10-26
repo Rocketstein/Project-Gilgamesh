@@ -4,6 +4,7 @@ These instructions apply to the entire repository.
 
 ## Coding rules
 - Readability first. Efficiency second.
+- Try to keep guards lightweight.
 - Don't just select an approach because it is a minimal solution. Long term architecture matters.
 - Try not to multiplicate struct unless necessary. In particular, refrain from creating error type structs. Use logging instead.
 - Member variables and functions should have separate public/private sections. Public should be declared above private. Functions should be declared above member variables.

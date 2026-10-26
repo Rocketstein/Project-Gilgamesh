@@ -478,16 +478,51 @@ also cancel a reserved scene. Cancelled or discarded creation payloads retire
 their reserved generation without allocating and cannot affect a reused slot.
 The world no longer tracks traversal depth; callers must keep immediate setup
 operations and world execution outside active traversals. Active scene selection
-identifies the default render source; `World::ForEach` retains
-its whole-world query semantics.
+identifies the default render source; `World::ForEachComponent<T...>` retains
+its whole-world component-query semantics. `World::ForEachEntity` instead visits
+every live committed entity handle, including entities with no components or
+scene membership. Reserved, cancelled, and destroyed entities are excluded.
+Both traversals allow deferred requests to be recorded, but command playback
+and immediate scene changes must wait until traversal has finished. Entity
+traversal keeps its initial slot-count boundary so reservations recorded by a
+visitor cannot extend the current traversal or invalidate its iteration.
+
+`TransformHierarchySystem` maintains a validated hierarchy for every live
+`TransformComponent`, independent of scene membership or mesh assignment. The
+component's `parent` is the authored source; the system caches validated parents,
+children, roots, depths, and a parent-first traversal using complete entity
+handles. Direct parent edits and component/entity lifetime changes invalidate
+the cache, while TRS-only edits do not. Invalid links and cycle-closing edges
+are logged and treated as roots in the cache without rewriting source links.
+`SetParent` validates live transforms and ancestry before changing the source
+link, preserving local TRS; cached queries refresh on the next update. A rebuild
+publishes all derived data together and advances a topology revision. Disabling
+or destroying the system clears its views; a later rebuild publishes a newer
+revision. The editor does not register this system yet.
+
+`LocalTransformSystem` evaluates authored TRS as a row-vector local matrix in
+scale, rotation, translation order. `LocalToWorldSystem` then visits the
+hierarchy's parent-first traversal and publishes complete affine world matrices:
+roots use their local matrix, and children use `local * parentWorld`. Full
+matrices retain shear introduced by parent scale and child rotation. Local and
+world revisions start at zero. Local revisions advance on first evaluation or
+a changed local matrix. World revisions are process-wide publication tokens;
+first evaluation or a changed world matrix receives a newer nonzero token,
+which can skip values for an individual entity. Recreating a transform cannot
+reuse an older parent's publication token. World evaluation records the consumed
+local revision, validated parent, and parent world revision even when those
+inputs produce an unchanged matrix; it does not clear revisions used by other
+consumers. Unready local or parent world inputs are logged and skipped until a
+later evaluation. The editor does not register these transform systems yet.
 
 `RenderExtractionSystem : public ISystem` traverses the active scene's entity
 membership and reads `TransformComponent` and `MeshComponent` from the world.
 It copies assigned mesh handles and row-vector world transforms into
 `RenderFrameData`; it does not resolve GPU resources or retain ECS references.
-World-space TRS currently composes as scale, rotation, then translation. There
-is no transform hierarchy evaluator yet. Stale resource generations are left
-for the renderer-facing consumer to validate.
+The current editor path still composes TRS directly as scale, rotation, then
+translation. Extraction from the evaluated world-matrix cache remains
+unimplemented. Stale resource generations are left for the renderer-facing
+consumer to validate.
 
 The extractor owns at most one completed `optional<RenderFrameData>`.
 `TakeFrame` transfers it once and clears the pending slot; `DiscardFrame`,

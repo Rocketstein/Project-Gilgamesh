@@ -116,8 +116,13 @@ submission code later; that concrete overlap should determine what to extract.
 The current renderable entity combines data-only `TransformComponent` and
 `MeshComponent`. The mesh component stores a shared `MeshHandle`; it contains
 no COM pointer, draw setup, camera, or rendering code. The extractor copies
-world-space TRS in scale, rotation, translation order. Hierarchical transform
-evaluation remains unimplemented.
+world-space TRS in scale, rotation, translation order. Separate transform systems
+maintain the hierarchy, evaluate local TRS, and propagate complete affine world
+matrices in parent-first order using `local * parentWorld`. Revision tracking
+avoids republishing unchanged matrices while recording consumed local and parent
+inputs; unready inputs are logged and skipped. These systems are not yet
+registered by the editor, and extraction does not consume their world-matrix
+cache yet.
 
 Extraction does not resolve GPU resources or select a particular view. Resource
 validation happens during pass preparation and again during execution. Future
