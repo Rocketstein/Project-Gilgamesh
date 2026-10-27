@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <stdexcept>
 #include <typeinfo>
 #include <utility>
@@ -39,11 +39,6 @@ public:
 	bool Destroy(Entity entity);
 
 	[[nodiscard]] EntityState GetEntityState(Entity entity) const noexcept;
-
-	// Visit all live committed handles, including componentless entities; exclude reservations.
-	// Reservations may be recorded, but live entity/component membership must remain stable.
-	// Visitor exceptions propagate; revalidate retained handles after traversal.
-	void ForEachEntity(const std::function<void(Entity)>& visitor) const;
 
 	// =============================================================================
 	// Component Operations
@@ -166,6 +161,44 @@ public:
 
 		Archetype& target = archetypeManager_.FindOrCreate(signature);
 		MoveEntityToArchetype(entity, source, target, [](Chunk::PendingRow&) {});
+	}
+
+	// Copy live committed handles; no types includes componentless entities, otherwise require all types.
+	// The snapshot has no ordering guarantee; revalidate retained handles after structural changes.
+	template <typename... Components>
+	[[nodiscard]] std::vector<Entity> QueryEntities()
+	{
+		std::vector<Entity> entities;
+		if constexpr (sizeof...(Components) == 0)
+		{
+			// Componentless entities have no archetype row, so enumerate live slots directly.
+			for (std::size_t index = 0; index < slots_.size(); ++index)
+			{
+				if (slots_[index].state != EntityState::Alive) continue;
+				entities.push_back(Entity(
+					static_cast<std::uint32_t>(index),
+					slots_[index].generation,
+					ownerId_,
+					owningWorldID_));
+			}
+		}
+		else
+		{
+			// The cache selects archetypes; current chunk rows supply matching entity identities.
+			const auto& cache = archetypeManager_.GetQueryCache<Components...>();
+			for (auto* archetype : cache.matches)
+			{
+				for (const auto& chunkPtr : archetype->GetChunks())
+				{
+					const Chunk& chunk = *chunkPtr;
+					for (std::uint32_t row = 0; row < chunk.Count(); ++row)
+					{
+						entities.push_back(chunk.GetEntity(row));
+					}
+				}
+			}
+		}
+		return entities;
 	}
 
 	// Visit component references in matching archetypes; structural changes invalidate rows.

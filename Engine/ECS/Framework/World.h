@@ -1,7 +1,7 @@
 #pragma once
 
-#include <functional>
 #include <string>
+#include <vector>
 
 #include "ECSCommandBuffer.h"
 #include "EntityRegistry.h"
@@ -53,10 +53,13 @@ public:
 	[[nodiscard]]
 	bool IsAlive(Entity entity) const noexcept;
 
-	// Visit all live committed world entities, including those without a scene; exclude reservations.
-	// Deferred requests may be queued; keep playback and immediate scene changes outside traversal.
-	// Visitor exceptions propagate; revalidate retained handles after traversal.
-	void ForEachEntity(const std::function<void(Entity)>& visitor) const;
+	// Copy live committed world handles, independent of active scene; no types includes componentless entities.
+	// Specified types are all required. Ordering is unspecified; revalidate after structural changes.
+	template <typename... Components>
+	[[nodiscard]] std::vector<Entity> QueryEntities()
+	{
+		return entityRegistry_.QueryEntities<Components...>();
+	}
 
 	template <typename Component>
 	[[nodiscard]] bool Has(Entity entity) const

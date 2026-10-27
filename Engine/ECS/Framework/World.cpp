@@ -476,9 +476,3 @@ bool World::IsAlive(Entity entity) const noexcept
 {
 	return entityRegistry_.GetEntityState(entity) == EntityState::Alive;
 }
-
-// Scene selection affects presentation only; registry traversal covers the whole World.
-void World::ForEachEntity(const std::function<void(Entity)>& visitor) const
-{
-	entityRegistry_.ForEachEntity(visitor);
-}

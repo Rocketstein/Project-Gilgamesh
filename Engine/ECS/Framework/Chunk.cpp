@@ -176,6 +176,16 @@ Chunk::~Chunk() noexcept
 	::operator delete(storage_, std::align_val_t{ layout_.allocationAlignment });
 }
 
+// Read identity storage without exposing a mutable reference to the chunk's Entity column.
+Entity Chunk::GetEntity(std::uint32_t row) const
+{
+	if (row >= count_)
+	{
+		throw std::out_of_range("Chunk row does not contain a live entity");
+	}
+	return *EntityAddress(storage_, layout_, row);
+}
+
 std::optional<Entity> Chunk::Erase(std::uint32_t row)
 {
 	if (row >= count_)

@@ -126,22 +126,19 @@ void TransformHierarchySystem::OnDestroy(World& /*world*/)
 bool TransformHierarchySystem::HasTopologyChanged(World& world) const
 {
 	const World& readOnlyWorld = world;
-	std::size_t transformCount = 0;
-	bool changed = false;
-	readOnlyWorld.ForEachEntity([&](Entity entity)
+	const auto entities = world.QueryEntities<TransformComponent>();
+	if (entities.size() != nodes_.size()) return true;
+	for (Entity entity : entities)
 	{
-		if (!readOnlyWorld.Has<TransformComponent>(entity)) return;
-		++transformCount;
-
 		// Compare original links, not repaired ones, so unchanged invalid input stays cached.
 		const auto node = nodes_.find(entity);
 		if (node == nodes_.end() || node->second.sourceParent !=
 			readOnlyWorld.Get<TransformComponent>(entity).parent)
 		{
-			changed = true;
+			return true;
 		}
-	});
-	return changed || transformCount != nodes_.size();
+	}
+	return false;
 }
 
 // Build a validated forest privately and publish it only after every allocation succeeds.
@@ -153,13 +150,12 @@ void TransformHierarchySystem::RebuildHierarchy(World& world)
 	const World& readOnlyWorld = world;
 
 	// Gather every live transform, including non-renderable and scene-less parents.
-	readOnlyWorld.ForEachEntity([&](Entity entity)
+	for (Entity entity : world.QueryEntities<TransformComponent>())
 	{
-		if (!readOnlyWorld.Has<TransformComponent>(entity)) return;
 		HierarchyNode& node = nextNodes[entity];
 		node.sourceParent = readOnlyWorld.Get<TransformComponent>(entity).parent;
 		node.parent = node.sourceParent;
-	});
+	}
 
 	// Retain raw input for change detection, but detach missing, foreign, or self parents.
 	for (auto& [entity, node] : nextNodes)

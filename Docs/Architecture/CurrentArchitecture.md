@@ -479,13 +479,16 @@ their reserved generation without allocating and cannot affect a reused slot.
 The world no longer tracks traversal depth; callers must keep immediate setup
 operations and world execution outside active traversals. Active scene selection
 identifies the default render source; `World::ForEachComponent<T...>` retains
-its whole-world component-query semantics. `World::ForEachEntity` instead visits
-every live committed entity handle, including entities with no components or
-scene membership. Reserved, cancelled, and destroyed entities are excluded.
-Both traversals allow deferred requests to be recorded, but command playback
-and immediate scene changes must wait until traversal has finished. Entity
-traversal keeps its initial slot-count boundary so reservations recorded by a
-visitor cannot extend the current traversal or invalidate its iteration.
+its whole-world component-query semantics. `World::QueryEntities()` copies every
+live committed entity handle, including entities with no components or scene
+membership. `QueryEntities<T...>()` instead copies handles from current chunk
+rows in archetypes selected by the existing query cache, requiring all specified
+component types. Reserved, cancelled, and destroyed entities are excluded.
+The returned vector owns its handles and has no ordering guarantee; later
+structural changes require revalidating retained identities and component
+membership. Component traversal still requires command playback and immediate
+scene changes to wait until traversal has finished. Hierarchy maintenance uses
+the Transform-filtered entity query for change detection and rebuilding.
 
 `TransformHierarchySystem` maintains a validated hierarchy for every live
 `TransformComponent`, independent of scene membership or mesh assignment. The

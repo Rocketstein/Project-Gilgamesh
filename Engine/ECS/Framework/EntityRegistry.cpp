@@ -153,22 +153,3 @@ EntityState EntityRegistry::GetEntityState(Entity entity) const noexcept
 
 	return slots_[entity.index_].state;
 }
-
-// Enumerate committed identities independently of archetype rows or component membership.
-void EntityRegistry::ForEachEntity(const std::function<void(Entity)>& visitor) const
-{
-	// Deferred creation can grow slots_ during callbacks; keep the initial traversal boundary.
-	const std::size_t slotCount = slots_.size();
-	for (std::size_t index = 0; index < slotCount; ++index)
-	{
-		if (slots_[index].state != EntityState::Alive) continue;
-
-		// Copy the full identity before user code can reserve and reallocate more slots.
-		const Entity entity(
-			static_cast<std::uint32_t>(index),
-			slots_[index].generation,
-			ownerId_,
-			owningWorldID_);
-		visitor(entity);
-	}
-}

@@ -124,6 +124,9 @@ public:
     // Count only rows whose Entity and component columns are complete.
     [[nodiscard]] std::uint32_t Count() const noexcept { return count_; }
 
+    // Copy the complete entity identity stored alongside one committed component row.
+    [[nodiscard]] Entity GetEntity(std::uint32_t row) const;
+
     // Return an existing component in a live row of this chunk.
     template <typename T>
     T& Get(std::uint32_t row)
