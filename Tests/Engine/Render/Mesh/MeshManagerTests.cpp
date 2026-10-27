@@ -2,18 +2,21 @@
 #include "Tests/TestFramework.h"
 
 #include <cstdint>
+#include <limits>
 
 #include <d3d11.h>
 #include <wrl/client.h>
 
 namespace
 {
+// Shares one WARP device across the mesh resource tests.
 struct TestDevice
 {
 	Microsoft::WRL::ComPtr<ID3D11Device> device;
 	Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
 };
 
+// Create the reusable device once without requiring a physical GPU.
 const TestDevice& GetTestDevice()
 {
 	static const TestDevice device = []
@@ -42,6 +45,7 @@ const TestDevice& GetTestDevice()
 	return device;
 }
 
+// Build minimal indexed geometry with valid zero-extent bounds by default.
 StaticMeshData MakeTriangleData()
 {
 	StaticMeshData data;
@@ -50,6 +54,7 @@ StaticMeshData MakeTriangleData()
 	return data;
 }
 
+// Build a second draw shape for independent handle-lifetime checks.
 StaticMeshData MakeQuadData()
 {
 	StaticMeshData data;
@@ -57,7 +62,23 @@ StaticMeshData MakeQuadData()
 	data.indices_ = { 0, 1, 2, 0, 2, 3 };
 	return data;
 }
+
+// Failed metadata lookups must preserve both caller-owned output values.
+void CheckBoundsLookupFailure(
+	Gilgamesh::Testing::TestContext& testContext,
+	const MeshManager& manager,
+	MeshHandle handle)
+{
+	BoundingBox bounds{ { -7.0f, -8.0f, -9.0f }, { 4.0f, 5.0f, 6.0f } };
+	const BoundingBox originalBounds = bounds;
+	std::uint64_t revision = 42;
+	GILGAMESH_CHECK_MESSAGE(!manager.TryGetLocalBounds(handle, bounds, revision),
+		"invalid mesh metadata lookup must fail");
+	GILGAMESH_CHECK_MESSAGE(bounds.min == originalBounds.min &&
+		bounds.max == originalBounds.max && revision == 42,
+		"failed metadata lookup must leave both outputs unchanged");
 }
+} // Anonymous namespace
 
 GILGAMESH_TEST("Engine.Render.MeshManager", "RequiresInitialization")
 {
@@ -72,6 +93,7 @@ GILGAMESH_TEST("Engine.Render.MeshManager", "RequiresInitialization")
 		"failed creation must not publish a mesh");
 	GILGAMESH_CHECK_MESSAGE(!manager.Initialize(nullptr),
 		"initialization must reject a null device");
+	CheckBoundsLookupFailure(testContext, manager, handle);
 }
 
 GILGAMESH_TEST("Engine.Render.MeshManager", "UploadsAndBindsMesh")
@@ -127,6 +149,44 @@ GILGAMESH_TEST("Engine.Render.MeshManager", "UploadsAndBindsMesh")
 	testDevice.context->ClearState();
 }
 
+GILGAMESH_TEST("Engine.Render.MeshManager", "PublishesLocalBoundsFromAllVertices")
+{
+	const TestDevice& testDevice = GetTestDevice();
+	if (!testDevice.device) return;
+
+	MeshManager manager;
+	GILGAMESH_CHECK_MESSAGE(manager.Initialize(testDevice.device.Get()),
+		"the manager must initialize for bounds metadata testing");
+
+	// The unindexed vertex contributes extrema, so bounds describe all uploaded positions.
+	StaticMeshData data = MakeTriangleData();
+	data.vertices_.resize(4);
+	data.vertices_[0].position = { -2.0f, 3.0f, 4.0f };
+	data.vertices_[1].position = { 5.0f, -6.0f, 7.0f };
+	data.vertices_[2].position = { 1.0f, 2.0f, -8.0f };
+	data.vertices_[3].position = { -9.0f, 10.0f, 11.0f };
+	const MeshHandle handle = manager.CreateMesh(data);
+	GILGAMESH_CHECK_MESSAGE(manager.IsValid(handle),
+		"finite mesh positions must publish a live mesh");
+
+	BoundingBox bounds{};
+	std::uint64_t revision = 0;
+	GILGAMESH_CHECK_MESSAGE(manager.TryGetLocalBounds(handle, bounds, revision),
+		"a live mesh must expose CPU-local bounds");
+	GILGAMESH_CHECK_MESSAGE(bounds.min == Vector3(-9.0f, -6.0f, -8.0f) &&
+		bounds.max == Vector3(5.0f, 10.0f, 11.0f) && revision == 1,
+		"bounds must enclose every uploaded position with the initial immutable revision");
+
+	// Caller-owned copies cannot mutate the manager's immutable metadata.
+	bounds = {};
+	revision = 0;
+	GILGAMESH_CHECK_MESSAGE(manager.TryGetLocalBounds(handle, bounds, revision) &&
+		bounds.min == Vector3(-9.0f, -6.0f, -8.0f) &&
+		bounds.max == Vector3(5.0f, 10.0f, 11.0f) && revision == 1,
+		"repeated lookup must retain the original local bounds and revision");
+	CheckBoundsLookupFailure(testContext, manager, {});
+}
+
 GILGAMESH_TEST("Engine.Render.MeshManager", "RejectsInvalidDataAtomically")
 {
 	const TestDevice& testDevice = GetTestDevice();
@@ -147,6 +207,39 @@ GILGAMESH_TEST("Engine.Render.MeshManager", "RejectsInvalidDataAtomically")
 		"rejected geometry must not publish a partial mesh");
 }
 
+GILGAMESH_TEST("Engine.Render.MeshManager", "RejectsNonfinitePositionsAtomically")
+{
+	const TestDevice& testDevice = GetTestDevice();
+	if (!testDevice.device) return;
+
+	MeshManager manager;
+	GILGAMESH_CHECK_MESSAGE(manager.Initialize(testDevice.device.Get()),
+		"the manager must initialize for finite-position validation");
+	const MeshHandle survivor = manager.CreateMesh(MakeTriangleData());
+
+	// Test every coordinate, including an unindexed invalid vertex.
+	StaticMeshData invalid = MakeTriangleData();
+	invalid.vertices_.resize(4);
+	invalid.vertices_[0].position.x = std::numeric_limits<float>::quiet_NaN();
+	GILGAMESH_CHECK_MESSAGE(!manager.CreateMesh(invalid).IsValid(),
+		"NaN coordinates must reject the entire mesh");
+	invalid.vertices_[0].position = {};
+	invalid.vertices_[1].position.y = std::numeric_limits<float>::infinity();
+	GILGAMESH_CHECK_MESSAGE(!manager.CreateMesh(invalid).IsValid(),
+		"positive infinity must reject the entire mesh");
+	invalid.vertices_[1].position = {};
+	invalid.vertices_[3].position.z = -std::numeric_limits<float>::infinity();
+	GILGAMESH_CHECK_MESSAGE(!manager.CreateMesh(invalid).IsValid(),
+		"nonfinite unindexed positions must also reject the entire mesh");
+
+	BoundingBox bounds{};
+	std::uint64_t revision = 0;
+	GILGAMESH_CHECK_MESSAGE(manager.Num() == 1 &&
+		manager.TryGetLocalBounds(survivor, bounds, revision) &&
+		bounds.min == Vector3{} && bounds.max == Vector3{} && revision == 1,
+		"rejected uploads must preserve existing meshes and their zero-extent bounds");
+}
+
 GILGAMESH_TEST("Engine.Render.MeshManager", "RejectsRemovedAndReusedHandles")
 {
 	const TestDevice& testDevice = GetTestDevice();
@@ -164,17 +257,31 @@ GILGAMESH_TEST("Engine.Render.MeshManager", "RejectsRemovedAndReusedHandles")
 		"removal must invalidate the old handle");
 	GILGAMESH_CHECK_MESSAGE(!manager.RemoveMesh(removed),
 		"removing a stale handle must be a no-op");
+	CheckBoundsLookupFailure(testContext, manager, removed);
 	GILGAMESH_CHECK_MESSAGE(
 		manager.IsValid(survivor) && manager.TryGet(survivor)->GetIndexCount() == 6,
 		"removing one resource must not affect another");
 
-	const MeshHandle replacement = manager.CreateMesh(MakeTriangleData());
+	// Recycled slots must publish only the replacement mesh's metadata.
+	StaticMeshData replacementData = MakeTriangleData();
+	for (NormalVertex& vertex : replacementData.vertices_)
+	{
+		vertex.position = { 2.0f, 3.0f, 4.0f };
+	}
+	const MeshHandle replacement = manager.CreateMesh(replacementData);
 	GILGAMESH_CHECK_MESSAGE(replacement.IsValid() && replacement != removed,
 		"a recycled slot must use a new generation");
 	GILGAMESH_CHECK_MESSAGE(!manager.IsValid(removed),
 		"slot reuse must not revive the stale handle");
 	GILGAMESH_CHECK_MESSAGE(manager.Num() == 2,
 		"only the survivor and replacement should remain live");
+	BoundingBox bounds{};
+	std::uint64_t revision = 0;
+	GILGAMESH_CHECK_MESSAGE(manager.TryGetLocalBounds(replacement, bounds, revision) &&
+		bounds.min == Vector3(2.0f, 3.0f, 4.0f) &&
+		bounds.max == Vector3(2.0f, 3.0f, 4.0f) && revision == 1,
+		"recycled slots must overwrite bounds and restart immutable metadata at revision one");
+	CheckBoundsLookupFailure(testContext, manager, removed);
 }
 
 GILGAMESH_TEST("Engine.Render.MeshManager", "ShutdownInvalidatesExistingHandles")
@@ -192,6 +299,7 @@ GILGAMESH_TEST("Engine.Render.MeshManager", "ShutdownInvalidatesExistingHandles"
 		"shutdown must release the device and all live meshes");
 	GILGAMESH_CHECK_MESSAGE(!manager.IsValid(oldHandle),
 		"shutdown must invalidate existing handles");
+	CheckBoundsLookupFailure(testContext, manager, oldHandle);
 	GILGAMESH_CHECK_MESSAGE(!manager.CreateMesh(MakeTriangleData()).IsValid(),
 		"creation must remain disabled until reinitialization");
 
@@ -202,4 +310,10 @@ GILGAMESH_TEST("Engine.Render.MeshManager", "ShutdownInvalidatesExistingHandles"
 		"reinitialization must not revive a pre-shutdown handle");
 	GILGAMESH_CHECK_MESSAGE(!manager.IsValid(oldHandle),
 		"the old generation must remain stale after reinitialization");
+	BoundingBox bounds{};
+	std::uint64_t revision = 0;
+	GILGAMESH_CHECK_MESSAGE(manager.TryGetLocalBounds(replacement, bounds, revision) &&
+		bounds.min == Vector3{} && bounds.max == Vector3{} && revision == 1,
+		"reinitialization must publish fresh bounds metadata for the new generation");
+	CheckBoundsLookupFailure(testContext, manager, oldHandle);
 }

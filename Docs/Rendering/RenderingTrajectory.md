@@ -65,8 +65,10 @@ VertexColorMeshPass
 asset import, and validation. `StaticMesh` is a move-only GPU resource. Neither
 a mesh nor a renderable component owns a camera, render target, or draw call.
 Here, static means non-deforming topology; an entity may move every frame.
-Bounds, normals, and texture coordinates remain future work driven by
-visibility and material requirements.
+MeshManager stores mesh-local AABBs, and UpdateBoundsSystem evaluates per-entity
+world AABBs. Bounds are not yet consumed by editor extraction or visibility
+tests. Normals and texture coordinates remain future work driven by material
+requirements.
 
 ### Draw setups describe reusable draw state
 
@@ -267,7 +269,7 @@ without changing the renderer's dependency direction.
 
 Add these when scene scale makes them useful:
 
-- Mesh bounds and per-view frustum culling
+- Bounds integration and per-view frustum culling
 - Sorting by pass, draw setup, material, and mesh
 - Instanced draws for measured high-volume repetition
 - D3D11 state caching when redundant binding is observable
@@ -312,7 +314,7 @@ behavior remain deferred.
 - Multiple graphics backends or a generic RHI
 - A universal material or pass-definition language
 - General asset import, streaming, and hot reload
-- Mesh bounds, culling, sorting, batching, and instancing
+- Bounds integration, culling, sorting, batching, and instancing
 - Draw-setup descriptor hashing and caching
 - Shader reflection as the sole input-layout source
 - Shader permutations and automatic variant management

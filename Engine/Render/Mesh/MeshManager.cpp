@@ -1,5 +1,7 @@
 #include "MeshManager.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -52,7 +54,10 @@ void MeshManager::Shutdown()
 			++slot.generation;
 		}
 
+		// Retire CPU bounds together with their uploaded mesh generation.
 		slot.mesh.reset();
+		slot.localBounds = {};
+		slot.boundsRevision = 0;
 		if (slot.generation != std::numeric_limits<std::uint32_t>::max())
 		{
 			freeIndices.push_back(static_cast<std::uint32_t>(index));
@@ -93,6 +98,29 @@ MeshHandle MeshManager::CreateMesh(const StaticMeshData& data)
 		if (index >= data.vertices_.size()) return {};
 	}
 
+	// Validate every CPU position and include unindexed vertices before allocating GPU buffers.
+	BoundingBox localBounds{
+		data.vertices_.front().position,
+		data.vertices_.front().position
+	};
+	for (const NormalVertex& vertex : data.vertices_)
+	{
+		const Vector3& position = vertex.position;
+		if (!std::isfinite(position.x) ||
+			!std::isfinite(position.y) ||
+			!std::isfinite(position.z))
+		{
+			return {};
+		}
+
+		localBounds.min.x = std::min(localBounds.min.x, position.x);
+		localBounds.min.y = std::min(localBounds.min.y, position.y);
+		localBounds.min.z = std::min(localBounds.min.z, position.z);
+		localBounds.max.x = std::max(localBounds.max.x, position.x);
+		localBounds.max.y = std::max(localBounds.max.y, position.y);
+		localBounds.max.z = std::max(localBounds.max.z, position.z);
+	}
+
 	VertexBuffer vertexBuffer;
 	const HRESULT vertexResult = vertexBuffer.Create(
 		device_,
@@ -113,10 +141,10 @@ MeshHandle MeshManager::CreateMesh(const StaticMeshData& data)
 	return AddMesh(StaticMesh{
 		std::move(vertexBuffer),
 		std::move(indexBuffer)
-	});
+	}, localBounds);
 }
 
-MeshHandle MeshManager::AddMesh(StaticMesh mesh)
+MeshHandle MeshManager::AddMesh(StaticMesh mesh, const BoundingBox& localBounds)
 {
 	if (freeIndices_.empty() && meshSlots_.size() >= MeshHandle::InvalidIndex)
 	{
@@ -132,12 +160,14 @@ MeshHandle MeshManager::AddMesh(StaticMesh mesh)
 
 		MeshSlot& slot = meshSlots_[index];
 		slot.mesh = std::move(storedMesh);
+		slot.localBounds = localBounds;
+		slot.boundsRevision = 1;
 		++liveCount_;
 		return MeshHandle(index, slot.generation);
 	}
 
 	const auto index = static_cast<std::uint32_t>(meshSlots_.size());
-	meshSlots_.push_back(MeshSlot{ 0, std::move(storedMesh) });
+	meshSlots_.push_back(MeshSlot{ 0, std::move(storedMesh), localBounds, 1 });
 	++liveCount_;
 	return MeshHandle(index, 0);
 }
@@ -160,13 +190,20 @@ const StaticMesh* MeshManager::TryGet(MeshHandle handle) const noexcept
 		: nullptr;
 }
 
-// API scaffold only: mesh creation does not calculate local bounds yet.
+// Copy metadata only after all handle and bounds checks succeed.
 bool MeshManager::TryGetLocalBounds(
-	MeshHandle /*handle*/,
-	BoundingBox& /*outBounds*/,
-	std::uint64_t& /*outRevision*/) const noexcept
+	MeshHandle handle,
+	BoundingBox& outBounds,
+	std::uint64_t& outRevision) const noexcept
 {
-	return false;
+	if (!IsValid(handle)) return false;
+
+	const MeshSlot& slot = meshSlots_[handle.index_];
+	if (slot.boundsRevision == 0 || !slot.localBounds.IsValid()) return false;
+
+	outBounds = slot.localBounds;
+	outRevision = slot.boundsRevision;
+	return true;
 }
 
 bool MeshManager::RemoveMesh(MeshHandle handle)
@@ -185,7 +222,10 @@ bool MeshManager::RemoveMesh(MeshHandle handle)
 		++slot.generation;
 	}
 
+	// Retire CPU bounds together with the resource, even for exhausted generations.
 	slot.mesh.reset();
+	slot.localBounds = {};
+	slot.boundsRevision = 0;
 	--liveCount_;
 	return true;
 }

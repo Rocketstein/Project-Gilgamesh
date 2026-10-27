@@ -329,6 +329,8 @@ OutputLogPanel::Draw
 `Renderer` owns the D3D11 device, presentation surface, shader manager, and
 `MeshManager`. It owns no concrete render pass and has no `AddScenePasses` API.
 `MeshManager` owns uploaded static meshes behind generation-checked handles.
+Mesh creation also stores a shared CPU-local AABB from finite vertex positions;
+`TryGetLocalBounds` copies this metadata without resolving GPU buffers.
 `EditorViewportRenderer` owns the graph and `vector<unique_ptr<IRenderPass>>`.
 `CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh; the viewport
 renderer itself contains no concrete pass member or type-specific branch.
@@ -426,7 +428,7 @@ the UI, whose viewport image samples the already rendered color texture.
 
 The vertex-color pass is the first concrete consumer of ECS render extraction.
 There is no separate `MeshDrawExecutor`; command preparation and execution are
-two responsibilities within the same pass. Materials, mesh bounds, visibility
+two responsibilities within the same pass. Materials, visibility
 culling, sorting, instancing, a general world renderer, and an API-independent
 RHI remain unimplemented. `EditorGridPass` replaces the former
 `EditorGridLinePass` stub and is composed by the editor rather than the world
@@ -517,6 +519,15 @@ local revision, validated parent, and parent world revision even when those
 inputs produce an unchanged matrix; it does not clear revisions used by other
 consumers. Unready local or parent world inputs are logged and skipped until a
 later evaluation. The editor does not register these transform systems yet.
+
+`UpdateBoundsSystem` transforms original mesh-local bounds into each existing
+Transform + Mesh + AABB component set after world evaluation. Affine enclosure
+accounts for rotation, shear, and negative or zero scale.
+Missing resources or unevaluated world matrices produce `valid=false`. First
+evaluation, validity changes, and changed valid corners publish a fresh bounds
+token; equal results still record consumed transform, mesh, and metadata inputs.
+Spatial-index synchronization must separately handle deleted entities or removed
+components. The editor does not register bounds evaluation or consume it yet.
 
 `RenderExtractionSystem : public ISystem` traverses the active scene's entity
 membership and reads `TransformComponent` and `MeshComponent` from the world.

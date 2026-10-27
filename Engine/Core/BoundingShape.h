@@ -10,10 +10,10 @@ public:
     // Requires finite, ordered corners; zero extents remain valid.
     [[nodiscard]] bool IsValid() const noexcept;
 
-    // Returns the midpoint of the corners; callers must supply valid bounds.
+    // Returns the midpoint using wider intermediate arithmetic; callers must supply valid bounds.
     [[nodiscard]] Vector3 GetCenter() const noexcept;
 
-    // Returns the half-size along each axis; callers must supply valid bounds.
+    // Returns the half-size without intermediate overflow; callers must supply valid bounds.
     [[nodiscard]] Vector3 GetExtents() const noexcept;
 
 public:
@@ -21,6 +21,7 @@ public:
     Vector3 max{}; // Maximum corner.
 };
 
-// Encloses all corners after an affine transform, including shear and negative scale.
+// Encloses all corners after a finite affine transform, including shear and negative/zero scale.
+// Invalid input or an unrepresentable result returns a box with reversed corners, never a point box.
 [[nodiscard]] BoundingBox TransformBounds(
     const BoundingBox& bounds, const Matrix4& localToWorld) noexcept;

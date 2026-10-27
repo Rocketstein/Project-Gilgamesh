@@ -10,6 +10,7 @@
 #include "StaticMesh.h"
 #include "MeshHandle.h"
 
+// Owns uploaded meshes and immutable CPU metadata for generation-checked handles.
 class MeshManager final
 {
 public:
@@ -46,7 +47,6 @@ public:
 
 	// Copy shared CPU-local bounds and their revision without resolving GPU buffers.
 	// Return false without changing outputs when the handle or metadata is invalid.
-	// This API is currently a stub; CreateMesh does not populate bounds metadata yet.
 	[[nodiscard]] bool TryGetLocalBounds(
 		MeshHandle handle,
 		BoundingBox& outBounds,
@@ -59,14 +59,15 @@ public:
 private:
 	// Stores an uploaded mesh in a new or recycled slot and returns its handle.
 	[[nodiscard]]
-	MeshHandle AddMesh(StaticMesh mesh);
+	MeshHandle AddMesh(StaticMesh mesh, const BoundingBox& localBounds);
 
+	// A slot keeps CPU bounds alive for exactly the lifetime of its uploaded mesh.
 	struct MeshSlot
 	{
 		std::uint32_t generation = 0;
 		std::unique_ptr<StaticMesh> mesh;
 		BoundingBox localBounds{}; // Shared CPU metadata, separate from the GPU mesh wrapper.
-		std::uint64_t boundsRevision = 0; // Zero until local bounds have been evaluated.
+		std::uint64_t boundsRevision = 0; // Live immutable meshes use one; empty slots use zero.
 	};
 
 	std::vector<MeshSlot> meshSlots_;

@@ -19,6 +19,7 @@ public:
 	// Update existing Transform + Mesh + AABB components; never add components in this phase.
 	// Use original mesh-local bounds and the full world matrix, including shear/negative scale.
 	// Initialize the bounds revision even on a first invalid result; then advance on changes.
+	// Revisions are publication tokens that are not reused when a component is recreated.
 	// Missing geometry or an unevaluated world matrix produces valid=false. Never clear
 	// transform revisions; entity deletion and invalidation must also reach the spatial index.
 	void Update(World& world, float deltaTime) override;
