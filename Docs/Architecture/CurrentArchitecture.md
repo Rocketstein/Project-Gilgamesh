@@ -499,6 +499,25 @@ membership. Component traversal still requires command playback and immediate
 scene changes to wait until traversal has finished. Hierarchy maintenance uses
 the Transform-filtered entity query for change detection and rebuilding.
 
+Component traversal can declare per-type access through `QueryTerm<T, QueryFlags>`.
+`Read` supplies a const reference; `ReadWrite` supplies a mutable reference and
+conservatively stamps that component column once per selected chunk before
+callbacks run. Legacy raw `T` terms remain read-write and raw `const T` terms
+remain read-only. Mutable `Get<T>` likewise records possible writes, while
+`Get<const T>` and access through a const world remain reads. Writable references
+must be reacquired for each write phase; later edits through a retained reference
+cannot record a new stamp automatically.
+
+Chunk-owned versions describe possible component writes, separately from domain
+matrix and bounds publication revisions. A term marked `Changed` selects chunks
+whose watched component version is newer than the consumer's supplied cursor;
+any watched term may select a chunk, while all requested component types must
+be present. The predicate runs before write stamps. Queries without watched
+terms still visit all matching chunks, and each consumer owns its observation
+cursor. Structural moves stamp affected source and destination columns. The
+archetype query cache still selects component combinations and stores no consumer
+change history; `QueryEntities` retains its existing snapshot semantics.
+
 `TransformHierarchySystem` maintains a validated hierarchy for every live
 `TransformComponent`, independent of scene membership or mesh assignment. The
 component's `parent` is the authored source; the system caches validated parents,
@@ -512,9 +531,16 @@ publishes all derived data together and advances a topology revision. Disabling
 or destroying the system clears its views; a later rebuild publishes a newer
 revision. The editor registers this system before local and world evaluation.
 
-`LocalTransformSystem` evaluates authored TRS as a row-vector local matrix in
-scale, rotation, translation order. `LocalToWorldSystem` then visits the
-hierarchy's parent-first traversal and publishes complete affine world matrices:
+`LocalTransformSystem` selects Transform chunks written since its last successful
+pass, then evaluates authored TRS as a row-vector local matrix in scale, rotation,
+translation order. After the complete pass it records the current ECS write
+stamp, consuming its own cache writes; lifecycle changes reset its cursor.
+Authored TRS and derived caches still share one component, so later world-cache
+writes can conservatively select an extra local pass once motion settles, or
+repeated local work while ancestors keep moving. This is chunk/type tracking,
+not field-level TRS tracking. `LocalToWorldSystem` visits the hierarchy's
+parent-first traversal, reads each node's inputs before deciding whether to
+acquire tracked write access, and publishes complete affine world matrices:
 roots use their local matrix, and children use `local * parentWorld`. Full
 matrices retain shear introduced by parent scale and child rotation. Local and
 world revisions start at zero. Local revisions advance on first evaluation or
@@ -528,8 +554,11 @@ consumers. Unready local or parent world inputs are logged and skipped until a
 later evaluation. The editor registers hierarchy, local, world, and bounds
 evaluation in that order in its transform group.
 
-`UpdateBoundsSystem` transforms original mesh-local bounds into each existing
-Transform + Mesh + AABB component set after world evaluation. Affine enclosure
+`UpdateBoundsSystem` reads Transform and Mesh columns and writes the AABB column
+across all matching chunks; resource availability may change in `MeshManager`
+without a component write, so it does not use the chunk change filter. It transforms
+original mesh-local bounds into each existing Transform + Mesh + AABB component
+set after world evaluation. Affine enclosure
 accounts for rotation, shear, and negative or zero scale.
 Missing resources or unevaluated world matrices produce `valid=false`. First
 evaluation, validity changes, and changed valid corners publish a fresh bounds

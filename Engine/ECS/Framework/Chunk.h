@@ -127,7 +127,17 @@ public:
     // Copy the complete entity identity stored alongside one committed component row.
     [[nodiscard]] Entity GetEntity(std::uint32_t row) const;
 
+    // Versions belong to this chunk, not to the archetype's shared column layout.
+    [[nodiscard]] std::uint64_t GetChangeVersion(ComponentTypeId typeId) const;
+
+    // Registry access paths stamp writes before exposing mutable component references.
+    void MarkChanged(ComponentTypeId typeId, std::uint64_t version);
+
+    // Structural changes conservatively invalidate every component column in the chunk.
+    void MarkAllChanged(std::uint64_t version) noexcept;
+
     // Return an existing component in a live row of this chunk.
+    // This storage-level accessor does not publish writes; registry APIs own tracking.
     template <typename T>
     T& Get(std::uint32_t row)
     {
@@ -206,6 +216,8 @@ private:
     const ChunkLayout& layout_;
     // Runtime lifetime operations are owned by the archetype.
     const ComponentTypes& componentTypes_;
+    // Last registry-issued write stamp for each component column; zero means unwritten.
+    std::unordered_map<ComponentTypeId, std::uint64_t> changeVersions_;
     // Aligned storage holds the live component rows.
     std::byte* storage_ = nullptr;
     // Rows in [0, count_) contain live component values.

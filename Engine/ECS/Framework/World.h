@@ -67,6 +67,8 @@ public:
 		return entityRegistry_.Has<Component>(entity);
 	}
 
+	// Mutable access publishes a possible write. Reacquire it for each write phase;
+	// const Component or a const World provides untracked read-only access.
 	template <typename Component>
 	[[nodiscard]] Component& Get(Entity entity)
 	{
@@ -79,12 +81,27 @@ public:
 		return entityRegistry_.Get<Component>(entity);
 	}
 
+	// Observation cursors are owned by each consuming system, never by QueryCache.
+	[[nodiscard]] std::uint64_t GetChangeVersion() const noexcept
+	{
+		return entityRegistry_.GetChangeVersion();
+	}
+
 	// Visit matching components across the whole world, including entities without a scene.
 	// Deferred requests may be queued; keep playback and immediate scene changes outside traversal.
-	template <typename... Components, typename Fn>
+	template <typename... Terms, typename Fn>
+		requires (QueryDetail::UniqueTerms<Terms...> && !QueryDetail::hasChangedTerms<Terms...>)
 	void ForEachComponent(Fn&& fn)
 	{
-		entityRegistry_.ForEachComponent<Components...>(std::forward<Fn>(fn));
+		entityRegistry_.ForEachComponent<Terms...>(std::forward<Fn>(fn));
+	}
+
+	// Changed terms select whole chunks using the caller's observation cursor.
+	template <typename... Terms, typename Fn>
+		requires (QueryDetail::UniqueTerms<Terms...> && QueryDetail::hasChangedTerms<Terms...>)
+	void ForEachComponent(std::uint64_t sinceVersion, Fn&& fn)
+	{
+		entityRegistry_.ForEachComponent<Terms...>(sinceVersion, std::forward<Fn>(fn));
 	}
 
 	std::uint32_t GetWorldID() const noexcept { return worldID_; }

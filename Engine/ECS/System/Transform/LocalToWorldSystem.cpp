@@ -30,13 +30,13 @@ void LocalToWorldSystem::Update(World& world, float /*deltaTime*/)
 	bool skippedUninitializedInput = false;
 	for (Entity entity : hierarchy_.GetTraversalOrder())
 	{
-		TransformComponent& transform = world.Get<TransformComponent>(entity);
+		const TransformComponent& transform = world.Get<const TransformComponent>(entity);
 
 		// Raw authored links may contain errors repaired only in the hierarchy cache.
 		const Entity parent = hierarchy_.GetParent(entity);
 		const TransformComponent* parentTransform = parent.IsNull()
 			? nullptr
-			: &world.Get<TransformComponent>(parent);
+			: &world.Get<const TransformComponent>(parent);
 
 		// Do not publish default matrices as evaluated results when a producer has not run.
 		if (transform.localRevision == 0 ||
@@ -48,7 +48,8 @@ void LocalToWorldSystem::Update(World& world, float /*deltaTime*/)
 
 		if (NeedsWorldUpdate(transform, parent, parentTransform))
 		{
-			UpdateWorldMatrix(transform, parent, parentTransform);
+			// Acquire tracked write access only when this node has inputs left to consume.
+			UpdateWorldMatrix(world.Get<TransformComponent>(entity), parent, parentTransform);
 		}
 	}
 

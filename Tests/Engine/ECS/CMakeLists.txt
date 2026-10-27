@@ -2,6 +2,7 @@ target_sources(GilgameshTests
   PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/EntityRegistryTests.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/EntityTraversalTests.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/QueryChangeTrackingTests.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TransformHierarchySystemTests.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LocalToWorldSystemTests.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/UpdateBoundsSystemTests.cpp"

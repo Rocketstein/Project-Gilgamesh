@@ -10,6 +10,7 @@
 
 #include "ArchetypeManager.h"
 #include "EntitySlot.h"
+#include "QueryTerm.h"
 #include "Engine/ECS/Entity/Entity.h"
 
 // Issues entity handles and owns the generations used to validate them.
@@ -90,7 +91,8 @@ public:
 			slot.archetype->HasComponent(ComponentTypeId{ typeid(T) });
 	}
 
-	// Return T from the entity's chunk row, or reject a missing component.
+	// Mutable T publishes a possible write; const T is read-only. Reacquire mutable
+	// references for each write phase instead of retaining them across system evaluation.
 	template <typename T>
 	T& Get(Entity entity)
 	{
@@ -106,7 +108,17 @@ public:
 		{
 			throw std::logic_error("Entity has an archetype but no chunk row");
 		}
-		return slot.chunk->Get<T>(slot.row);
+		if constexpr (std::is_const_v<T>)
+		{
+			return std::as_const(*slot.chunk).Get<T>(slot.row);
+		}
+		else
+		{
+			// Resolve successfully before publishing the mutable borrow.
+			T& value = slot.chunk->Get<T>(slot.row);
+			slot.chunk->MarkChanged(ComponentTypeId{ typeid(T) }, NextChangeVersion());
+			return value;
+		}
 	}
 
 	template <typename T>
@@ -124,8 +136,11 @@ public:
 		{
 			throw std::logic_error("Entity has an archetype but no chunk row");
 		}
-		return slot.chunk->Get<T>(slot.row);
+		return std::as_const(*slot.chunk).Get<T>(slot.row);
 	}
+
+	// Current write stamp; consumers retain their own observation point.
+	[[nodiscard]] std::uint64_t GetChangeVersion() const noexcept { return changeVersion_; }
 
 	template <typename T>
 	void Remove(Entity entity)
@@ -156,6 +171,7 @@ public:
 			slot.archetype = nullptr;
 			slot.chunk = nullptr;
 			slot.row = 0;
+			StampStructuralChange(source.chunk, nullptr);
 			return;
 		}
 
@@ -201,33 +217,110 @@ public:
 		return entities;
 	}
 
-	// Visit component references in matching archetypes; structural changes invalidate rows.
-	template <class... Components, class Fn>
+	// Visit all matching rows. Plain T/const T remain read-write/read-only queries.
+	// Structural changes invalidate rows; writable references are scoped to this pass.
+	template <typename... Terms, typename Fn>
+		requires (QueryDetail::UniqueTerms<Terms...> && !QueryDetail::hasChangedTerms<Terms...>)
 	void ForEachComponent(Fn&& fn)
 	{
-		static_assert(sizeof...(Components) > 0,
-			"ForEachComponent() requires at least one component type");
+		ForEachComponentImpl<Terms...>(0, std::forward<Fn>(fn));
+	}
 
-		auto& cache = archetypeManager_.GetQueryCache<Components...>();
-		auto& archetypes = cache.matches;
-		for (auto* archetype : archetypes)
+	// Match all component types, then select chunks where any Changed term is newer.
+	// The caller owns its cursor and advances it only after successfully consuming inputs.
+	template <typename... Terms, typename Fn>
+		requires (QueryDetail::UniqueTerms<Terms...> && QueryDetail::hasChangedTerms<Terms...>)
+	void ForEachComponent(std::uint64_t sinceVersion, Fn&& fn)
+	{
+		ForEachComponentImpl<Terms...>(sinceVersion, std::forward<Fn>(fn));
+	}
+
+private:
+	bool CanReuse(Entity entity) const noexcept;
+
+	// Writes and committed structural edits share one monotonic registry-local clock.
+	[[nodiscard]] std::uint64_t NextChangeVersion() noexcept;
+
+	// Source and destination may be null for first insertion or final removal respectively.
+	void StampStructuralChange(Chunk* source, Chunk* destination) noexcept;
+
+	// Unwatched terms still require component presence but never affect chunk selection.
+	template <typename Term>
+	[[nodiscard]] static bool HasQueryChange(const Chunk& chunk, std::uint64_t sinceVersion)
+	{
+		if constexpr (QueryDetail::TermTraits<Term>::changed)
 		{
-			// Iterate chunks
-			for (auto& chunkPtr : archetype->GetChunks())
+			using Component = typename QueryDetail::TermTraits<Term>::ComponentType;
+			return chunk.GetChangeVersion(ComponentTypeId{ typeid(Component) }) > sinceVersion;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	// Stamp each writable column once, before callbacks can partially modify its rows.
+	template <typename Term>
+	static void MarkQueryWrite(Chunk& chunk, std::uint64_t version)
+	{
+		if constexpr (QueryDetail::TermTraits<Term>::writable)
+		{
+			using Component = typename QueryDetail::TermTraits<Term>::ComponentType;
+			chunk.MarkChanged(ComponentTypeId{ typeid(Component) }, version);
+		}
+	}
+
+	// Access flags determine reference constness, independently of the callback signature.
+	template <typename Term>
+	static typename QueryDetail::TermTraits<Term>::Reference GetQueryComponent(
+		Chunk& chunk, std::uint32_t row)
+	{
+		using Component = typename QueryDetail::TermTraits<Term>::ComponentType;
+		if constexpr (QueryDetail::TermTraits<Term>::writable)
+		{
+			return chunk.Get<Component>(row);
+		}
+		else
+		{
+			return std::as_const(chunk).Get<Component>(row);
+		}
+	}
+
+	// Filter before marking writes so read-write Changed terms cannot select themselves.
+	template <typename... Terms, typename Fn>
+	void ForEachComponentImpl(std::uint64_t sinceVersion, Fn&& fn)
+	{
+		auto& cache = archetypeManager_.GetQueryCache<
+			typename QueryDetail::TermTraits<Terms>::ComponentType...>();
+		for (Archetype* archetype : cache.matches)
+		{
+			for (const auto& chunkPtr : archetype->GetChunks())
 			{
 				Chunk& chunk = *chunkPtr;
 				const std::uint32_t count = chunk.Count();
+				if (count == 0) continue;
+
+				// Watched columns combine with OR; unwatched outputs do not select chunks.
+				if constexpr (QueryDetail::hasChangedTerms<Terms...>)
+				{
+					if (!(HasQueryChange<Terms>(chunk, sinceVersion) || ...)) continue;
+				}
+
+				// Read-only queries leave both the registry clock and column versions untouched.
+				if constexpr ((QueryDetail::TermTraits<Terms>::writable || ...))
+				{
+					const std::uint64_t version = NextChangeVersion();
+					(MarkQueryWrite<Terms>(chunk, version), ...);
+				}
+
+				// Raw storage access avoids publishing a separate write for each row.
 				for (std::uint32_t row = 0; row < count; ++row)
 				{
-					fn(chunk.Get<Components>(row)...);
+					fn(GetQueryComponent<Terms>(chunk, row)...);
 				}
 			}
 		}
 	}
-
-
-private:
-	bool CanReuse(Entity entity) const noexcept;
 
 	// Populate new columns, move shared columns, then publish the new row location.
 	// The target must differ from the source; populate only constructs new values.
@@ -273,6 +366,7 @@ private:
 		slot.archetype = &target;
 		slot.chunk = destination;
 		slot.row = newRow;
+		StampStructuralChange(source.chunk, destination);
 	}
 
 private:
@@ -281,6 +375,7 @@ private:
 	std::vector<EntitySlot> slots_;
 	// Own the future component storage behind the registry's entity API.
 	ArchetypeManager archetypeManager_;
+	std::uint64_t changeVersion_ = 0; // Last write stamp issued; zero is the initial observer cursor.
 	std::uint64_t ownerId_ = 0;
 	std::uint32_t owningWorldID_ = 0; // World identity copied into every issued entity.
 };

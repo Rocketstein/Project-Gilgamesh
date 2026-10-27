@@ -154,6 +154,13 @@ Chunk::Chunk(const ChunkLayout& layout, const ComponentTypes& componentTypes)
 		}
 	}
 
+	// Allocate version entries before raw storage so a metadata allocation cannot leak it.
+	changeVersions_.reserve(componentTypes_.size());
+	for (const auto& entry : componentTypes_)
+	{
+		changeVersions_.emplace(entry.first, 0);
+	}
+
 	// Every column uses this one allocation, including over-aligned components.
 	storage_ = static_cast<std::byte*>(
 		::operator new(CHUNK_SIZE, std::align_val_t{ layout_.allocationAlignment }));
@@ -184,6 +191,27 @@ Entity Chunk::GetEntity(std::uint32_t row) const
 		throw std::out_of_range("Chunk row does not contain a live entity");
 	}
 	return *EntityAddress(storage_, layout_, row);
+}
+
+// Read a column's last possible write without changing observer state.
+std::uint64_t Chunk::GetChangeVersion(ComponentTypeId typeId) const
+{
+	return changeVersions_.at(typeId);
+}
+
+// Only existing columns can be stamped; all metadata is allocated at construction.
+void Chunk::MarkChanged(ComponentTypeId typeId, std::uint64_t version)
+{
+	changeVersions_.at(typeId) = version;
+}
+
+// Row insertion, migration, and removal can change every column's visible rows.
+void Chunk::MarkAllChanged(std::uint64_t version) noexcept
+{
+	for (auto& entry : changeVersions_)
+	{
+		entry.second = version;
+	}
 }
 
 std::optional<Entity> Chunk::Erase(std::uint32_t row)

@@ -51,6 +51,7 @@ target_sources (GilgameshEngine
 		ECS/Framework/IDGenerator.h
 		ECS/Framework/MemoryArena.cpp
 		ECS/Framework/MemoryArena.h
+		ECS/Framework/QueryTerm.h
 		ECS/Framework/Scene.cpp
 		ECS/Framework/Scene.h
 		ECS/Framework/World.cpp

@@ -6,6 +6,7 @@
 #include "Engine/ECS/Component/BoundsComponent.h"
 #include "Engine/ECS/Component/MeshComponent.h"
 #include "Engine/ECS/Component/TransformComponent.h"
+#include "Engine/ECS/Framework/QueryTerm.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 
@@ -28,7 +29,11 @@ UpdateBoundsSystem::UpdateBoundsSystem(const MeshManager& meshes) noexcept
 // Update existing per-entity bounds after world matrices have been evaluated.
 void UpdateBoundsSystem::Update(World& world, float /*deltaTime*/)
 {
-	world.ForEachComponent<TransformComponent, MeshComponent, AABBComponent>(
+	// Resource availability can change outside ECS writes, so inspect every eligible chunk.
+	world.ForEachComponent<
+		QueryTerm<TransformComponent, QueryFlags::Read>,
+		QueryTerm<MeshComponent, QueryFlags::Read>,
+		QueryTerm<AABBComponent, QueryFlags::ReadWrite>>(
 		[this](const TransformComponent& transform, const MeshComponent& mesh, AABBComponent& bounds)
 		{
 			// Each consumer tracks its own inputs without clearing transform revisions.

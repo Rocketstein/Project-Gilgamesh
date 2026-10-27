@@ -26,6 +26,20 @@ bool EntityRegistry::CanReuse(Entity entity) const noexcept
 	return source.generation < std::numeric_limits<std::uint32_t>::max() - 1;
 }
 
+// A clock independent of frame timing also observes idle and paused-editor writes.
+std::uint64_t EntityRegistry::NextChangeVersion() noexcept
+{
+	return ++changeVersion_;
+}
+
+// Publish complete row membership changes only after the storage operation succeeds.
+void EntityRegistry::StampStructuralChange(Chunk* source, Chunk* destination) noexcept
+{
+	const std::uint64_t version = NextChangeVersion();
+	if (source) source->MarkAllChanged(version);
+	if (destination) destination->MarkAllChanged(version);
+}
+
 Entity EntityRegistry::Create()
 {
 	// Reuse an index whose generation was advanced during destruction.
@@ -130,6 +144,8 @@ bool EntityRegistry::Destroy(Entity entity)
 	{
 		freeIndices_.push_back(entity.index_);
 	}
+	// Remaining rows must be reconsidered after deletion or swap-and-pop.
+	if (source.chunk) StampStructuralChange(source.chunk, nullptr);
 	return true;
 }
 

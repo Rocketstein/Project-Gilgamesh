@@ -55,10 +55,10 @@ bool TransformHierarchySystem::SetParent(World& world, Entity child, Entity pare
 	}
 
 	// Preserve all authored TRS and evaluated matrices; only the relationship is changed.
-	TransformComponent& transform = world.Get<TransformComponent>(child);
+	const TransformComponent& transform = world.Get<const TransformComponent>(child);
 	if (transform.parent != parent)
 	{
-		transform.parent = parent;
+		world.Get<TransformComponent>(child).parent = parent;
 		topologyDirty_ = true;
 	}
 	return true;
