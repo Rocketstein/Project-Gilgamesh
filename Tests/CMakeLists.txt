@@ -14,8 +14,9 @@ target_link_libraries(GilgameshTests
     d3d11
 )
 
-# Give renderer integration tests their own compiled copy of the primitive shader.
+# Give renderer integration tests their own compiled shader assets.
 register_shader(GilgameshTests Primitive)
+register_shader(GilgameshTests DebugLine)
 register_shader(GilgameshTests EditorGrid
   SOURCE "${CMAKE_SOURCE_DIR}/Shaders/Editor/EditorGrid.hlsl")
 

@@ -19,16 +19,18 @@ The implemented path is:
 World::PreparePresentation
   -> transform systems
   -> RenderExtractionSystem
-  -> RenderFrameData: mesh handles and copied world transforms
+  -> RenderFrameData: mesh handles, copied world transforms, optional bounds lines
   -> EditorProgram builds RenderView: camera and viewport
   -> EditorViewportRenderer imports targets and registers its IRenderPass list
       -> ViewportClearPass declares color/depth clears
       -> EditorGridPass captures view and editor settings by value
       -> VertexColorMeshPass prepares MeshPassCommands captured by value
-  -> RenderGraph Compile / Execute: Clear -> Grid -> Mesh
+      -> DebugLinePass prepares copied line vertices and view constants
+  -> RenderGraph Compile / Execute: Clear -> Grid -> Mesh -> DebugLines
       -> clear viewport attachments
       -> grid blends background color with no depth attachment
       -> mesh loads color/depth, uploads constants, binds meshes, DrawIndexed
+      -> debug lines load color/read-only depth, upload a dynamic vertex batch, Draw
   -> reset the graph before returning from viewport rendering
 ```
 
@@ -66,8 +68,9 @@ asset import, and validation. `StaticMesh` is a move-only GPU resource. Neither
 a mesh nor a renderable component owns a camera, render target, or draw call.
 Here, static means non-deforming topology; an entity may move every frame.
 MeshManager stores mesh-local AABBs, and UpdateBoundsSystem evaluates per-entity
-world AABBs. Bounds are not yet consumed by editor extraction or visibility
-tests. Normals and texture coordinates remain future work driven by material
+world AABBs. The editor extracts valid bounds into transient green lines drawn
+by a depth-tested DebugLinePass. Visibility tests remain deferred. Normals and
+texture coordinates remain future work driven by material
 requirements.
 
 ### Draw setups describe reusable draw state
@@ -138,7 +141,7 @@ camera-independent snapshot, without coupling generic ECS storage to rendering.
 graph registration; `RenderPassContext` supplies color/depth handles plus
 borrowed frame, view, and mesh-manager inputs. `Renderer` owns backend and
 resource services, with no concrete pass member or `AddScenePasses` API.
-`CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh in editor
+`CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh -> DebugLines in editor
 composition code. The viewport module imports targets and registers this list
 without type-specific branches. It initializes from `Renderer&` or explicit
 device/context/shader/mesh services for WARP and other callers.
@@ -209,7 +212,7 @@ The working pieces are:
 - Per-view `MeshPassCommands` and pass-owned view/object constant buffers
 - Texture dependency compilation and execution through `RenderGraph`
 - Generic `IRenderPass` registration through `EditorViewportRenderer`
-- Editor pipeline composition with independent Clear -> Grid -> Mesh passes
+- Editor pipeline composition with independent Clear -> Grid -> Mesh -> DebugLines passes
 
 ## Milestones and next work
 
@@ -269,7 +272,7 @@ without changing the renderer's dependency direction.
 
 Add these when scene scale makes them useful:
 
-- Bounds integration and per-view frustum culling
+- Per-view bounds-based frustum culling
 - Sorting by pass, draw setup, material, and mesh
 - Instanced draws for measured high-volume repetition
 - D3D11 state caching when redundant binding is observable
@@ -302,7 +305,7 @@ behavior remain deferred.
 | Fixed shaders, draw state, and mesh constant buffers | `VertexColorMeshPass` |
 | Editor-grid draw state and view/settings constant buffers | `EditorGridPass` |
 | Pass resource initialization and graph-registration contract | `IRenderPass` |
-| Editor pass selection and Clear -> Grid -> Mesh order | `CreateEditorViewportPasses` |
+| Editor pass selection and Clear -> Grid -> Mesh -> DebugLines order | `CreateEditorViewportPasses` |
 | Pass ownership, target imports, graph execution, and cleanup | `EditorViewportRenderer` |
 | Output targets, clears, texture binding, and ordering | `RenderGraph` |
 | Swap chain and D3D11 device | `Renderer` |
@@ -314,7 +317,7 @@ behavior remain deferred.
 - Multiple graphics backends or a generic RHI
 - A universal material or pass-definition language
 - General asset import, streaming, and hot reload
-- Bounds integration, culling, sorting, batching, and instancing
+- Culling, sorting, batching, and instancing
 - Draw-setup descriptor hashing and caching
 - Shader reflection as the sole input-layout source
 - Shader permutations and automatic variant management

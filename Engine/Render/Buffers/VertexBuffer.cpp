@@ -11,15 +11,19 @@ HRESULT VertexBuffer::Create(ID3D11Device* device,
 	const void* data,
 	BufferUsage usage)
 {
-	if (!device || !data) return E_POINTER;
-	if (byteWidth == 0 || count == 0 || stride == 0) return E_INVALIDARG;
+	if (!device || (!data && usage == BufferUsage::BUFFER_IMMUTABLE)) return E_POINTER;
+	if (byteWidth == 0 || count == 0 || stride == 0 ||
+		static_cast<std::uint64_t>(count) * stride > byteWidth)
+	{
+		return E_INVALIDARG;
+	}
 
-	// Buffer description block
+	// Allocate enough bytes for the complete declared vertex capacity.
 	D3D11_BUFFER_DESC desc = {};
 	desc.ByteWidth = byteWidth;
 	desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	
-	// Determine vertex buffer usage
+	// Only dynamic buffers support CPU replacement after creation.
 	if (usage == BufferUsage::BUFFER_IMMUTABLE)
 	{
 		desc.Usage = D3D11_USAGE_IMMUTABLE;
@@ -39,7 +43,7 @@ HRESULT VertexBuffer::Create(ID3D11Device* device,
 
 	const HRESULT result = device->CreateBuffer(
 		&desc,
-		&sData,
+		data ? &sData : nullptr,
 		buffer.GetAddressOf());
 	if (FAILED(result))
 	{
@@ -69,15 +73,17 @@ void VertexBuffer::Bind(ID3D11DeviceContext* context) const noexcept
 		&offset);
 }
 
-void VertexBuffer::Update(ID3D11DeviceContext* context, const void* data, std::uint32_t count)
+// Discard prior contents and publish a bounded dynamic upload only after mapping succeeds.
+bool VertexBuffer::Update(ID3D11DeviceContext* context, const void* data, std::uint32_t count)
 {
-	if (!context || !data || !buffer_ || count > count_ ||
-		usage_ != BufferUsage::BUFFER_DYNAMIC) return;
+	if (!context || !data || !buffer_ || count == 0 || count > count_ ||
+		usage_ != BufferUsage::BUFFER_DYNAMIC) return false;
 
-	// For reading/writing onto live data, as compared to SUBRESOURCE_DATA
+	// The creation-time capacity check guarantees this copy fits the GPU allocation.
 	D3D11_MAPPED_SUBRESOURCE mData = {};
 
-	if (FAILED(context->Map(buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mData))) return;
+	if (FAILED(context->Map(buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mData))) return false;
 	std::memcpy(mData.pData, data, count * static_cast<size_t>(stride_));
-	context->Unmap(buffer_.Get(), NULL);
+	context->Unmap(buffer_.Get(), 0);
+	return true;
 }

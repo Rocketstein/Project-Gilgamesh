@@ -1,7 +1,12 @@
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <optional>
+#include <set>
 #include <utility>
+#include <vector>
 
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -80,6 +85,37 @@ Entity AddMeshEntity(
 	return entity;
 }
 
+// Recognize twelve unique axis edges without depending on their emitted direction or order.
+bool HasAABBWireframe(const std::vector<DebugLine>& lines, const BoundingBox& bounds)
+{
+	if (lines.size() != 12) return false;
+	std::array<Vector3, 8> corners;
+	for (std::size_t index = 0; index < corners.size(); ++index)
+	{
+		corners[index] = {
+			(index & 1) ? bounds.max.x : bounds.min.x,
+			(index & 2) ? bounds.max.y : bounds.min.y,
+			(index & 4) ? bounds.max.z : bounds.min.z
+		};
+	}
+
+	// Corner indices differ by one bit exactly when their endpoints form a box edge.
+	std::set<std::pair<std::size_t, std::size_t>> edges;
+	for (const DebugLine& line : lines)
+	{
+		const auto start = std::find(corners.begin(), corners.end(), line.start);
+		const auto end = std::find(corners.begin(), corners.end(), line.end);
+		if (start == corners.end() || end == corners.end() ||
+			line.color != Vector3(0.0f, 1.0f, 0.0f)) return false;
+		const std::size_t first = static_cast<std::size_t>(start - corners.begin());
+		const std::size_t second = static_cast<std::size_t>(end - corners.begin());
+		const std::size_t difference = first ^ second;
+		if (difference != 1 && difference != 2 && difference != 4) return false;
+		if (!edges.emplace(std::min(first, second), std::max(first, second)).second) return false;
+	}
+	return edges.size() == 12;
+}
+
 // Provides a visible transform-phase result independent of the simulation phase.
 class SetPositionSystem final : public ISystem
 {
@@ -109,6 +145,10 @@ GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "DefaultsToNeutralTransform"
 		"a new transform must preserve geometry with zero position and unit scale");
 	GILGAMESH_CHECK_MESSAGE(!mesh.mesh.IsValid(),
 		"a new mesh component must explicitly await geometry assignment");
+	const DebugLine line;
+	GILGAMESH_CHECK_MESSAGE(line.start == Vector3{} && line.end == Vector3{} &&
+		line.color == Vector3(1.0f, 1.0f, 1.0f),
+		"a default diagnostic segment must have neutral endpoints and a white color");
 }
 
 GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "SelectsOnlyCompleteActiveSceneInstances")
@@ -371,4 +411,131 @@ GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "PausedHierarchyExtractionMa
 		firstFrame && firstFrame->staticMeshes.size() == 1 &&
 		firstFrame->staticMeshes[0].localToWorld == evaluated.localToWorld,
 		"paused parent edits must refresh world bounds and extraction without mutating the prior snapshot");
+}
+
+GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "BoundsDiagnosticsAreOptInOwnedAndRebuiltEachFrame")
+{
+	MeshManager meshes;
+	const MeshHandle mesh = CreateTestMesh(meshes);
+	GILGAMESH_CHECK_MESSAGE(mesh.IsValid(), "a WARP mesh with bounds must be available");
+	if (!mesh.IsValid()) return;
+	std::optional<RenderFrameData> retained;
+	BoundingBox retainedBounds;
+	{
+		World world;
+		RenderExtractionSystem& extraction = AddExtractor(world);
+		world.GetTransformSystems().AddSystem(std::make_unique<UpdateBoundsSystem>(meshes)).SetEnabled(true);
+		const SceneHandle scene = world.CreateScene("Bounds");
+		TransformComponent transform;
+		transform.position_ = { 10.0f, 20.0f, 30.0f };
+		transform.scale = { 2.0f, 3.0f, 4.0f };
+		const Entity entity = AddMeshEntity(world, scene, mesh, transform);
+		world.Emplace<AABBComponent>(entity);
+		GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(scene), "the bounded mesh scene must become active");
+
+		// Bounds are evaluated normally while default extraction leaves diagnostics disabled.
+		world.PreparePresentation(0.0f);
+		auto disabled = extraction.TakeFrame();
+		const AABBComponent initialBounds = world.Get<AABBComponent>(entity);
+		retainedBounds = initialBounds.AABB;
+		GILGAMESH_CHECK_MESSAGE(initialBounds.valid && disabled && disabled->staticMeshes.size() == 1 &&
+			disabled->debugLines.empty(),
+			"valid bounds must not emit diagnostic geometry until extraction is explicitly enabled");
+
+		// A setting change affects the next extraction, never an already completed pending frame.
+		extraction.SetShowBounds(true);
+		world.PreparePresentation(0.0f);
+		extraction.SetShowBounds(false);
+		retained = extraction.TakeFrame();
+		GILGAMESH_CHECK_MESSAGE(retained && retained->staticMeshes.size() == 1 &&
+			HasAABBWireframe(retained->debugLines, retainedBounds),
+			"enabling bounds must copy twelve unique green world-space edges without applying the model again");
+		world.PreparePresentation(0.0f);
+		auto hidden = extraction.TakeFrame();
+		GILGAMESH_CHECK_MESSAGE(hidden && hidden->staticMeshes.size() == 1 && hidden->debugLines.empty() &&
+			retained && HasAABBWireframe(retained->debugLines, retainedBounds),
+			"disabling bounds must clear the next frame while previously owned diagnostics remain intact");
+
+		// Unchanged cached bounds still contribute complete diagnostics on every requested frame.
+		extraction.SetShowBounds(true);
+		world.PreparePresentation(0.0f);
+		auto repeated = extraction.TakeFrame();
+		GILGAMESH_CHECK_MESSAGE(repeated && HasAABBWireframe(repeated->debugLines, retainedBounds) &&
+			world.Get<AABBComponent>(entity).revision == initialBounds.revision,
+			"a stable bounds revision must still emit all twelve edges in each newly extracted frame");
+	}
+	GILGAMESH_CHECK_MESSAGE(retained && HasAABBWireframe(retained->debugLines, retainedBounds),
+		"diagnostic endpoints and colors must remain owned by the snapshot after world destruction");
+}
+
+GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "BoundsDiagnosticsRespectEligibilityAndActiveScene")
+{
+	MeshManager meshes;
+	const MeshHandle mesh = CreateTestMesh(meshes);
+	GILGAMESH_CHECK_MESSAGE(mesh.IsValid(), "a WARP mesh handle must be available");
+	if (!mesh.IsValid()) return;
+	World world;
+	RenderExtractionSystem& extraction = AddExtractor(world);
+	extraction.SetShowBounds(true);
+	const SceneHandle firstScene = world.CreateScene("First");
+	const SceneHandle secondScene = world.CreateScene("Second");
+	AABBComponent firstBounds;
+	firstBounds.AABB = { { 2.0f, 3.0f, 4.0f }, { 5.0f, 7.0f, 9.0f } };
+	firstBounds.valid = true;
+	AABBComponent secondBounds = firstBounds;
+	secondBounds.AABB = { { 20.0f, 30.0f, 40.0f }, { 25.0f, 37.0f, 49.0f } };
+
+	// Supply cache variants directly to isolate diagnostic extraction from bounds evaluation.
+	const Entity complete = AddMeshEntity(world, firstScene, mesh);
+	world.Emplace<AABBComponent>(complete, firstBounds);
+	AddMeshEntity(world, firstScene, mesh);
+	const Entity invalid = AddMeshEntity(world, firstScene, mesh);
+	AABBComponent invalidBounds = firstBounds;
+	invalidBounds.valid = false;
+	world.Emplace<AABBComponent>(invalid, invalidBounds);
+	const Entity unassigned = AddMeshEntity(world, firstScene, {});
+	world.Emplace<AABBComponent>(unassigned, firstBounds);
+	const Entity withoutTransform = world.CreateEntity(firstScene);
+	world.Emplace<MeshComponent>(withoutTransform, MeshComponent{ mesh });
+	world.Emplace<AABBComponent>(withoutTransform, firstBounds);
+	const Entity withoutMesh = world.CreateEntity(firstScene);
+	world.Emplace<TransformComponent>(withoutMesh);
+	world.Emplace<AABBComponent>(withoutMesh, firstBounds);
+	const Entity unscened = world.CreateEntity();
+	world.Emplace<TransformComponent>(unscened);
+	world.Emplace<MeshComponent>(unscened, MeshComponent{ mesh });
+	world.Emplace<AABBComponent>(unscened, firstBounds);
+	const Entity otherScene = AddMeshEntity(world, secondScene, mesh);
+	world.Emplace<AABBComponent>(otherScene, secondBounds);
+
+	// Diagnostic enablement does not select a scene or bypass ordinary mesh eligibility.
+	world.PreparePresentation(0.0f);
+	const auto unselected = extraction.TakeFrame();
+	GILGAMESH_CHECK_MESSAGE(unselected && unselected->staticMeshes.empty() && unselected->debugLines.empty(),
+		"a world without an active scene must publish no mesh or bounds diagnostics");
+	GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(firstScene), "the first scene must become active");
+	world.PreparePresentation(0.0f);
+	const auto first = extraction.TakeFrame();
+	GILGAMESH_CHECK_MESSAGE(first && first->staticMeshes.size() == 3 &&
+		HasAABBWireframe(first->debugLines, firstBounds.AABB),
+		"missing/invalid bounds and incomplete/unassigned/world-only entities must not add debug segments");
+
+	// Switching, invalidating, and clearing the source must remove the previous frame's lines.
+	GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(secondScene), "the second scene must become active");
+	world.PreparePresentation(0.0f);
+	const auto second = extraction.TakeFrame();
+	GILGAMESH_CHECK_MESSAGE(second && second->staticMeshes.size() == 1 &&
+		HasAABBWireframe(second->debugLines, secondBounds.AABB),
+		"bounds diagnostics must switch to the selected scene instead of accumulating inactive-scene lines");
+	world.Get<AABBComponent>(otherScene).valid = false;
+	world.PreparePresentation(0.0f);
+	const auto invalidated = extraction.TakeFrame();
+	GILGAMESH_CHECK_MESSAGE(invalidated && invalidated->staticMeshes.size() == 1 &&
+		invalidated->debugLines.empty(),
+		"a newly invalid bounds cache must remove its diagnostics without suppressing the mesh");
+	world.RequestClearActiveScene();
+	world.PreparePresentation(0.0f);
+	const auto cleared = extraction.TakeFrame();
+	GILGAMESH_CHECK_MESSAGE(cleared && cleared->staticMeshes.empty() && cleared->debugLines.empty(),
+		"clearing the active scene must publish a fresh empty diagnostics list");
 }

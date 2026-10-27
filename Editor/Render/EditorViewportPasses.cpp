@@ -1,6 +1,7 @@
 #include "EditorViewportPasses.h"
 
 #include "EditorGridPass.h"
+#include "Engine/Render/Passes/DebugLinePass.h"
 #include "Engine/Render/Passes/VertexColorMeshPass.h"
 #include "Engine/Render/Passes/ViewportClearPass.h"
 
@@ -11,5 +12,6 @@ std::vector<std::unique_ptr<IRenderPass>> CreateEditorViewportPasses()
     passes.push_back(std::make_unique<ViewportClearPass>());
     passes.push_back(std::make_unique<EditorGridPass>());
     passes.push_back(std::make_unique<VertexColorMeshPass>());
+    passes.push_back(std::make_unique<DebugLinePass>());
     return passes;
 }

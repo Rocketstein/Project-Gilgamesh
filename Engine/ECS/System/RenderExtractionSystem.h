@@ -9,6 +9,9 @@
 class RenderExtractionSystem final : public ISystem
 {
 public:
+	// Changes bounds visibility for the next extraction without altering an existing snapshot.
+	void SetShowBounds(bool showBounds) noexcept { showBounds_ = showBounds; }
+
 	void Update(World& world, float deltaTime) override;
 
 	// Transfers the completed snapshot exactly once, including an empty scene result.
@@ -20,5 +23,6 @@ public:
 	void OnDestroy(World& world) override;
 
 private:
+	bool showBounds_ = false; // Opt-in world-space AABB diagnostics for future snapshots.
 	std::optional<RenderFrameData> pendingFrame_; // At most one completed, unconsumed result.
 };

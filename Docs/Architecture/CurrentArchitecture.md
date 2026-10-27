@@ -191,7 +191,7 @@ WinMain
           -> optionally create console state and register ConsoleLogSink
           -> initialize ImGui against the engine window and D3D11 device
           -> initialize the editor viewport
-          -> create Clear -> Grid -> Mesh through CreateEditorViewportPasses
+          -> create Clear -> Grid -> Mesh -> DebugLines through CreateEditorViewportPasses
           -> initialize EditorViewportRenderer and its configured passes
           -> register and enable RenderExtractionSystem in the world
           -> upload the demo cube through MeshManager
@@ -278,7 +278,7 @@ World::PreparePresentation(realDeltaTime)
           -> EditorGridPass captures view and grid constants by value
           -> VertexColorMeshPass prepares and owns MeshPassCommands in its callback
       -> RenderGraph::Compile / Execute
-          -> Clear -> Grid background -> Mesh
+          -> Clear -> Grid background -> Mesh -> DebugLines
       -> Reset the graph before returning, including on failure
 ```
 
@@ -332,7 +332,7 @@ OutputLogPanel::Draw
 Mesh creation also stores a shared CPU-local AABB from finite vertex positions;
 `TryGetLocalBounds` copies this metadata without resolving GPU buffers.
 `EditorViewportRenderer` owns the graph and `vector<unique_ptr<IRenderPass>>`.
-`CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh; the viewport
+`CreateEditorViewportPasses()` selects Clear -> Grid -> Mesh -> DebugLines; the viewport
 renderer itself contains no concrete pass member or type-specific branch.
 
 `IRenderPass::Initialize(device, shaders)` creates pass-owned resources, and
@@ -366,6 +366,13 @@ overwrite their GPU constants in advance. Empty command lists preserve the
 background initialized by the independent clear and grid passes. Failed constant
 uploads return failure; the graph callback converts it to an exception for the
 viewport renderer to handle.
+
+`DebugLinePass` consumes copied world-space segments after the mesh pass. Its
+CPU commands expand segments into the existing RGB vertex layout and copy view
+constants. Graph execution grows a reusable dynamic vertex buffer as needed,
+uploads with WRITE_DISCARD, and draws only the active vertices. Lines use
+LESS_EQUAL depth testing against read-only loaded depth and never write depth.
+Their shader applies view-projection only; no model transform is applied again.
 
 The Primitive vertex shader uses `b0 FrameConstants.viewProjection` and
 `b2 ObjectConstants.model` to evaluate model then view-projection. CPU matrices
@@ -528,8 +535,8 @@ Missing resources or unevaluated world matrices produce `valid=false`. First
 evaluation, validity changes, and changed valid corners publish a fresh bounds
 token; equal results still record consumed transform, mesh, and metadata inputs.
 Spatial-index synchronization must separately handle deleted entities or removed
-components. The editor evaluates bounds, but its extracted frame does not yet
-include bounds or debug geometry.
+components. The editor enables bounds visualization during extraction; each
+valid active-scene mesh AABB produces twelve green world-space segments.
 
 `RenderExtractionSystem : public ISystem` traverses the active scene's entity
 membership and reads `TransformComponent` and `MeshComponent` from the world.
@@ -539,6 +546,12 @@ The editor path copies the evaluated `localToWorld` cache and skips transforms
 whose world revision is still zero. Parent motion therefore reaches extracted
 instances through the transform pipeline. Stale resource generations are left
 for the renderer-facing consumer to validate.
+
+`SetShowBounds` controls line extraction on subsequent frames and defaults to
+false. Enabled extraction copies valid AABBs into `RenderFrameData::debugLines`
+every frame, even when the cached bounds revision is unchanged. Older snapshots
+retain their own line data; empty, hidden, or disabled results cannot reuse an
+earlier frame's lines.
 
 The extractor owns at most one completed `optional<RenderFrameData>`.
 `TakeFrame` transfers it once and clears the pending slot; `DiscardFrame`,

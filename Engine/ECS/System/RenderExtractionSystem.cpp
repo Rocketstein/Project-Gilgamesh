@@ -2,9 +2,39 @@
 
 #include <utility>
 
+#include "Engine/ECS/Component/BoundsComponent.h"
 #include "Engine/ECS/Component/MeshComponent.h"
 #include "Engine/ECS/Component/TransformComponent.h"
 #include "Engine/ECS/Framework/World.h"
+
+namespace
+{
+// Append each world-space box edge once; the bounds already include the entity transform.
+void AppendAABB(std::vector<DebugLine>& lines, const BoundingBox& bounds, const Vector3& color)
+{
+	const Vector3 corners[8]{
+		{ bounds.min.x, bounds.min.y, bounds.min.z },
+		{ bounds.max.x, bounds.min.y, bounds.min.z },
+		{ bounds.max.x, bounds.max.y, bounds.min.z },
+		{ bounds.min.x, bounds.max.y, bounds.min.z },
+		{ bounds.min.x, bounds.min.y, bounds.max.z },
+		{ bounds.max.x, bounds.min.y, bounds.max.z },
+		{ bounds.max.x, bounds.max.y, bounds.max.z },
+		{ bounds.min.x, bounds.max.y, bounds.max.z }
+	};
+
+	// The two four-edge faces and four connecting edges form the complete wire box.
+	constexpr int edges[12][2]{
+		{ 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
+		{ 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
+		{ 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }
+	};
+	for (const auto& edge : edges)
+	{
+		lines.push_back({ corners[edge[0]], corners[edge[1]], color });
+	}
+}
+} // Anonymous namespace
 
 void RenderExtractionSystem::Update(World& world, float /*deltaTime*/)
 {
@@ -13,6 +43,7 @@ void RenderExtractionSystem::Update(World& world, float /*deltaTime*/)
 
 	// Build a fresh result so removing or clearing the active scene removes old draws.
 	RenderFrameData frame;
+	const Vector3 boundsColor{ 0.0f, 1.0f, 0.0f };
 	const World& readOnlyWorld = world;
 	const Scene* scene = readOnlyWorld.TryGetActiveScene();
 	if (scene)
@@ -41,6 +72,13 @@ void RenderExtractionSystem::Update(World& world, float /*deltaTime*/)
 				mesh.mesh,
 				transform.localToWorld
 				});
+
+			// Copy diagnostics into every requested frame, even when the bounds revision is unchanged.
+			if (showBounds_ && readOnlyWorld.Has<AABBComponent>(entity))
+			{
+				const AABBComponent& bounds = readOnlyWorld.Get<AABBComponent>(entity);
+				if (bounds.valid) AppendAABB(frame.debugLines, bounds.AABB, boundsColor);
+			}
 		});
 	}
 

@@ -98,6 +98,8 @@ target_sources (GilgameshEngine
 
 
 		Render/Passes/IRenderPass.h
+		Render/Passes/DebugLinePass.cpp
+		Render/Passes/DebugLinePass.h
 		Render/Passes/ViewportClearPass.cpp
 		Render/Passes/ViewportClearPass.h
 		Render/Passes/VertexColorMeshPass.cpp

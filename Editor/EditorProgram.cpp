@@ -154,6 +154,7 @@ bool EditorProgram::Initialize(EngineServices& services)
     RenderExtractionSystem* extractor = extractionSystem.get();
     impl_->world.GetExtractionSystems().AddSystem(std::move(extractionSystem));
     extractor->SetEnabled(true);
+    extractor->SetShowBounds(true);
     impl_->extractionSystem = extractor;
 
     // Build the temporary demonstration through the same ECS path as ordinary scene content.
