@@ -10,7 +10,14 @@
 #include "Engine/ECS/Component/MeshComponent.h"
 #include "Engine/ECS/Component/TransformComponent.h"
 #include "Engine/ECS/Framework/World.h"
+
+#include "Engine/ECS/Component/BoundsComponent.h"
+#include "Engine/ECS/System/Transform/TransformHierarchySystem.h"
+#include "Engine/ECS/System/Transform/LocalTransformSystem.h"
+#include "Engine/ECS/System/Transform/LocalToWorldSystem.h"
+#include "Engine/ECS/System/Transform/UpdateBoundsSystem.h"
 #include "Engine/ECS/System/RenderExtractionSystem.h"
+
 #include "Engine/Input/InputSystem.h"
 #include "Engine/Render/Mesh/PrimitiveMeshes.h"
 #include "Engine/Render/Renderer/RenderView.h"
@@ -151,6 +158,25 @@ bool EditorProgram::Initialize(EngineServices& services)
 
     // Build the temporary demonstration through the same ECS path as ordinary scene content.
     MeshManager& meshes = services.renderer.GetMeshManager();
+    SystemGroup& transforms = impl_->world.GetTransformSystems();
+
+    // Keep the typed reference before transferring ownership to the group.
+    auto hierarchySystem = std::make_unique<TransformHierarchySystem>();
+    TransformHierarchySystem& hierarchy = *hierarchySystem;
+
+    // Registration order determines evaluation order.
+    transforms.AddSystem(std::move(hierarchySystem))
+        .SetEnabled(true);
+
+    transforms.AddSystem(std::make_unique<LocalTransformSystem>())
+        .SetEnabled(true);
+
+    transforms.AddSystem(std::make_unique<LocalToWorldSystem>(hierarchy))
+        .SetEnabled(true);
+
+    transforms.AddSystem(std::make_unique<UpdateBoundsSystem>(meshes))
+        .SetEnabled(true);
+
     impl_->demoCubeMesh = meshes.CreateMesh(PrimitiveMeshes::MakeUnitCubeMeshData());
     if (!meshes.IsValid(impl_->demoCubeMesh))
     {
@@ -161,9 +187,12 @@ bool EditorProgram::Initialize(EngineServices& services)
     }
 
     const SceneHandle scene = impl_->world.RequestCreateScene("EditorScene");
+
+    // Queue all presentation components before the first playback.
     const Entity cube = impl_->world.CreateEntity(scene);
     impl_->world.Emplace<TransformComponent>(cube);
     impl_->world.Emplace<MeshComponent>(cube, MeshComponent{ impl_->demoCubeMesh });
+    impl_->world.Emplace<AABBComponent>(cube);
     if (!impl_->world.RequestSetActiveScene(scene))
     {
         GILGAMESH_LOG(Core, Error, "Failed to select the editor scene");

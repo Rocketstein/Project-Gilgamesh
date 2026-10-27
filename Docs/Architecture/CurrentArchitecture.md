@@ -503,7 +503,7 @@ are logged and treated as roots in the cache without rewriting source links.
 link, preserving local TRS; cached queries refresh on the next update. A rebuild
 publishes all derived data together and advances a topology revision. Disabling
 or destroying the system clears its views; a later rebuild publishes a newer
-revision. The editor does not register this system yet.
+revision. The editor registers this system before local and world evaluation.
 
 `LocalTransformSystem` evaluates authored TRS as a row-vector local matrix in
 scale, rotation, translation order. `LocalToWorldSystem` then visits the
@@ -518,7 +518,8 @@ reuse an older parent's publication token. World evaluation records the consumed
 local revision, validated parent, and parent world revision even when those
 inputs produce an unchanged matrix; it does not clear revisions used by other
 consumers. Unready local or parent world inputs are logged and skipped until a
-later evaluation. The editor does not register these transform systems yet.
+later evaluation. The editor registers hierarchy, local, world, and bounds
+evaluation in that order in its transform group.
 
 `UpdateBoundsSystem` transforms original mesh-local bounds into each existing
 Transform + Mesh + AABB component set after world evaluation. Affine enclosure
@@ -527,16 +528,17 @@ Missing resources or unevaluated world matrices produce `valid=false`. First
 evaluation, validity changes, and changed valid corners publish a fresh bounds
 token; equal results still record consumed transform, mesh, and metadata inputs.
 Spatial-index synchronization must separately handle deleted entities or removed
-components. The editor does not register bounds evaluation or consume it yet.
+components. The editor evaluates bounds, but its extracted frame does not yet
+include bounds or debug geometry.
 
 `RenderExtractionSystem : public ISystem` traverses the active scene's entity
 membership and reads `TransformComponent` and `MeshComponent` from the world.
 It copies assigned mesh handles and row-vector world transforms into
 `RenderFrameData`; it does not resolve GPU resources or retain ECS references.
-The current editor path still composes TRS directly as scale, rotation, then
-translation. Extraction from the evaluated world-matrix cache remains
-unimplemented. Stale resource generations are left for the renderer-facing
-consumer to validate.
+The editor path copies the evaluated `localToWorld` cache and skips transforms
+whose world revision is still zero. Parent motion therefore reaches extracted
+instances through the transform pipeline. Stale resource generations are left
+for the renderer-facing consumer to validate.
 
 The extractor owns at most one completed `optional<RenderFrameData>`.
 `TakeFrame` transfers it once and clears the pending slot; `DiscardFrame`,

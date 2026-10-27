@@ -2,6 +2,9 @@
 #include "Engine/ECS/Component/TransformComponent.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Engine/ECS/System/RenderExtractionSystem.h"
+#include "Engine/ECS/System/Transform/LocalToWorldSystem.h"
+#include "Engine/ECS/System/Transform/LocalTransformSystem.h"
+#include "Engine/ECS/System/Transform/TransformHierarchySystem.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Engine/Render/Passes/VertexColorMeshPass.h"
 #include "Engine/Render/Passes/ViewportClearPass.h"
@@ -368,6 +371,13 @@ GILGAMESH_TEST("Engine.Render.VertexColorMeshPass", "RendersExtractedWorldAfterS
 	std::optional<RenderFrameData> frame;
 	{
 		World world;
+		// Extraction consumes evaluated world matrices supplied by the registered transform pipeline.
+		auto hierarchy = std::make_unique<TransformHierarchySystem>();
+		TransformHierarchySystem& hierarchyReference = *hierarchy;
+		world.GetTransformSystems().AddSystem(std::move(hierarchy)).SetEnabled(true);
+		world.GetTransformSystems().AddSystem(std::make_unique<LocalTransformSystem>()).SetEnabled(true);
+		world.GetTransformSystems().AddSystem(
+			std::make_unique<LocalToWorldSystem>(hierarchyReference)).SetEnabled(true);
 		auto extractor = std::make_unique<RenderExtractionSystem>();
 		RenderExtractionSystem& observer = *extractor;
 		extractor->SetEnabled(true);

@@ -6,11 +6,16 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include "Engine/ECS/Component/BoundsComponent.h"
 #include "Engine/ECS/Component/MeshComponent.h"
 #include "Engine/ECS/Component/TransformComponent.h"
 #include "Engine/ECS/Framework/World.h"
 #include "Engine/ECS/System/Core/SystemGroup.h"
 #include "Engine/ECS/System/RenderExtractionSystem.h"
+#include "Engine/ECS/System/Transform/LocalToWorldSystem.h"
+#include "Engine/ECS/System/Transform/LocalTransformSystem.h"
+#include "Engine/ECS/System/Transform/TransformHierarchySystem.h"
+#include "Engine/ECS/System/Transform/UpdateBoundsSystem.h"
 #include "Engine/Render/Mesh/MeshManager.h"
 #include "Tests/TestFramework.h"
 
@@ -31,19 +36,30 @@ ID3D11Device* GetTestDevice()
 	return device.Get();
 }
 
-// The extractor never accesses this resource; allocation supplies an authentic handle.
+// Known extrema support bounds integration; extraction itself only copies the opaque handle.
 MeshHandle CreateTestMesh(MeshManager& meshes)
 {
 	if (!meshes.Initialize(GetTestDevice())) return {};
 	StaticMeshData data;
 	data.vertices_.resize(3);
+	data.vertices_[0].position = { -1.0f, -2.0f, -3.0f };
+	data.vertices_[1].position = { 1.0f, 2.0f, 3.0f };
+	data.vertices_[2].position = { 1.0f, -2.0f, 3.0f };
 	data.indices_ = { 0, 1, 2 };
 	return meshes.CreateMesh(data);
 }
 
-// The world owns the enabled extractor; tests retain only an observer until world teardown.
+// Register evaluated-transform producers before the enabled world-owned extractor.
 RenderExtractionSystem& AddExtractor(World& world)
 {
+	SystemGroup& transforms = world.GetTransformSystems();
+	auto hierarchy = std::make_unique<TransformHierarchySystem>();
+	TransformHierarchySystem& hierarchyReference = *hierarchy;
+	transforms.AddSystem(std::move(hierarchy)).SetEnabled(true);
+	transforms.AddSystem(std::make_unique<LocalTransformSystem>()).SetEnabled(true);
+	transforms.AddSystem(std::make_unique<LocalToWorldSystem>(hierarchyReference)).SetEnabled(true);
+
+	// Tests retain an observer only until the owning World tears down its extraction group.
 	auto system = std::make_unique<RenderExtractionSystem>();
 	RenderExtractionSystem& observer = *system;
 	system->SetEnabled(true);
@@ -273,7 +289,6 @@ GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "UsesFinalTransformsWhileSim
 	if (!mesh.IsValid()) return;
 
 	World world;
-	RenderExtractionSystem& extraction = AddExtractor(world);
 	const SceneHandle scene = world.CreateScene();
 	const Entity entity = AddMeshEntity(world, scene, mesh);
 	world.RequestSetActiveScene(scene);
@@ -286,6 +301,9 @@ GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "UsesFinalTransformsWhileSim
 	auto transform = std::make_unique<SetPositionSystem>(entity, 9.0f);
 	transform->SetEnabled(true);
 	world.GetTransformSystems().AddSystem(std::move(transform));
+
+	// Authored source writers must run before local/world matrix evaluation and extraction.
+	RenderExtractionSystem& extraction = AddExtractor(world);
 	world.SetSimulationPaused(true);
 	world.Update(0.1f);
 	GILGAMESH_CHECK_MESSAGE(world.Get<TransformComponent>(entity).position_.x == 0.0f,
@@ -295,4 +313,62 @@ GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "UsesFinalTransformsWhileSim
 	GILGAMESH_CHECK_MESSAGE(frame && frame->staticMeshes.size() == 1 &&
 		frame->staticMeshes[0].localToWorld.Translation().x == 9.0f,
 		"presentation must evaluate transforms before extraction even while paused");
+}
+
+GILGAMESH_TEST("Engine.ECS.RenderExtractionSystem", "PausedHierarchyExtractionMatchesWorldBounds")
+{
+	MeshManager meshes;
+	const MeshHandle mesh = CreateTestMesh(meshes);
+	GILGAMESH_CHECK_MESSAGE(mesh.IsValid(), "a WARP mesh handle with known local bounds must be available");
+	if (!mesh.IsValid()) return;
+
+	World world;
+	RenderExtractionSystem& extraction = AddExtractor(world);
+	world.GetTransformSystems().AddSystem(std::make_unique<UpdateBoundsSystem>(meshes)).SetEnabled(true);
+	const SceneHandle scene = world.CreateScene("Visible");
+	const Entity parent = world.CreateEntity();
+	TransformComponent parentTransform;
+	parentTransform.position_ = { 10.0f, 20.0f, 30.0f };
+	parentTransform.scale = { 2.0f, 3.0f, 4.0f };
+	parentTransform.rotation_ = FromAxisAngle({ 0.0f, 0.0f, 1.0f }, 1.5707963267948966f);
+	world.Emplace<TransformComponent>(parent, parentTransform);
+	TransformComponent childTransform;
+	childTransform.parent = parent;
+	childTransform.position_ = { 1.0f, 2.0f, 3.0f };
+	childTransform.scale = { 1.0f, 2.0f, 1.0f };
+	const Entity child = AddMeshEntity(world, scene, mesh, childTransform);
+	world.Emplace<AABBComponent>(child);
+	GILGAMESH_CHECK_MESSAGE(world.RequestSetActiveScene(scene),
+		"the mesh scene must be selected without requiring its parent to belong to that scene");
+
+	// Paused presentation evaluates world-wide parents, then bounds, then the active-scene snapshot.
+	world.SetSimulationPaused(true);
+	world.PreparePresentation(0.1f);
+	auto firstFrame = extraction.TakeFrame();
+	const TransformComponent evaluated = world.Get<TransformComponent>(child);
+	const AABBComponent firstBounds = world.Get<AABBComponent>(child);
+	GILGAMESH_CHECK_MESSAGE(firstFrame && firstFrame->staticMeshes.size() == 1 &&
+		firstFrame->staticMeshes[0].mesh == mesh &&
+		firstFrame->staticMeshes[0].localToWorld == evaluated.localToWorld &&
+		NearlyEquals(TransformPoint({}, evaluated.localToWorld), Vector3{ 4.0f, 22.0f, 42.0f }, 1e-4f) &&
+		firstBounds.valid && firstBounds.sourceWorldRevision == evaluated.worldRevision &&
+		NearlyEquals(firstBounds.AABB.min, Vector3{ -8.0f, 20.0f, 30.0f }, 1e-4f) &&
+		NearlyEquals(firstBounds.AABB.max, Vector3{ 16.0f, 24.0f, 54.0f }, 1e-4f),
+		"the extracted mesh and its bounds must share the evaluated hierarchy transform while simulation is paused");
+
+	// A later paused editor edit must update both outputs while the previous owned frame stays unchanged.
+	world.Get<TransformComponent>(parent).position_.x = 15.0f;
+	world.PreparePresentation(0.1f);
+	auto secondFrame = extraction.TakeFrame();
+	const AABBComponent& secondBounds = world.Get<AABBComponent>(child);
+	GILGAMESH_CHECK_MESSAGE(secondFrame && secondFrame->staticMeshes.size() == 1 &&
+		NearlyEquals(TransformPoint({}, secondFrame->staticMeshes[0].localToWorld),
+			Vector3{ 9.0f, 22.0f, 42.0f }, 1e-4f) &&
+		secondBounds.valid && secondBounds.revision > firstBounds.revision &&
+		secondBounds.sourceWorldRevision == world.Get<TransformComponent>(child).worldRevision &&
+		NearlyEquals(secondBounds.AABB.min, Vector3{ -3.0f, 20.0f, 30.0f }, 1e-4f) &&
+		NearlyEquals(secondBounds.AABB.max, Vector3{ 21.0f, 24.0f, 54.0f }, 1e-4f) &&
+		firstFrame && firstFrame->staticMeshes.size() == 1 &&
+		firstFrame->staticMeshes[0].localToWorld == evaluated.localToWorld,
+		"paused parent edits must refresh world bounds and extraction without mutating the prior snapshot");
 }

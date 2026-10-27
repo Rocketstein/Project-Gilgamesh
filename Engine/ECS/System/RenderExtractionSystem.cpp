@@ -6,22 +6,6 @@
 #include "Engine/ECS/Component/TransformComponent.h"
 #include "Engine/ECS/Framework/World.h"
 
-namespace
-{
-// Row vectors apply scale before rotation; translation occupies the final row.
-Matrix4 MakeLocalToWorld(const TransformComponent& transform)
-{
-	Matrix basis = ToMatrix(transform.rotation_);
-	for (int column = 0; column < 3; ++column)
-	{
-		basis.m[0][column] *= transform.scale.x;
-		basis.m[1][column] *= transform.scale.y;
-		basis.m[2][column] *= transform.scale.z;
-	}
-	return Matrix4{ basis, transform.position_ };
-}
-} // Anonymous namespace
-
 void RenderExtractionSystem::Update(World& world, float /*deltaTime*/)
 {
 	// A failed extraction must not leave an older snapshot looking like fresh output.
@@ -49,7 +33,14 @@ void RenderExtractionSystem::Update(World& world, float /*deltaTime*/)
 
 			const TransformComponent& transform =
 				readOnlyWorld.Get<TransformComponent>(entity);
-			frame.staticMeshes.push_back({ mesh.mesh, MakeLocalToWorld(transform) });
+
+			// Extract only a completed world-transform evaluation.
+			if (transform.worldRevision == 0) return;
+
+			frame.staticMeshes.push_back({
+				mesh.mesh,
+				transform.localToWorld
+				});
 		});
 	}
 
